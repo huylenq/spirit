@@ -82,18 +82,25 @@ func (m Model) execQueue() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) execFilter() (Model, tea.Cmd) {
-	m.state = StateFiltering
-	m.filter.Activate()
+func (m Model) execSearch() (Model, tea.Cmd) {
+	m.state = StateSearching
+	m.search.Activate()
 	return m, nil
 }
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.list.SelectedItem(); ok {
-		if s.Status == claude.StatusLater && s.LaterBookmarkID != "" {
+		if s.Status == claude.StatusLater {
 			// Toggle: unlater to restore real status
-			bookmarkID := s.LaterBookmarkID
+			paneID, bookmarkID := s.PaneID, s.LaterBookmarkID
 			return m, func() tea.Msg {
+				// Bookmark ID may not be populated yet; look it up
+				if bookmarkID == "" {
+					bookmarkID = claude.FindBookmarkIDByPane(paneID)
+				}
+				if bookmarkID == "" {
+					return flashErrorMsg("no bookmark found")
+				}
 				if err := m.client.Unlater(bookmarkID); err != nil {
 					return flashErrorMsg("unlater failed: " + err.Error())
 				}

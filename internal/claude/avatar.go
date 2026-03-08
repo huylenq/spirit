@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,6 +91,38 @@ func saveAvatarStore(activeKeys map[string]bool) {
 	os.WriteFile(path, data, 0o644)         //nolint:errcheck
 }
 
+// pickIdx selects an index in [0, n) for avatar assignment.
+// Prefers a random absent index (not currently used by active sessions).
+// Falls back to a random index from the least-assigned subset across all store entries.
+func pickIdx(n int, used map[int]bool, entries map[string]Avatar, field func(Avatar) int) int {
+	absent := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		if !used[i] {
+			absent = append(absent, i)
+		}
+	}
+	if len(absent) > 0 {
+		return absent[rand.IntN(len(absent))]
+	}
+	counts := make([]int, n)
+	for _, a := range entries {
+		counts[field(a)]++
+	}
+	minCount := counts[0]
+	for _, c := range counts {
+		if c < minCount {
+			minCount = c
+		}
+	}
+	subset := make([]int, 0, n)
+	for i, c := range counts {
+		if c == minCount {
+			subset = append(subset, i)
+		}
+	}
+	return subset[rand.IntN(len(subset))]
+}
+
 // GetOrAssignAvatar returns the existing avatar for key, or assigns a new one.
 // activeKeys is used to avoid reusing animals/colors already visible.
 func GetOrAssignAvatar(key string, activeKeys map[string]bool) Avatar {
@@ -111,15 +144,8 @@ func GetOrAssignAvatar(key string, activeKeys map[string]bool) Avatar {
 		}
 	}
 
-	animalIdx := avStore.Counter % numAvatarAnimals
-	for usedAnimals[animalIdx] && len(usedAnimals) < numAvatarAnimals {
-		animalIdx = (animalIdx + 1) % numAvatarAnimals
-	}
-
-	colorIdx := avStore.Counter % numAvatarColors
-	for usedColors[colorIdx] && len(usedColors) < numAvatarColors {
-		colorIdx = (colorIdx + 1) % numAvatarColors
-	}
+	animalIdx := pickIdx(numAvatarAnimals, usedAnimals, avStore.Entries, func(a Avatar) int { return a.AnimalIdx })
+	colorIdx := pickIdx(numAvatarColors, usedColors, avStore.Entries, func(a Avatar) int { return a.ColorIdx })
 
 	a := Avatar{AnimalIdx: animalIdx, ColorIdx: colorIdx, Seq: avStore.Counter}
 	avStore.Counter++

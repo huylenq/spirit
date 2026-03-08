@@ -287,6 +287,17 @@ func RemoveLaterBookmark(id string) {
 	os.Remove(filepath.Join(laterDir(), id+".json"))
 }
 
+// FindBookmarkIDByPane scans bookmarks to find one matching the given pane ID.
+func FindBookmarkIDByPane(paneID string) string {
+	bookmarks, _ := ReadAllLaterBookmarks()
+	for _, bm := range bookmarks {
+		if bm.PaneID == paneID {
+			return bm.ID
+		}
+	}
+	return ""
+}
+
 func WriteLaterStatus(paneID string) error {
 	return WriteStatus(paneID, StatusLater)
 }

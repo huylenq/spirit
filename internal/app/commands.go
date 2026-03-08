@@ -64,8 +64,8 @@ func buildCommands() []Command {
 
 		// --- Global actions ---
 		{
-			Name: "Filter", Hotkey: "/",
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execFilter() },
+			Name: "Search", Hotkey: "/",
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSearch() },
 		},
 		{
 			Name: "Synthesize all", Hotkey: "S",

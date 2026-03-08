@@ -88,16 +88,25 @@ func tickUsageBar() tea.Cmd {
 }
 
 // TopBorderView renders the usage bar as the top border of the TUI frame.
-// Uses heavy ━ with thin ─ transitions into rounded ╭/╮ corners.
+// When corners is true, uses ╭/╮ with thin ─ transitions for a bordered frame.
+// When corners is false, renders edge-to-edge ━ bars (for fullscreen).
 // When no data is available, renders a plain border using BorderCharStyle.
-func (m *UsageBarModel) TopBorderView(width int) string {
+func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 	if width < 2 {
 		return ""
 	}
 
-	// filledChars is computed over the thick region (positions 2..width-3)
-	thickStart := 2
-	thickEnd := width - 2 // exclusive
+	// The thick ━ region gets usage bar coloring.
+	// With corners: positions 2..width-3 (leaving room for ╭─ and ─╮).
+	// Without corners: the entire width.
+	var thickStart, thickEnd int
+	if corners {
+		thickStart = 2
+		thickEnd = width - 2
+	} else {
+		thickStart = 0
+		thickEnd = width
+	}
 	thickWidth := thickEnd - thickStart
 	filledChars := 0
 	if m.hasData && thickWidth > 0 {
@@ -107,20 +116,20 @@ func (m *UsageBarModel) TopBorderView(width int) string {
 	var sb strings.Builder
 	for i := 0; i < width; i++ {
 		glyph := "━"
-		switch i {
-		case 0:
-			glyph = "╭"
-		case 1, width - 2:
-			glyph = "─"
-		case width - 1:
-			glyph = "╮"
+		if corners {
+			switch i {
+			case 0:
+				glyph = "╭"
+			case 1, width - 2:
+				glyph = "─"
+			case width - 1:
+				glyph = "╮"
+			}
 		}
 
-		// Only the thick ━ region (positions 2..width-3) gets usage bar coloring;
-		// corners and thin ─ transitions always use the plain border style.
-		isThick := i >= 2 && i <= width-3
+		isThick := i >= thickStart && i < thickEnd
 		if isThick && m.hasData && i < filledChars {
-			t := float64(i-2) / float64(max(filledChars-2, 1))
+			t := float64(i-thickStart) / float64(max(filledChars-thickStart, 1))
 			c := blendHex("#3d2b00", "#8a5a00", t)
 
 			if m.rippleActive {

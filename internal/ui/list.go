@@ -22,11 +22,11 @@ type ListModel struct {
 	items                []claude.ClaudeSession
 	filtered             []claude.ClaudeSession            // cursor-navigable matching items
 	allSorted            []claude.ClaudeSession            // all items sorted (for stable group rendering)
-	matchSet             map[string]bool                   // PaneIDs of filter-matching items; nil = all match
+	matchSet             map[string]bool                   // PaneIDs of narrow-matching items; nil = all match
 	cursor               int
 	height               int
 	width                int
-	filter               string
+	narrow               string
 	spinnerView          string
 	commitDoneFrame      int
 	diffStats            map[string]map[string]claude.FileDiffStat // sessionID -> file stats
@@ -36,7 +36,7 @@ type ListModel struct {
 
 func (m *ListModel) SetGroupByProject(v bool) {
 	m.groupByProject = v
-	m.applyFilter()
+	m.applyNarrow()
 }
 
 func (m ListModel) GroupByProject() bool {
@@ -90,7 +90,7 @@ func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 			m.summaryLoadingPanes[s.PaneID] = true
 		}
 	}
-	m.applyFilter()
+	m.applyNarrow()
 	// Clamp cursor
 	if len(m.filtered) > 0 && m.cursor >= len(m.filtered) {
 		m.cursor = len(m.filtered) - 1
@@ -105,15 +105,15 @@ func (m *ListModel) SetSize(w, h int) {
 	m.height = h
 }
 
-func (m *ListModel) SetFilter(f string) {
-	m.filter = f
-	m.applyFilter()
+func (m *ListModel) SetNarrow(f string) {
+	m.narrow = f
+	m.applyNarrow()
 	m.cursor = 0
 }
 
-func (m *ListModel) ClearFilter() {
-	m.filter = ""
-	m.applyFilter()
+func (m *ListModel) ClearNarrow() {
+	m.narrow = ""
+	m.applyNarrow()
 	m.cursor = 0
 }
 
@@ -150,22 +150,22 @@ func (m ListModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
-func (m *ListModel) applyFilter() {
+func (m *ListModel) applyNarrow() {
 	// Always maintain a sorted copy of all items for stable group rendering
 	m.allSorted = make([]claude.ClaudeSession, len(m.items))
 	copy(m.allSorted, m.items)
 
-	if m.filter == "" {
+	if m.narrow == "" {
 		m.filtered = make([]claude.ClaudeSession, len(m.items))
 		copy(m.filtered, m.items)
 		m.matchSet = nil // nil = all match
 	} else {
-		f := strings.ToLower(m.filter)
+		f := strings.ToLower(m.narrow)
 		m.filtered = nil
 		m.matchSet = make(map[string]bool)
 		for _, s := range m.items {
 			surface := s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage
-			if containsFilter(surface, f) {
+			if matchesNarrow(surface, f) {
 				m.filtered = append(m.filtered, s)
 				m.matchSet[s.PaneID] = true
 			}
@@ -265,7 +265,7 @@ func (m ListModel) View() string {
 	}
 
 	dw := m.computeDiffColWidths()
-	filterLower := strings.ToLower(m.filter)
+	query := strings.ToLower(m.narrow)
 
 	// Determine selected PaneID for cursor tracking across the full list
 	var selectedPaneID string
@@ -278,7 +278,7 @@ func (m ListModel) View() string {
 	currentStatus := claude.Status(-1)
 
 	for _, s := range m.allSorted {
-		// Group headers — always rendered for spatial stability during filtering
+		// Group headers — always rendered for spatial stability during narrowing
 		if m.groupByProject {
 			if s.Project != currentProject {
 				currentProject = s.Project
@@ -302,13 +302,13 @@ func (m ListModel) View() string {
 			}
 		}
 
-		// Only render items that match the filter (matchSet nil = all match)
+		// Only render items that match the narrow (matchSet nil = all match)
 		if m.matchSet != nil && !m.matchSet[s.PaneID] {
 			continue
 		}
 
 		isSelected := s.PaneID == selectedPaneID
-		lines = append(lines, m.renderItem(isSelected, s, dw, filterLower))
+		lines = append(lines, m.renderItem(isSelected, s, dw, query))
 	}
 
 	// Truncate to fit available height
@@ -340,7 +340,7 @@ func renderStatusGroupHeader(status claude.Status) string {
 	}
 }
 
-func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths, filterLower string) string {
+func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
 	// Display name priority: custom title → headline → first message → (new session)
 	var displayName string
@@ -357,7 +357,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)
 
 	isNewSession := s.CustomTitle == "" && s.Headline == "" && s.FirstMessage == ""
-	filterActive := filterLower != ""
+	hasQuery := query != ""
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected) }
 	sp := func(s string) string {
@@ -417,8 +417,8 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	if isSelected {
 		bg := SelectedBgStyle
 		var styledName string
-		if filterActive && !isNewSession {
-			styledName = highlightFilter(displayName, filterLower, bg)
+		if hasQuery && !isNewSession {
+			styledName = highlightMatch(displayName, query, bg)
 		} else {
 			styledName = bg.Render(displayName)
 		}
@@ -430,8 +430,8 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {
 		var styledName string
-		if filterActive && !isNewSession {
-			styledName = highlightFilter(displayName, filterLower, lipgloss.NewStyle())
+		if hasQuery && !isNewSession {
+			styledName = highlightMatch(displayName, query, lipgloss.NewStyle())
 		} else {
 			styledName = displayName
 		}
@@ -459,26 +459,26 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	// Show queued message as a subtitle line
 	if s.QueuePending != "" {
 		rawMsg := strings.ReplaceAll(s.QueuePending, "\n", " ")
-		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconQueue, isSelected, false)
+		line += "\n" + m.renderSubtitleLine(rawMsg, query, IconQueue, isSelected, false)
 	}
 
 	// Show last user message as a subtitle line (single line, truncated to list width)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
-		doHL := filterActive && containsFilter(s.LastUserMessage, filterLower)
-		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconQuote, isSelected, doHL)
+		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
+		line += "\n" + m.renderSubtitleLine(rawMsg, query, IconQuote, isSelected, doHL)
 	}
 
-	// Match-context subtitles: show non-visible fields that matched the filter
-	if filterActive {
+	// Match-context subtitles: show non-visible fields that matched the search
+	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
-		if s.Headline != "" && s.CustomTitle != "" && containsFilter(s.Headline, filterLower) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, filterLower, IconHeadline, isSelected, true)
+		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
+			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, true)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
-		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && containsFilter(s.FirstMessage, filterLower) {
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
-			line += "\n" + m.renderSubtitleLine(rawFirst, filterLower, IconQuote, isSelected, true)
+			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, true)
 		}
 	}
 
@@ -494,9 +494,9 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	return line
 }
 
-// renderSubtitleLine renders a subtitle with optional filter highlighting.
+// renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m ListModel) renderSubtitleLine(text, filterLower, icon string, isSelected, doHighlight bool) string {
+func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHighlight bool) string {
 	if isSelected {
 		prefix := "   " + icon + "  "
 		prefixWidth := lipgloss.Width(prefix)
@@ -509,8 +509,8 @@ func (m ListModel) renderSubtitleLine(text, filterLower, icon string, isSelected
 		bgStyle := lipgloss.NewStyle().Background(ColorSelectionBg)
 
 		var content string
-		if doHighlight && filterLower != "" {
-			content = baseStyle.Render(prefix) + highlightFilter(truncated, filterLower, baseStyle)
+		if doHighlight && query != "" {
+			content = baseStyle.Render(prefix) + highlightMatch(truncated, query, baseStyle)
 		} else {
 			content = baseStyle.Render(prefix + truncated)
 		}
@@ -531,8 +531,8 @@ func (m ListModel) renderSubtitleLine(text, filterLower, icon string, isSelected
 		msgWidth = 1
 	}
 	truncated := ansi.Truncate(text, msgWidth, "…")
-	if doHighlight && filterLower != "" {
-		return ItemDetailStyle.Render(prefix) + highlightFilter(truncated, filterLower, ItemDetailStyle)
+	if doHighlight && query != "" {
+		return ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 	}
 	return ItemDetailStyle.Render(prefix + truncated)
 }

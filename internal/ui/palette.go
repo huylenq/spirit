@@ -26,9 +26,9 @@ type PaletteModel struct {
 
 func NewPaletteModel() PaletteModel {
 	ti := textinput.New()
-	ti.Placeholder = "type to filter..."
+	ti.Placeholder = "type to search..."
 	ti.Prompt = "; "
-	ti.PromptStyle = FilterPromptStyle
+	ti.PromptStyle = SearchPromptStyle
 	ti.CharLimit = 64
 	return PaletteModel{input: ti}
 }
@@ -55,15 +55,15 @@ func (m PaletteModel) Active() bool {
 	return m.active
 }
 
-// Filter re-evaluates the item list based on current input text using fuzzy matching.
-func (m *PaletteModel) Filter() {
+// Narrow re-evaluates the item list based on current input text using fuzzy matching.
+func (m *PaletteModel) Narrow() {
 	query := strings.ToLower(m.input.Value())
 	if query == "" {
 		m.filtered = m.items
 	} else {
 		m.filtered = nil
 		for _, item := range m.items {
-			if containsFilter(item.Name, query) {
+			if matchesNarrow(item.Name, query) {
 				m.filtered = append(m.filtered, item)
 			}
 		}
@@ -168,10 +168,10 @@ func renderPaletteItem(item PaletteItem, selected bool, width int, query string)
 		row := prefix + name + padding + hotkey
 		return PaletteDisabledStyle.Render(row)
 	case selected:
-		nameRendered := highlightFilter(name, query, PaletteSelectedStyle)
+		nameRendered := highlightMatch(name, query, PaletteSelectedStyle)
 		return PaletteSelectedStyle.Render(prefix) + nameRendered + PaletteSelectedStyle.Render(padding+hotkey)
 	default:
-		nameRendered := highlightFilter(name, query, lipgloss.NewStyle())
+		nameRendered := highlightMatch(name, query, lipgloss.NewStyle())
 		return prefix + nameRendered + padding + lipgloss.NewStyle().Foreground(ColorMuted).Render(hotkey)
 	}
 }

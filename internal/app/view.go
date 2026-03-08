@@ -25,11 +25,9 @@ func (m Model) View() string {
 		innerWidth -= 2 // inside left/right border chars
 	}
 
-	// Top border: usage bar as the frame's top edge (skipped in fullscreen)
-	topBorder := ""
-	if !m.inFullscreenPopup {
-		topBorder = m.usageBar.TopBorderView(m.width)
-	}
+	// Top border: usage bar as the frame's top edge
+	// With corners when bordered, without corners in fullscreen
+	topBorder := m.usageBar.TopBorderView(m.width, !m.inFullscreenPopup)
 
 	// Label line: usage stats right-aligned below the top border
 	labelLine := ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
@@ -37,10 +35,10 @@ func (m Model) View() string {
 	// Footer: always 1 line
 	footer := m.renderFooter(innerWidth)
 
-	// Content area: total height minus label and footer (and borders when not fullscreen)
-	contentHeight := m.height - 2
+	// Content area: total height minus top border, label, footer (and bottom border when not fullscreen)
+	contentHeight := m.height - 3
 	if !m.inFullscreenPopup {
-		contentHeight -= 2
+		contentHeight -= 1
 	}
 
 	// List panel
@@ -121,7 +119,7 @@ func (m Model) View() string {
 	inner := labelLine + "\n" + content + "\n" + footer
 
 	if m.inFullscreenPopup {
-		return inner
+		return topBorder + "\n" + inner
 	}
 
 	bordered := ui.AddSideBorders(inner, innerWidth)
@@ -234,7 +232,7 @@ func (m Model) renderNormalFooterHints() string {
 	parts = append(parts, hint("j/k", "nav"))
 
 	if !hasSelection {
-		parts = append(parts, hint("/", "filter"), hint("g", "group"), hint("m", "minimap"), hint("?", "help"), hint("q", "quit"))
+		parts = append(parts, hint("/", "search"), hint("g", "group"), hint("m", "minimap"), hint("?", "help"), hint("q", "quit"))
 		return strings.Join(parts, "  ")
 	}
 
@@ -249,7 +247,7 @@ func (m Model) renderNormalFooterHints() string {
 	case claude.StatusWorking:
 		parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
 	case claude.StatusLater:
-		// No special actions — enter opens, d removes
+		parts = append(parts, hint("w", "unlater"))
 	}
 
 	parts = append(parts, hint("d", "kill"))
@@ -273,7 +271,7 @@ func (m Model) renderHelpOverlay() string {
 		nav,
 		hint("j/k", "up/down"),
 		hint("enter", "switch to pane"),
-		hint("/", "filter"),
+		hint("/", "search"),
 		hint("ctrl+d/u", "scroll preview"),
 		hint("ctrl+j/k", "next/prev message"),
 		hint("alt+h/l", "resize list"),
@@ -324,8 +322,8 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("↑/↓") + " navigate  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
-	case StateFiltering:
-		filterView := m.filter.View()
+	case StateSearching:
+		filterView := m.search.View()
 		hint := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
 			ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" confirm  ") +
 			ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" clear")

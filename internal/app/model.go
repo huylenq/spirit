@@ -21,7 +21,7 @@ type AppState int
 
 const (
 	StateNormal AppState = iota
-	StateFiltering
+	StateSearching
 	StateKillConfirm
 	StatePromptRelay
 	StateQueueRelay
@@ -42,7 +42,7 @@ type Model struct {
 	client         *daemon.Client
 	list           ui.ListModel
 	preview        ui.PreviewModel
-	filter         ui.FilterModel
+	search         ui.SearchModel
 	relay          ui.RelayModel
 	queueRelay     ui.RelayModel
 	minimap        ui.MinimapModel
@@ -89,7 +89,7 @@ func NewModel(client *daemon.Client) Model {
 		client:            client,
 		list:              list,
 		preview:           ui.NewPreviewModel(),
-		filter:            ui.NewFilterModel(),
+		search:            ui.NewSearchModel(),
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
 		palette:           ui.NewPaletteModel(),
@@ -107,10 +107,10 @@ func NewModel(client *daemon.Client) Model {
 // applyLayout recomputes and applies component sizes from m.width, m.height, m.listWidthPct.
 func (m *Model) applyLayout() {
 	innerWidth := m.width
-	contentHeight := m.height - 2 // label + footer
+	contentHeight := m.height - 3 // top border + label + footer
 	if !m.inFullscreenPopup {
 		innerWidth -= 2 // left/right border chars
-		contentHeight -= 2 // top border + bottom border
+		contentHeight -= 1 // bottom border
 	}
 	listWidth := max(innerWidth*m.listWidthPct/100, 20)
 	m.list.SetSize(listWidth-1, contentHeight)

@@ -405,22 +405,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 
-	case StateFiltering:
+	case StateSearching:
 		switch {
 		case key.Matches(msg, Keys.Escape):
 			m.state = StateNormal
-			m.filter.Deactivate()
-			m.list.ClearFilter()
+			m.search.Deactivate()
+			m.list.ClearNarrow()
 			return m, nil
 		case key.Matches(msg, Keys.Enter):
-			m.filter.Confirm()
+			m.search.Confirm()
 			m.state = StateNormal
 			// Remember selection, clear filter, re-select (search & jump)
 			var selectedPaneID string
 			if s, ok := m.list.SelectedItem(); ok {
 				selectedPaneID = s.PaneID
 			}
-			m.list.ClearFilter()
+			m.list.ClearNarrow()
 			m.list.SelectByPaneID(selectedPaneID)
 			return m, nil
 		case key.Matches(msg, Keys.MsgNext):
@@ -437,10 +437,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		default:
 			// Forward to textinput
-			ti := m.filter.TextInput()
+			ti := m.search.TextInput()
 			newTI, cmd := ti.Update(msg)
 			*ti = newTI
-			m.list.SetFilter(m.filter.Value())
+			m.list.SetNarrow(m.search.Value())
 			// Update preview for new selection
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
@@ -555,7 +555,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ti := m.palette.TextInput()
 			newTI, cmd := ti.Update(msg)
 			*ti = newTI
-			m.palette.Filter()
+			m.palette.Narrow()
 			return m, cmd
 		}
 
@@ -756,34 +756,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.Filter):
-			m.state = StateFiltering
-			m.filter.Activate()
+		case key.Matches(msg, Keys.Search):
+			m.state = StateSearching
+			m.search.Activate()
 			return m, nil
 
 		case key.Matches(msg, Keys.Later):
-			if s, ok := m.list.SelectedItem(); ok {
-				paneID, sessionID := s.PaneID, s.SessionID
-				return m, func() tea.Msg {
-					if err := m.client.Later(paneID, sessionID); err != nil {
-						return flashErrorMsg("later failed: " + err.Error())
-					}
-					return flashInfoMsg("saved for later")
-				}
-			}
-			return m, nil
+			return m.execLater()
 
 		case key.Matches(msg, Keys.LaterKill):
-			if s, ok := m.list.SelectedItem(); ok {
-				paneID, pid, sessionID := s.PaneID, s.PID, s.SessionID
-				return m, func() tea.Msg {
-					if err := m.client.LaterKill(paneID, pid, sessionID); err != nil {
-						return flashErrorMsg("later+kill failed: " + err.Error())
-					}
-					return flashInfoMsg("saved for later, pane killed")
-				}
-			}
-			return m, nil
+			return m.execLaterKill()
 
 		case key.Matches(msg, Keys.Transcript):
 			m.hideTranscript = !m.hideTranscript

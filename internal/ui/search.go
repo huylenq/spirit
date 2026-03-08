@@ -5,59 +5,59 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type FilterModel struct {
+type SearchModel struct {
 	input  textinput.Model
 	active bool
 }
 
-func NewFilterModel() FilterModel {
+func NewSearchModel() SearchModel {
 	ti := textinput.New()
-	ti.Placeholder = "filter by title, summary, messages..."
+	ti.Placeholder = "search by title, summary, messages..."
 	ti.Prompt = "/ "
-	ti.PromptStyle = FilterPromptStyle
+	ti.PromptStyle = SearchPromptStyle
 	ti.CharLimit = 64
-	return FilterModel{input: ti}
+	return SearchModel{input: ti}
 }
 
-func (m *FilterModel) Activate() {
+func (m *SearchModel) Activate() {
 	m.active = true
 	m.input.Focus()
 	m.input.SetValue("")
 }
 
-func (m *FilterModel) Deactivate() {
+func (m *SearchModel) Deactivate() {
 	m.active = false
 	m.input.Blur()
 	m.input.SetValue("")
 }
 
-func (m *FilterModel) Confirm() string {
+func (m *SearchModel) Confirm() string {
 	val := m.input.Value()
 	m.active = false
 	m.input.Blur()
 	return val
 }
 
-func (m FilterModel) Active() bool {
+func (m SearchModel) Active() bool {
 	return m.active
 }
 
-func (m FilterModel) Value() string {
+func (m SearchModel) Value() string {
 	return m.input.Value()
 }
 
-func (m *FilterModel) UpdateInput(msg interface{}) {
+func (m *SearchModel) UpdateInput(msg interface{}) {
 	// Type assert to tea.Msg would happen in the app layer
 	// This is called from the app's Update function
 }
 
-func (m FilterModel) View() string {
+func (m SearchModel) View() string {
 	if !m.active {
 		return ""
 	}
 	return lipgloss.NewStyle().Padding(0, 1).Render(m.input.View())
 }
 
-func (m *FilterModel) TextInput() *textinput.Model {
+func (m *SearchModel) TextInput() *textinput.Model {
 	return &m.input
 }

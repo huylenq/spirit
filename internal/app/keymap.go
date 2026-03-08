@@ -8,7 +8,7 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Filter, k.Later, k.LaterKill,
+		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
 		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
@@ -19,7 +19,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Enter, k.Filter, k.Refresh, k.Quit},
+		{k.Up, k.Enter, k.Search, k.Refresh, k.Quit},
 		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
 		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Transcript},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
@@ -30,7 +30,7 @@ type KeyMap struct {
 	Up      key.Binding
 	Down    key.Binding
 	Enter   key.Binding
-	Filter    key.Binding
+	Search    key.Binding
 	Later     key.Binding
 	LaterKill key.Binding
 	Refresh   key.Binding
@@ -168,9 +168,9 @@ var Keys = KeyMap{
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "switch"),
 	),
-	Filter: key.NewBinding(
+	Search: key.NewBinding(
 		key.WithKeys("/"),
-		key.WithHelp("/", "filter"),
+		key.WithHelp("/", "search"),
 	),
 	Later: key.NewBinding(
 		key.WithKeys("w"),

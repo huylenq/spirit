@@ -373,8 +373,16 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 	bm, _ := claude.ReadLaterBookmark(req.BookmarkID)
 	claude.RemoveLaterBookmark(req.BookmarkID)
 	if bm != nil {
-		// If the pane is still alive, write status back to "stopped"
-		claude.WriteStatus(bm.PaneID, claude.StatusDone)
+		// Restore status: check if Claude process is running for this pane
+		// to decide between "working" and "stopped"
+		restoredStatus := claude.StatusDone
+		for _, s := range d.currentSessions() {
+			if s.PaneID == bm.PaneID && s.PID > 0 {
+				restoredStatus = claude.StatusWorking
+				break
+			}
+		}
+		claude.WriteStatus(bm.PaneID, restoredStatus)
 	}
 	d.nudge()
 	log.Printf("unlater: removed bookmark %s", req.BookmarkID)

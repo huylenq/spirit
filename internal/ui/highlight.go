@@ -32,14 +32,14 @@ func fuzzyMatch(text, patternLower string) ([]int, bool) {
 	return indices, true
 }
 
-// highlightFilter renders text with fuzzy-matched characters bold+underlined.
+// highlightMatch renders text with fuzzy-matched characters bold+underlined.
 // Each run of matched/unmatched characters gets exactly one Render call.
-func highlightFilter(text, filterLower string, baseStyle lipgloss.Style) string {
-	if filterLower == "" || text == "" {
+func highlightMatch(text, query string, baseStyle lipgloss.Style) string {
+	if query == "" || text == "" {
 		return baseStyle.Render(text)
 	}
 
-	indices, ok := fuzzyMatch(text, filterLower)
+	indices, ok := fuzzyMatch(text, query)
 	if !ok || len(indices) == 0 {
 		return baseStyle.Render(text)
 	}
@@ -81,8 +81,8 @@ func highlightFilter(text, filterLower string, baseStyle lipgloss.Style) string 
 	return b.String()
 }
 
-// containsFilter reports whether text fuzzy-matches filterLower (case-insensitive).
-func containsFilter(text, filterLower string) bool {
-	_, ok := fuzzyMatch(text, filterLower)
+// matchesNarrow reports whether text fuzzy-matches query (case-insensitive).
+func matchesNarrow(text, query string) bool {
+	_, ok := fuzzyMatch(text, query)
 	return ok
 }

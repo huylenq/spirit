@@ -87,8 +87,8 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("#FF5555"))
 
-	// Filter
-	FilterPromptStyle = lipgloss.NewStyle().
+	// Search
+	SearchPromptStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
 				Bold(true)
 
