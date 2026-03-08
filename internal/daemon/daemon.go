@@ -24,8 +24,9 @@ type subscriber struct {
 type commitDoneEntry struct {
 	PaneID     string
 	PID        int
-	SawWorking bool // true once the session has transitioned to Working
-	KillOnDone bool // true for C (commit+done), false for c (commit only)
+	SawWorking bool      // true once the session has transitioned to Working
+	KillOnDone bool      // true for C (commit+done), false for c (commit only)
+	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
 }
 
 // Daemon is the long-lived background process that polls sessions and serves clients.
@@ -365,7 +366,12 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 		}
 		// Session is Done — but only resolve if it went through Working first
 		if !entry.SawWorking {
-			continue // command hasn't been picked up yet, keep waiting
+			// Expire if the session never started working (e.g. user interrupted the prompt)
+			if time.Since(entry.CreatedAt) > 30*time.Second {
+				log.Printf("commit-done: pane %s timed out waiting for working state, removing", paneID)
+				delete(d.commitDonePanes, paneID)
+			}
+			continue
 		}
 		if s.LastActionCommit && entry.KillOnDone {
 			log.Printf("commit-done: pane %s committed, killing", paneID)

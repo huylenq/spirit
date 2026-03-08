@@ -372,7 +372,7 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	}
 	// Register the pending commit and nudge so subscribers see CommitDonePending immediately
 	d.commitDoneMu.Lock()
-	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone}
+	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, CreatedAt: time.Now()}
 	d.commitDoneMu.Unlock()
 	d.nudge()
 	tag := "commit"
