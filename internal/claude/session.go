@@ -8,9 +8,10 @@ import (
 type Status int
 
 const (
-	StatusWorking Status = iota
+	StatusWorking  Status = iota
 	StatusDone
-	StatusLater
+	StatusLater    // kept for compatibility
+	StatusDeferred = StatusLater
 )
 
 func (s Status) String() string {

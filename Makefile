@@ -1,4 +1,4 @@
-.PHONY: build clean
+.PHONY: build clean restart
 
 BINARY := bin/cmc
 VERSION ?= dev
@@ -6,6 +6,11 @@ VERSION ?= dev
 build:
 	@mkdir -p bin
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) ./cmd/cmc
+
+restart: build
+	@$(BINARY) daemon --stop 2>/dev/null || true
+	@$(BINARY) daemon &
+	@echo "daemon restarted"
 
 clean:
 	rm -rf bin

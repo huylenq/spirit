@@ -276,13 +276,4 @@ func (c *Client) CancelQueue(paneID string) error {
 	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
 
-// Defer marks a session as deferred for the given number of minutes.
-func (c *Client) Defer(paneID string, minutes int) error {
-	return c.rpcInto(Request{Type: ReqDefer, Data: marshalData(DeferData{PaneID: paneID, Minutes: minutes})}, nil)
-}
-
-// Undefer removes the deferred status from a session.
-func (c *Client) Undefer(paneID string) error {
-	return c.rpcInto(Request{Type: ReqUndefer, Data: marshalData(PaneData{PaneID: paneID})}, nil)
-}
 
