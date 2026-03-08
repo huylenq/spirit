@@ -380,6 +380,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.list.ClearFilter()
 			}
 			return m, nil
+		case key.Matches(msg, Keys.MsgNext):
+			m.list.MoveDown()
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			}
+			return m, nil
+		case key.Matches(msg, Keys.MsgPrev):
+			m.list.MoveUp()
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			}
+			return m, nil
 		default:
 			// Forward to textinput
 			ti := m.filter.TextInput()
@@ -441,12 +453,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Escape):
 			m.state = StateNormal
 			m.relay.Deactivate()
-			return m, nil
-		case key.Matches(msg, Keys.MsgNext):
-			m.preview.NavigateMsg(1)
-			return m, nil
-		case key.Matches(msg, Keys.MsgPrev):
-			m.preview.NavigateMsg(-1)
 			return m, nil
 		case key.Matches(msg, Keys.Enter):
 			val := m.relay.Confirm()

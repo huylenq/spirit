@@ -174,13 +174,22 @@ func debugTruncate(s string, n int) string {
 func (m Model) renderFooter() string {
 	switch m.state {
 	case StateFiltering:
-		return m.filter.View()
+		filterView := m.filter.View()
+		hint := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
+			ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" confirm  ") +
+			ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" clear")
+		hintWidth := lipgloss.Width(hint)
+		filterWidth := lipgloss.Width(filterView)
+		gap := m.width - filterWidth - hintWidth
+		if gap < 2 {
+			return filterView
+		}
+		return filterView + strings.Repeat(" ", gap) + hint
 	case StateDeferPrompt:
 		return m.deferPrompt.View()
 	case StatePromptRelay:
 		hint := ui.FooterKeyStyle.Render("enter") + " send  " +
-			ui.FooterKeyStyle.Render("esc") + " cancel  " +
-			ui.FooterKeyStyle.Render("ctrl+j/k") + " navigate"
+			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(m.width).Render(hint)
 	case StateKillConfirm:
 		prompt := ui.FooterDimStyle.Render("Kill ") +
