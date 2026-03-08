@@ -37,6 +37,24 @@ func ReadCachedSummary(sessionID string) *SessionSummary {
 	return &s
 }
 
+// SummaryCacheInfo returns debug info about the summary cache for a session.
+func SummaryCacheInfo(sessionID string) (summaryMod, transcriptMod string, isFresh bool) {
+	summaryPath := summaryFilePath(sessionID)
+	transcriptPath, _ := findTranscriptPath(sessionID)
+	sInfo, sErr := os.Stat(summaryPath)
+	tInfo, tErr := os.Stat(transcriptPath)
+	if sErr == nil {
+		summaryMod = sInfo.ModTime().Format("15:04:05")
+	}
+	if tErr == nil {
+		transcriptMod = tInfo.ModTime().Format("15:04:05")
+	}
+	if sErr == nil && tErr == nil {
+		isFresh = !sInfo.ModTime().Before(tInfo.ModTime())
+	}
+	return
+}
+
 // Summarize generates a structured summary of a session via claude --model sonnet.
 // Results are cached to disk as JSON; returns cached summary if transcript hasn't changed.
 // Summarize generates a structured summary of a session via claude --model haiku.
@@ -75,11 +93,25 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	}
 
 	raw := strings.TrimSpace(string(out))
+	// Strip markdown fences haiku occasionally adds despite being told not to
+	if start := strings.Index(raw, "{"); start > 0 {
+		if end := strings.LastIndex(raw, "}"); end > start {
+			raw = raw[start : end+1]
+		}
+	}
 	var summary SessionSummary
 	if err := json.Unmarshal([]byte(raw), &summary); err != nil {
 		summary = SessionSummary{Objective: raw}
 	}
 	summary.InputWords = inputWords
+	// Fallback: derive headline from objective if model omitted it
+	if summary.Headline == "" && summary.Objective != "" {
+		h := summary.Objective
+		if len(h) > 60 {
+			h = h[:57] + "..."
+		}
+		summary.Headline = h
+	}
 
 	// Write JSON to disk cache
 	data, _ := json.Marshal(summary)

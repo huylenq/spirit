@@ -25,6 +25,7 @@ type Response struct {
 // Request type constants.
 const (
 	ReqPing         = "ping"
+	ReqNudge        = "nudge"
 	ReqSubscribe    = "subscribe"
 	ReqTranscript   = "transcript"
 	ReqDiffStats    = "diffstats"
@@ -35,7 +36,9 @@ const (
 	ReqPaneGeometry = "panegeometry"
 	ReqDefer        = "defer"
 	ReqUndefer      = "undefer"
-	ReqRenameWindow = "rename_window"
+	ReqRenameWindow    = "rename_window"
+	ReqCommitDone      = "commit_done"
+	ReqCancelCommitDone = "cancel_commit_done"
 )
 
 // Response type constants.
@@ -77,6 +80,17 @@ type DeferData struct {
 type RenameWindowData struct {
 	SessionName string `json:"sessionName"`
 	WindowIndex int    `json:"windowIndex"`
+}
+
+type NudgeData struct {
+	PaneID          string `json:"paneID"`
+	Status          string `json:"status"`
+	LastUserMessage string `json:"lastUserMessage,omitempty"`
+}
+
+type CommitDoneData struct {
+	PaneID string `json:"paneID"`
+	PID    int    `json:"pid"`
 }
 
 // --- Response data payloads ---

@@ -240,3 +240,13 @@ func (c *Client) RenameWindow(sessionName string, windowIndex int) (string, erro
 	err := c.rpcInto(Request{Type: ReqRenameWindow, Data: marshalData(RenameWindowData{SessionName: sessionName, WindowIndex: windowIndex})}, &data)
 	return data.Name, err
 }
+
+// CommitAndDone sends /commit-commands:commit to the pane and registers it for auto-kill on commit.
+func (c *Client) CommitAndDone(paneID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, PID: pid})}, nil)
+}
+
+// CancelCommitDone removes the pending commit-and-done registration for a pane.
+func (c *Client) CancelCommitDone(paneID string) error {
+	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+}

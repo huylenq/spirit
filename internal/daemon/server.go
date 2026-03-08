@@ -52,6 +52,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 		r := Response{Type: RespPong}
 		return &r
 
+	case ReqNudge:
+		return d.handleNudge(req.Data)
+
 	case ReqSubscribe:
 		d.handleSubscribe(conn, enc)
 		return nil // subscribe manages its own lifecycle
@@ -85,6 +88,12 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 
 	case ReqRenameWindow:
 		return d.handleRenameWindow(req.Data)
+
+	case ReqCommitDone:
+		return d.handleCommitDone(req.Data)
+
+	case ReqCancelCommitDone:
+		return d.handleCancelCommitDone(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
@@ -301,5 +310,39 @@ func (d *Daemon) handleRenameWindow(data json.RawMessage) *Response {
 		return &r
 	}
 	r := resultResponse(RenameResultData{Name: name})
+	return &r
+}
+
+func (d *Daemon) handleCommitDone(data json.RawMessage) *Response {
+	var req CommitDoneData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	// Send the commit command to the pane
+	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit"); err != nil {
+		r := errResponse("send failed: " + err.Error())
+		return &r
+	}
+	// Register the pending commit-done
+	d.commitDoneMu.Lock()
+	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID}
+	d.commitDoneMu.Unlock()
+	log.Printf("commit-done: registered pane %s", req.PaneID)
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleCancelCommitDone(data json.RawMessage) *Response {
+	var req PaneData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.commitDoneMu.Lock()
+	delete(d.commitDonePanes, req.PaneID)
+	d.commitDoneMu.Unlock()
+	log.Printf("commit-done: cancelled pane %s", req.PaneID)
+	r := resultResponse("ok")
 	return &r
 }

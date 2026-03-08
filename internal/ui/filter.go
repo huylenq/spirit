@@ -12,7 +12,7 @@ type FilterModel struct {
 
 func NewFilterModel() FilterModel {
 	ti := textinput.New()
-	ti.Placeholder = "filter by project, branch, path..."
+	ti.Placeholder = "filter by title, summary, messages..."
 	ti.Prompt = "/ "
 	ti.PromptStyle = FilterPromptStyle
 	ti.CharLimit = 64

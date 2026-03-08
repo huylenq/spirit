@@ -3,8 +3,10 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +74,9 @@ func HandleHook(hookType string) {
 	case "Stop":
 		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
 	}
+
+	// Nudge daemon to poll immediately (fire-and-forget)
+	nudgeDaemon()
 }
 
 // resolveCurrentPane walks the process tree upward to find which tmux pane
@@ -134,6 +139,19 @@ func compactJSONString(raw string) string {
 		return raw
 	}
 	return string(b)
+}
+
+// nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon
+// so it polls immediately instead of waiting for the next tick.
+func nudgeDaemon() {
+	sock := filepath.Join(StatusDir(), "daemon.sock")
+	conn, err := net.DialTimeout("unix", sock, 50*time.Millisecond)
+	if err != nil {
+		return // daemon not running, no big deal
+	}
+	conn.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
+	conn.Write([]byte(`{"type":"nudge"}` + "\n"))
+	conn.Close()
 }
 
 func trimHookFile(path string) {

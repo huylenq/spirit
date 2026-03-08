@@ -174,6 +174,18 @@ func SendKeys(paneID string, keys ...string) error {
 	return exec.Command("tmux", args...).Run()
 }
 
+// SendKeysLiteral sends text literally to a tmux pane (using -l flag to prevent
+// tmux from interpreting special sequences), then sends Enter separately.
+func SendKeysLiteral(paneID string, text string) error {
+	if err := exec.Command("tmux", "send-keys", "-t", paneID, "-l", text).Run(); err != nil {
+		return fmt.Errorf("send-keys -l: %w", err)
+	}
+	if err := exec.Command("tmux", "send-keys", "-t", paneID, "Enter").Run(); err != nil {
+		return fmt.Errorf("send-keys Enter: %w", err)
+	}
+	return nil
+}
+
 // GetClientSession returns the active session/window/pane for the current tmux client.
 func GetClientSession() (sessionName string, windowIndex int, paneIndex int, paneID string, err error) {
 	out, err := exec.Command("tmux", "display-message", "-p",

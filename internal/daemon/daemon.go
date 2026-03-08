@@ -12,11 +12,18 @@ import (
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
 
 type subscriber struct {
 	ch   chan []claude.ClaudeSession
 	done chan struct{}
+}
+
+// commitDoneEntry tracks a pending commit-and-done operation.
+type commitDoneEntry struct {
+	PaneID string
+	PID    int
 }
 
 // Daemon is the long-lived background process that polls sessions and serves clients.
@@ -27,6 +34,11 @@ type Daemon struct {
 
 	subMu       sync.Mutex
 	subscribers map[*subscriber]struct{}
+
+	nudgeCh chan struct{} // hooks signal this to trigger immediate poll
+
+	commitDoneMu    sync.Mutex
+	commitDonePanes map[string]commitDoneEntry // paneID → entry
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -41,7 +53,9 @@ type Daemon struct {
 // Run starts the daemon: acquires lock, cleans up stale socket, writes PID, listens, polls.
 func Run(info DaemonInfo) error {
 	d := &Daemon{
-		subscribers: make(map[*subscriber]struct{}),
+		subscribers:     make(map[*subscriber]struct{}),
+		commitDonePanes: make(map[string]commitDoneEntry),
+		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
 		pidPath:     info.PIDPath,
 		lockPath:    info.SocketPath + ".lock",
@@ -137,8 +151,64 @@ func (d *Daemon) pollLoop(stop chan struct{}) {
 			return
 		case <-ticker.C:
 			d.poll()
+		case <-d.nudgeCh:
+			d.poll()
 		}
 	}
+}
+
+// nudge triggers an immediate poll. Non-blocking; coalesces multiple nudges.
+func (d *Daemon) nudge() {
+	select {
+	case d.nudgeCh <- struct{}{}:
+	default: // already pending
+	}
+}
+
+// patchSession applies a targeted status update from a hook, bypassing full discovery.
+// Returns true if a matching session was found and updated.
+func (d *Daemon) patchSession(paneID string, status claude.Status, lastUserMessage string) bool {
+	now := time.Now()
+
+	d.mu.Lock()
+	found := false
+	for i := range d.sessions {
+		if d.sessions[i].PaneID == paneID {
+			d.sessions[i].Status = status
+			d.sessions[i].LastChanged = now
+			if lastUserMessage != "" {
+				d.sessions[i].LastUserMessage = lastUserMessage
+			}
+			if status == claude.StatusWorking {
+				d.sessions[i].PermissionMode = claude.ReadPermissionMode(paneID)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		d.mu.Unlock()
+		return false
+	}
+	d.version++
+	sessions := d.sessions
+	d.mu.Unlock()
+
+	// Notify subscribers
+	d.subMu.Lock()
+	for sub := range d.subscribers {
+		select {
+		case sub.ch <- sessions:
+		default:
+			select {
+			case <-sub.ch:
+			default:
+			}
+			sub.ch <- sessions
+		}
+	}
+	d.subMu.Unlock()
+	return true
 }
 
 func (d *Daemon) poll() {
@@ -146,6 +216,18 @@ func (d *Daemon) poll() {
 	if err != nil {
 		return
 	}
+
+	// Resolve pending commit-and-done operations
+	d.resolveCommitDone(sessions)
+
+	// Annotate sessions with commit-done pending state
+	d.commitDoneMu.Lock()
+	for i := range sessions {
+		if _, pending := d.commitDonePanes[sessions[i].PaneID]; pending {
+			sessions[i].CommitDonePending = true
+		}
+	}
+	d.commitDoneMu.Unlock()
 
 	d.mu.Lock()
 	if sessionsEqual(d.sessions, sessions) {
@@ -171,6 +253,47 @@ func (d *Daemon) poll() {
 		}
 	}
 	d.subMu.Unlock()
+}
+
+// resolveCommitDone checks pending commit-done operations against current sessions.
+// If a session is back to Done: if committed → kill pane, else → drop the pending entry.
+func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
+	d.commitDoneMu.Lock()
+	defer d.commitDoneMu.Unlock()
+
+	if len(d.commitDonePanes) == 0 {
+		return
+	}
+
+	sessionByPane := make(map[string]*claude.ClaudeSession, len(sessions))
+	for i := range sessions {
+		sessionByPane[sessions[i].PaneID] = &sessions[i]
+	}
+
+	for paneID, entry := range d.commitDonePanes {
+		s, exists := sessionByPane[paneID]
+		if !exists {
+			// Session disappeared — clean up
+			log.Printf("commit-done: pane %s disappeared, removing", paneID)
+			delete(d.commitDonePanes, paneID)
+			continue
+		}
+		if s.Status != claude.StatusDone {
+			continue // still working, keep waiting
+		}
+		// Session is Done — check if commit was detected
+		if s.LastActionCommit {
+			log.Printf("commit-done: pane %s committed, killing", paneID)
+			if entry.PID > 0 {
+				syscall.Kill(entry.PID, syscall.SIGTERM) //nolint:errcheck
+			}
+			tmux.KillPane(paneID)   //nolint:errcheck
+			claude.RemoveStatus(paneID)
+		} else {
+			log.Printf("commit-done: pane %s done but no commit detected, aborting", paneID)
+		}
+		delete(d.commitDonePanes, paneID)
+	}
 }
 
 func (d *Daemon) addSubscriber() *subscriber {
@@ -250,7 +373,8 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].Headline != b[i].Headline ||
 			a[i].LastUserMessage != b[i].LastUserMessage ||
 			a[i].PermissionMode != b[i].PermissionMode ||
-			a[i].LastActionCommit != b[i].LastActionCommit {
+			a[i].LastActionCommit != b[i].LastActionCommit ||
+			a[i].CommitDonePending != b[i].CommitDonePending {
 			return false
 		}
 	}

@@ -41,12 +41,14 @@ func copyToClipboard(text string) tea.Cmd {
 }
 
 // sessionDisplayTitle returns the effective display title for a session,
-// matching the list panel's priority: custom title → first message → "New session".
+// matching the list panel's priority: custom title → headline → first message → "New session".
 func sessionDisplayTitle(s claude.ClaudeSession) string {
 	var title string
 	switch {
 	case s.CustomTitle != "":
 		title = s.CustomTitle
+	case s.Headline != "":
+		title = s.Headline
 	case s.FirstMessage != "":
 		title = strings.ReplaceAll(s.FirstMessage, "\n", " ")
 	default:
@@ -221,13 +223,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetSummary(msg.Summary)
 		}
+		// Update in-memory headline immediately so the list reflects it
+		if msg.Summary != nil && msg.Summary.Headline != "" {
+			for i := range m.sessions {
+				if m.sessions[i].PaneID == msg.PaneID {
+					m.sessions[i].Headline = msg.Summary.Headline
+					break
+				}
+			}
+			m.list.SetItems(m.sessions)
+		}
 		if msg.FromCache && msg.UserRequested {
 			m.flashMsg = "summary unchanged (cached)"
 			m.flashIsError = false
 			m.flashExpiry = time.Now().Add(2 * time.Second)
 			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 		}
-		// Daemon handles /rename side-effect, no need for tmux.SendKeys here
 		return m, nil
 
 	case SummarizeAllReadyMsg:
@@ -237,11 +248,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashExpiry = time.Now().Add(5 * time.Second)
 			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 		}
+		updated := false
 		for _, r := range msg.Results {
 			m.list.SetSummaryLoading(r.PaneID, false)
 			if s, ok := m.list.SelectedItem(); ok && s.PaneID == r.PaneID {
 				m.preview.SetSummary(r.Summary)
 			}
+			if r.Summary != nil && r.Summary.Headline != "" {
+				for i := range m.sessions {
+					if m.sessions[i].PaneID == r.PaneID {
+						m.sessions[i].Headline = r.Summary.Headline
+						updated = true
+						break
+					}
+				}
+			}
+		}
+		if updated {
+			m.list.SetItems(m.sessions)
 		}
 		return m, nil
 
@@ -414,6 +438,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+	case StatePromptRelay:
+		switch {
+		case key.Matches(msg, Keys.Escape):
+			m.state = StateNormal
+			m.relay.Deactivate()
+			return m, nil
+		case key.Matches(msg, Keys.MsgNext):
+			m.preview.NavigateMsg(1)
+			return m, nil
+		case key.Matches(msg, Keys.MsgPrev):
+			m.preview.NavigateMsg(-1)
+			return m, nil
+		case key.Matches(msg, Keys.Enter):
+			val := m.relay.Confirm()
+			m.state = StateNormal
+			if val == "" {
+				return m, nil
+			}
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, sendPromptRelay(s.PaneID, val)
+			}
+			return m, nil
+		default:
+			ti := m.relay.TextInput()
+			newTI, cmd := ti.Update(msg)
+			*ti = newTI
+			return m, cmd
+		}
+
 	default: // StateNormal
 		// Handle multi-key chord sequences
 		if m.pendingChord != "" {
@@ -531,6 +584,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, Keys.PromptRelay):
+			if s, ok := m.list.SelectedItem(); ok {
+				if s.Status == claude.StatusDone {
+					m.state = StatePromptRelay
+					m.relay.Activate()
+				} else {
+					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+				}
+			}
+			return m, nil
+
 		case key.Matches(msg, Keys.Filter):
 			m.state = StateFiltering
 			m.filter.Activate()
@@ -616,6 +680,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.killTargetPID = s.PID
 				m.killTargetTitle = sessionDisplayTitle(s)
 			}
+			return m, nil
+
+		case key.Matches(msg, Keys.CommitAndDone):
+			if s, ok := m.list.SelectedItem(); ok {
+				if s.Status != claude.StatusDone {
+					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+				}
+				m.state = StateCommitAndDone
+				m.commitDonePaneID = s.PaneID
+				m.commitDonePID = s.PID
+				m.commitDoneTitle = sessionDisplayTitle(s)
+				return m, sendPromptRelay(s.PaneID, "/commit-commands:commit")
+			}
+			return m, nil
+
+		case key.Matches(msg, Keys.Debug):
+			m.debugMode = !m.debugMode
 			return m, nil
 
 		case key.Matches(msg, Keys.Fullscreen):

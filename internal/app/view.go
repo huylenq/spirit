@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
@@ -65,6 +66,13 @@ func (m Model) View() string {
 		}
 	}
 
+	// Debug overlay at bottom-right
+	if m.debugMode {
+		if debugStr := m.renderDebugOverlay(); debugStr != "" {
+			content = ui.OverlayBottomRight(content, debugStr, m.width)
+		}
+	}
+
 	if m.flashMsg != "" {
 		style := ui.FlashInfoStyle
 		if m.flashIsError {
@@ -90,18 +98,90 @@ func (m Model) renderChordHints() string {
 	return prefix + "  " + strings.Join(parts, "  ")
 }
 
+func (m Model) renderDebugOverlay() string {
+	s, ok := m.list.SelectedItem()
+	if !ok {
+		return ""
+	}
+
+	title := ui.DebugTitleStyle.Render("DEBUG")
+	muted := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+	val := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
+
+	line := func(label, v string) string {
+		if v == "" {
+			v = "(empty)"
+		}
+		return muted.Render(label+": ") + val.Render(v)
+	}
+
+	var lines []string
+	lines = append(lines, title)
+	lines = append(lines, line("PaneID", s.PaneID))
+	lines = append(lines, line("SessionID", s.SessionID))
+	lines = append(lines, line("Status", s.Status.String()))
+	lines = append(lines, line("CustomTitle", s.CustomTitle))
+	lines = append(lines, line("Headline", s.Headline))
+	lines = append(lines, line("FirstMsg", debugTruncate(s.FirstMessage, 40)))
+	lines = append(lines, line("LastUserMsg", debugTruncate(s.LastUserMessage, 40)))
+	lines = append(lines, line("PermMode", s.PermissionMode))
+	lines = append(lines, line("Project", s.Project))
+	lines = append(lines, line("CWD", s.CWD))
+	lines = append(lines, line("GitBranch", s.GitBranch))
+
+	// Summary cache info
+	if s.SessionID != "" {
+		cached := claude.ReadCachedSummary(s.SessionID)
+		sMod, tMod, fresh := claude.SummaryCacheInfo(s.SessionID)
+		lines = append(lines, muted.Render("--- summary cache ---"))
+		if cached != nil {
+			lines = append(lines, line("Objective", debugTruncate(cached.Objective, 40)))
+			lines = append(lines, line("CacheHL", debugTruncate(cached.Headline, 40)))
+			lines = append(lines, line("InputWords", fmt.Sprintf("%d", cached.InputWords)))
+		} else {
+			lines = append(lines, muted.Render("(no cached summary)"))
+		}
+		freshStr := "stale"
+		if fresh {
+			freshStr = "fresh"
+		}
+		if sMod == "" {
+			freshStr = "n/a"
+		}
+		lines = append(lines, line("SummaryMod", sMod))
+		lines = append(lines, line("TranscriptMod", tMod))
+		lines = append(lines, line("CacheFresh", freshStr))
+	}
+
+	body := strings.Join(lines, "\n")
+	return ui.DebugOverlayStyle.Render(body)
+}
+
+func debugTruncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}
+
 func (m Model) renderFooter() string {
 	switch m.state {
 	case StateFiltering:
 		return m.filter.View()
 	case StateDeferPrompt:
 		return m.deferPrompt.View()
+	case StatePromptRelay:
+		return m.relay.View()
 	case StateKillConfirm:
 		prompt := ui.FooterDimStyle.Render("Kill ") +
 			ui.FooterDangerStyle.Render(m.killTargetTitle) +
 			ui.FooterDimStyle.Render(" ? ") +
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"
+		return ui.FooterStyle.Width(m.width).Render(prompt)
+	case StateCommitAndDone:
+		prompt := ui.SummaryStyle.Render("committing… ") +
+			ui.FooterDimStyle.Render(m.commitDoneTitle)
 		return ui.FooterStyle.Width(m.width).Render(prompt)
 	default:
 		hints := m.help.View(Keys)

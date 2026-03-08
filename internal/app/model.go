@@ -25,6 +25,7 @@ const (
 	StateFiltering
 	StateDeferPrompt
 	StateKillConfirm
+	StatePromptRelay
 )
 
 // originalPane stores the tmux pane that was active when the TUI launched,
@@ -43,6 +44,7 @@ type Model struct {
 	preview        ui.PreviewModel
 	filter         ui.FilterModel
 	deferPrompt    ui.DeferPromptModel
+	relay          ui.RelayModel
 	minimap        ui.MinimapModel
 	sessions       []claude.ClaudeSession
 	state          AppState
@@ -68,6 +70,7 @@ type Model struct {
 	killTargetPaneID     string // pane being confirmed for kill
 	killTargetPID        int    // PID of the claude process to kill
 	killTargetTitle      string // display title for kill confirmation
+	debugMode            bool   // toggle debug overlay (D key)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -84,6 +87,7 @@ func NewModel(client *daemon.Client) Model {
 		preview:           ui.NewPreviewModel(),
 		filter:            ui.NewFilterModel(),
 		deferPrompt:       ui.NewDeferPromptModel(),
+		relay:             ui.NewRelayModel(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      30,
@@ -230,6 +234,15 @@ func (m Model) fetchMinimapData(sessionName string) tea.Cmd {
 			return MinimapReadyMsg{SessionName: sessionName}
 		}
 		return MinimapReadyMsg{SessionName: sessionName, Panes: panes}
+	}
+}
+
+func sendPromptRelay(paneID, text string) tea.Cmd {
+	return func() tea.Msg {
+		if err := tmux.SendKeysLiteral(paneID, text); err != nil {
+			return flashErrorMsg("send failed: " + err.Error())
+		}
+		return flashInfoMsg("sent")
 	}
 }
 

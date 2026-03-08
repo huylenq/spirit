@@ -8,9 +8,9 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.Enter, k.Filter, k.Defer, k.Undefer,
+		k.Up, k.Enter, k.PromptRelay, k.Filter, k.Defer, k.Undefer,
 		k.Refresh, k.GroupMode, k.Summarize, k.SummarizeAll,
-		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill,
+		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.CommitAndDone,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -65,8 +65,17 @@ type KeyMap struct {
 	// Popup fullscreen toggle
 	Fullscreen key.Binding
 
+	// Prompt relay (send message to Claude session)
+	PromptRelay key.Binding
+
 	// Kill session + close pane
 	Kill key.Binding
+
+	// Commit and done (send /commit, wait, verify, kill)
+	CommitAndDone key.Binding
+
+	// Debug overlay toggle
+	Debug key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -217,8 +226,19 @@ var Keys = KeyMap{
 		key.WithKeys("z"),
 		key.WithHelp("z", "fullscreen"),
 	),
+	PromptRelay: key.NewBinding(
+		key.WithKeys(">"),
+		key.WithHelp(">", "reply"),
+	),
 	Kill: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "kill+close"),
+	),
+	CommitAndDone: key.NewBinding(
+		key.WithKeys("C"),
+		key.WithHelp("C", "commit+done"),
+	),
+	Debug: key.NewBinding(
+		key.WithKeys("D"),
 	),
 }

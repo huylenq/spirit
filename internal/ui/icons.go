@@ -15,7 +15,8 @@ const (
 	IconAsterisk = "\uf069" // asterisk — new session (no conversation yet)
 	IconGitCommit = "\ue729" // nf-dev-git_commit
 	// Subtitle icons
-	IconInput = "\uf11c"  // keyboard — last user message subtitle
+	IconInput    = "\uf11c"  // keyboard — last user message subtitle
+	IconHeadline = "\uf0eb"  // lightbulb — headline match context
 	// Footer metadata
 	IconID = "\U000F0EFE" // nf-md-identifier — session ID
 )

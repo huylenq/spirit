@@ -69,8 +69,15 @@ type ClaudeSession struct {
 	SessionID       string
 	FirstMessage    string // first user message in transcript (display name heuristic)
 	LastUserMessage string
-	Headline        string // brief one-liner from cached summary
-	CustomTitle     string // user-set name via /rename in Claude Code
-	PermissionMode  string // "plan", "bypassPermissions", etc. (empty = unknown)
-	LastActionCommit bool  // last tool call was git commit
+	// Display name priority: CustomTitle → Headline → FirstMessage → "(New session)"
+	// CustomTitle: set by Claude Code's /rename (written to transcript as custom-title entry).
+	//   The daemon sends /rename via tmux.SendKeys after summarization, but this only works
+	//   when the Claude Code session is idle at the prompt.
+	// Headline: derived from the summary cache (always available after summarization).
+	//   Used as fallback when /rename hasn't been processed yet.
+	Headline    string // brief one-liner from cached summary
+	CustomTitle string // user-set name via /rename in Claude Code
+	PermissionMode   string // "plan", "bypassPermissions", etc. (empty = unknown)
+	LastActionCommit bool   // last tool call was git commit
+	CommitDonePending bool  // daemon is waiting for commit-and-done to resolve
 }

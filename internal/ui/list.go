@@ -143,7 +143,7 @@ func (m *ListModel) applyFilter() {
 		f := strings.ToLower(m.filter)
 		m.filtered = nil
 		for _, s := range m.items {
-			surface := strings.ToLower(s.Project + " " + s.GitBranch + " " + s.CWD)
+			surface := strings.ToLower(s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage)
 			if strings.Contains(surface, f) {
 				m.filtered = append(m.filtered, s)
 			}
@@ -309,10 +309,13 @@ func renderStatusGroupHeader(status claude.Status) string {
 func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths) string {
 	isSelected := idx == m.cursor
 
-	// Display name priority: custom title → first message → project (fallback)
+	// Display name priority: custom title → headline → first message → project (fallback)
 	var displayName, sourceIcon string
 	if s.CustomTitle != "" {
 		displayName = s.CustomTitle
+		sourceIcon = IconTag
+	} else if s.Headline != "" {
+		displayName = s.Headline
 		sourceIcon = IconTag
 	} else if s.FirstMessage != "" {
 		displayName = strings.ReplaceAll(s.FirstMessage, "\n", " ")
@@ -322,6 +325,10 @@ func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths)
 		sourceIcon = IconAsterisk
 		displayName = lipgloss.NewStyle().Italic(true).Render(displayName)
 	}
+
+	isNewSession := s.CustomTitle == "" && s.Headline == "" && s.FirstMessage == ""
+	filterActive := m.filter != ""
+	filterLower := strings.ToLower(m.filter)
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected) }
 	sp := func(s string) string {
@@ -380,14 +387,26 @@ func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths)
 	var namePart, gapStr string
 	if isSelected {
 		bg := SelectedBgStyle
+		var styledName string
+		if filterActive && !isNewSession {
+			styledName = highlightFilter(displayName, filterLower, bg)
+		} else {
+			styledName = bg.Render(displayName)
+		}
 		namePart = bg.Render("  ") +
 			SelectedBarStyle.Render("▌") +
 			bg.Render(" ") +
 			bg.Foreground(ColorMuted).Render(sourceIcon+" ") +
-			bg.Render(displayName)
+			styledName
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {
-		namePart = "    " + iconStr + displayName
+		var styledName string
+		if filterActive && !isNewSession {
+			styledName = highlightFilter(displayName, filterLower, lipgloss.NewStyle())
+		} else {
+			styledName = displayName
+		}
+		namePart = "    " + iconStr + styledName
 		gapStr = strings.Repeat(" ", gap)
 	}
 
@@ -411,20 +430,20 @@ func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths)
 	// Show last user message as a subtitle line (single line, truncated to list width)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
-		if isSelected {
-			prefix := "   " + IconInput + "  "
-			msgWidth := m.width - 5 - lipgloss.Width(prefix)
-			if msgWidth < 1 {
-				msgWidth = 1
-			}
-			line += "\n" + selSubtitle(ItemDetailStyle, prefix+ansi.Truncate(rawMsg, msgWidth, "…"))
-		} else {
-			prefix := "      " + IconInput + "  "
-			msgWidth := m.width - 2 - lipgloss.Width(prefix)
-			if msgWidth < 1 {
-				msgWidth = 1
-			}
-			line += "\n" + ItemDetailStyle.Render(prefix+ansi.Truncate(rawMsg, msgWidth, "…"))
+		doHL := filterActive && containsFilter(s.LastUserMessage, filterLower)
+		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconInput, isSelected, doHL)
+	}
+
+	// Match-context subtitles: show non-visible fields that matched the filter
+	if filterActive {
+		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
+		if s.Headline != "" && s.CustomTitle != "" && containsFilter(s.Headline, filterLower) {
+			line += "\n" + m.renderSubtitleLine(s.Headline, filterLower, IconHeadline, isSelected, true)
+		}
+		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && containsFilter(s.FirstMessage, filterLower) {
+			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
+			line += "\n" + m.renderSubtitleLine(rawFirst, filterLower, IconQuote, isSelected, true)
 		}
 	}
 
@@ -438,6 +457,49 @@ func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths)
 	}
 
 	return line
+}
+
+// renderSubtitleLine renders a subtitle with optional filter highlighting.
+// Each segment gets its own Render call — no nesting of lipgloss Render.
+func (m ListModel) renderSubtitleLine(text, filterLower, icon string, isSelected, doHighlight bool) string {
+	if isSelected {
+		prefix := "   " + icon + "  "
+		prefixWidth := lipgloss.Width(prefix)
+		msgWidth := m.width - 5 - prefixWidth
+		if msgWidth < 1 {
+			msgWidth = 1
+		}
+		truncated := ansi.Truncate(text, msgWidth, "…")
+		baseStyle := ItemDetailStyle.Background(ColorSelectionBg)
+		bgStyle := lipgloss.NewStyle().Background(ColorSelectionBg)
+
+		var content string
+		if doHighlight && filterLower != "" {
+			content = baseStyle.Render(prefix) + highlightFilter(truncated, filterLower, baseStyle)
+		} else {
+			content = baseStyle.Render(prefix + truncated)
+		}
+		// Manual padding to fill width (can't use .Width().Render() on pre-highlighted content)
+		contentPlainWidth := prefixWidth + lipgloss.Width(truncated)
+		padWidth := m.width - 5 - contentPlainWidth
+		if padWidth < 0 {
+			padWidth = 0
+		}
+		return bgStyle.Render("  ") + SelectedBarStyle.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
+	}
+
+	// Unselected
+	prefix := "      " + icon + "  "
+	prefixWidth := lipgloss.Width(prefix)
+	msgWidth := m.width - 2 - prefixWidth
+	if msgWidth < 1 {
+		msgWidth = 1
+	}
+	truncated := ansi.Truncate(text, msgWidth, "…")
+	if doHighlight && filterLower != "" {
+		return ItemDetailStyle.Render(prefix) + highlightFilter(truncated, filterLower, ItemDetailStyle)
+	}
+	return ItemDetailStyle.Render(prefix + truncated)
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
