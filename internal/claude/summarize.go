@@ -65,7 +65,7 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	inputWords := len(strings.Fields(input))
 
 	prompt := "Analyze these user messages from a coding session. Output ONLY valid JSON, no markdown fences:\n" +
-		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>"}` +
+		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","headline":"<objective condensed to a single short phrase under 60 chars, no quotes, no period>"}` +
 		"\n\n" + input
 
 	cmd := newLightweightClaude("Output ONLY valid JSON. No markdown, no explanation.", prompt)
@@ -80,16 +80,6 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 		summary = SessionSummary{Objective: raw}
 	}
 	summary.InputWords = inputWords
-
-	// Second pass (parallel): Haiku distills objective into headline + window name
-	// Second pass: Haiku distills objective into a brief headline
-	if summary.Objective != "" {
-		headlinePrompt := "Condense this into a single short phrase (under 60 chars), no quotes, no period:\n" + summary.Objective
-		headlineCmd := newLightweightClaude("Output ONLY a short phrase. No quotes, no explanation.", headlinePrompt)
-		if headlineOut, err := headlineCmd.Output(); err == nil {
-			summary.Headline = strings.TrimSpace(string(headlineOut))
-		}
-	}
 
 	// Write JSON to disk cache
 	data, _ := json.Marshal(summary)

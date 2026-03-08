@@ -412,14 +412,14 @@ func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		if isSelected {
-			prefix := "   " + IconInput + " "
+			prefix := "   " + IconInput + "  "
 			msgWidth := m.width - 5 - lipgloss.Width(prefix)
 			if msgWidth < 1 {
 				msgWidth = 1
 			}
 			line += "\n" + selSubtitle(ItemDetailStyle, prefix+ansi.Truncate(rawMsg, msgWidth, "…"))
 		} else {
-			prefix := "      " + IconInput + " "
+			prefix := "      " + IconInput + "  "
 			msgWidth := m.width - 2 - lipgloss.Width(prefix)
 			if msgWidth < 1 {
 				msgWidth = 1

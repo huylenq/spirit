@@ -140,7 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		listWidth := max(m.width*m.listWidthPct/100, 20)
 		previewWidth := m.width - listWidth
 		contentHeight := m.height - 2 // 1 header + 1 footer
-		m.list.SetSize(listWidth, contentHeight)
+		m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 		m.preview.SetSize(previewWidth, contentHeight)
 		minimapH := contentHeight / 2
 		if minimapH > 14 {
@@ -625,7 +625,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.listWidthPct = max(m.listWidthPct-5, 10)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
 			contentHeight := m.height - 2
-			m.list.SetSize(listWidth, contentHeight)
+			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			return m, nil
 
@@ -633,7 +633,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.listWidthPct = min(m.listWidthPct+5, 60)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
 			contentHeight := m.height - 2
-			m.list.SetSize(listWidth, contentHeight)
+			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			return m, nil
 
