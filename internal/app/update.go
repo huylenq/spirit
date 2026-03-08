@@ -979,6 +979,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.preview.ScrollUp()
 			return m, nil
 
+		case key.Matches(msg, Keys.PageDown):
+			m.preview.ScrollPageDown()
+			return m, nil
+
+		case key.Matches(msg, Keys.PageUp):
+			m.preview.ScrollPageUp()
+			return m, nil
+
 		case key.Matches(msg, Keys.MsgNext):
 			if m.showHooks || m.showRawTranscript {
 				m.preview.ScrollDown()

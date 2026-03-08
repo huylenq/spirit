@@ -271,20 +271,22 @@ func truncateLines(content string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *PreviewModel) ScrollDown() {
+func (m *PreviewModel) scrollDown(n int) {
 	if m.showRawTranscript {
 		visLines := m.rawTranscriptVisLines()
 		maxScroll := len(m.rawTranscriptLines) - visLines
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
-		m.rawTranscriptScroll = min(m.rawTranscriptScroll+3, maxScroll)
+		m.rawTranscriptScroll = min(m.rawTranscriptScroll+n, maxScroll)
 		return
 	}
 	if m.showHooks {
 		total := len(m.hookEvents)
-		if m.hookCursor < total-1 {
-			m.hookCursor++
+		for range n {
+			if m.hookCursor < total-1 {
+				m.hookCursor++
+			}
 		}
 		visLines := m.hookListLines()
 		if m.hookCursor >= m.hookScroll+visLines {
@@ -292,25 +294,55 @@ func (m *PreviewModel) ScrollDown() {
 		}
 		return
 	}
-	m.viewport.LineDown(3)
+	m.viewport.LineDown(n)
 }
 
-func (m *PreviewModel) ScrollUp() {
+func (m *PreviewModel) scrollUp(n int) {
 	if m.showRawTranscript {
-		m.rawTranscriptScroll = max(m.rawTranscriptScroll-3, 0)
+		m.rawTranscriptScroll = max(m.rawTranscriptScroll-n, 0)
 		return
 	}
 	if m.showHooks {
-		if m.hookCursor > 0 {
-			m.hookCursor--
+		for range n {
+			if m.hookCursor > 0 {
+				m.hookCursor--
+			}
 		}
 		if m.hookCursor < m.hookScroll {
 			m.hookScroll = m.hookCursor
 		}
 		return
 	}
-	m.viewport.LineUp(3)
+	m.viewport.LineUp(n)
 }
+
+func (m *PreviewModel) halfPage() int {
+	h := m.viewport.Height / 2
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+func (m *PreviewModel) fullPage() int {
+	h := m.viewport.Height - 3
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// ScrollDown scrolls half a page down (ctrl+d).
+func (m *PreviewModel) ScrollDown() { m.scrollDown(m.halfPage()) }
+
+// ScrollUp scrolls half a page up (ctrl+u).
+func (m *PreviewModel) ScrollUp() { m.scrollUp(m.halfPage()) }
+
+// ScrollPageDown scrolls a full page down (ctrl+f).
+func (m *PreviewModel) ScrollPageDown() { m.scrollDown(m.fullPage()) }
+
+// ScrollPageUp scrolls a full page up (ctrl+b).
+func (m *PreviewModel) ScrollPageUp() { m.scrollUp(m.fullPage()) }
 
 // hookListLines returns the number of rows available for the event list inside the overlay.
 func (m *PreviewModel) hookListLines() int {
