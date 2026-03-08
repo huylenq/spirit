@@ -319,6 +319,8 @@ func (d *Daemon) poll() {
 	d.queueMu.Unlock()
 	d.commitDoneMu.Unlock()
 
+	claude.AssignAvatars(sessions)
+
 	d.mu.Lock()
 	if sessionsEqual(d.sessions, sessions) {
 		d.mu.Unlock()

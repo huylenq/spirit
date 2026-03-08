@@ -133,6 +133,7 @@ var Chords = []Chord{
 	{Keys: "ys", Help: "copy session id"},
 	{Keys: "yc", Help: "capture view"},
 	{Keys: "ih", Help: "hooks"},
+	{Keys: "it", Help: "transcript json"},
 }
 
 // ChordsWithPrefix returns chords whose key sequence starts with prefix.

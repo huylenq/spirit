@@ -38,6 +38,10 @@ type PreviewModel struct {
 	hookCursor     int
 	hookExpanded   bool
 	hookScroll     int
+	rawTranscript       string // full pretty-printed JSON
+	rawTranscriptLines  []string // pre-split lines for rendering
+	showRawTranscript   bool
+	rawTranscriptScroll int
 	width           int
 	height          int
 	ready           bool
@@ -163,6 +167,24 @@ func (m *PreviewModel) SetHookEvents(events []claude.HookEvent) {
 	m.hookEvents = events
 }
 
+func (m *PreviewModel) SetRawTranscript(s string) {
+	m.rawTranscript = s
+	if s == "" {
+		m.rawTranscriptLines = nil
+	} else {
+		m.rawTranscriptLines = strings.Split(s, "\n")
+	}
+}
+
+func (m *PreviewModel) SetShowRawTranscript(show bool) {
+	m.showRawTranscript = show
+	m.rawTranscriptScroll = 0
+	if !show {
+		m.rawTranscript = ""
+		m.rawTranscriptLines = nil
+	}
+}
+
 // recomputeOffsets rebuilds msgOffsets from the current content and userMessages.
 func (m *PreviewModel) recomputeOffsets() {
 	m.msgOffsets = findMsgLineOffsets(m.content, m.userMessages)
@@ -250,6 +272,15 @@ func truncateLines(content string, maxWidth int) string {
 }
 
 func (m *PreviewModel) ScrollDown() {
+	if m.showRawTranscript {
+		visLines := m.rawTranscriptVisLines()
+		maxScroll := len(m.rawTranscriptLines) - visLines
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		m.rawTranscriptScroll = min(m.rawTranscriptScroll+3, maxScroll)
+		return
+	}
 	if m.showHooks {
 		total := len(m.hookEvents)
 		if m.hookCursor < total-1 {
@@ -265,6 +296,10 @@ func (m *PreviewModel) ScrollDown() {
 }
 
 func (m *PreviewModel) ScrollUp() {
+	if m.showRawTranscript {
+		m.rawTranscriptScroll = max(m.rawTranscriptScroll-3, 0)
+		return
+	}
 	if m.showHooks {
 		if m.hookCursor > 0 {
 			m.hookCursor--
@@ -406,6 +441,11 @@ func (m PreviewModel) View() string {
 		contentBox = m.renderHookOverlay(contentWidth, m.viewport.Height)
 	}
 
+	// Raw transcript JSON overlay on top of content
+	if m.showRawTranscript {
+		contentBox = m.renderRawTranscriptOverlay(contentWidth, m.viewport.Height)
+	}
+
 	// Footer metadata
 	var metaParts []string
 	if s.SessionID != "" {
@@ -531,6 +571,59 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 
 	content := strings.Join(lines, "\n")
 	return DebugOverlayStyle.
+		Width(width).
+		Height(height).
+		Render(content)
+}
+
+// rawTranscriptVisLines returns the number of visible lines for the raw transcript overlay.
+func (m *PreviewModel) rawTranscriptVisLines() int {
+	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
+	if avail < 1 {
+		avail = 1
+	}
+	return avail
+}
+
+func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
+	titleLine := TranscriptTitleStyle.Render(" Transcript JSON")
+
+	var lines []string
+	lines = append(lines, titleLine)
+	lines = append(lines, "")
+
+	if len(m.rawTranscriptLines) == 0 {
+		lines = append(lines, PreviewMetaStyle.Render("No transcript data"))
+	} else {
+		visLines := m.rawTranscriptVisLines()
+		innerWidth := width - 6 // border(2) + padding(2) + gutter(2)
+		lineNumWidth := len(fmt.Sprintf("%d", len(m.rawTranscriptLines)))
+		gutterStyle := PreviewMetaStyle
+		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
+
+		scroll := m.rawTranscriptScroll
+		end := scroll + visLines
+		if end > len(m.rawTranscriptLines) {
+			end = len(m.rawTranscriptLines)
+		}
+
+		for i := scroll; i < end; i++ {
+			lineNum := gutterStyle.Render(fmt.Sprintf("%*d ", lineNumWidth, i+1))
+			line := clipStyle.Render(m.rawTranscriptLines[i])
+			lines = append(lines, lineNum+line)
+		}
+
+		// Scroll indicator
+		total := len(m.rawTranscriptLines)
+		if total > visLines {
+			pct := (scroll * 100) / (total - visLines)
+			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d lines (%d%%) ──", min(end, total), total, pct))
+			lines = append(lines, indicator)
+		}
+	}
+
+	content := strings.Join(lines, "\n")
+	return TranscriptOverlayStyle.
 		Width(width).
 		Height(height).
 		Render(content)

@@ -29,15 +29,47 @@ func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 		return m, copyToClipboard(text)
 	case "ih":
 		m.showHooks = !m.showHooks
+		m.showRawTranscript = false
 		m.preview.SetShowHooks(m.showHooks)
+		m.preview.SetShowRawTranscript(false)
 		if m.showHooks {
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, m.fetchHooks(s.PaneID)
 			}
 		}
 		return m, nil
+	case "it":
+		m.showRawTranscript = !m.showRawTranscript
+		m.showHooks = false
+		m.preview.SetShowRawTranscript(m.showRawTranscript)
+		m.preview.SetShowHooks(false)
+		if m.showRawTranscript {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, m.fetchRawTranscript(s.PaneID, s.SessionID)
+			}
+		}
+		return m, nil
 	}
 	return m, nil
+}
+
+// openTranscriptInEditor opens the transcript JSONL in $EDITOR in a new tmux window.
+func openTranscriptInEditor(tmuxSession, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		path, err := claude.TranscriptPath(sessionID)
+		if err != nil {
+			return flashErrorMsg("transcript not found")
+		}
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vim"
+		}
+		cmd := fmt.Sprintf("%s %s", editor, path)
+		if err := exec.Command("tmux", "new-window", "-t", tmuxSession, cmd).Run(); err != nil {
+			return flashErrorMsg("open editor: " + err.Error())
+		}
+		return flashInfoMsg("opened in " + editor)
+	}
 }
 
 // copyToClipboard copies text to the system clipboard via pbcopy and shows a flash.
@@ -117,18 +149,21 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
-// tryInitialSelection auto-selects a pane on launch when selectActive is true
-// (ctrl-space / CMC_SELECT_ACTIVE=1). Fallback chain:
-//  1. Exact match: origPane is a Claude session → select it. If origPane is
-//     YOUR TURN, skip it and rotate to the next YOUR TURN session (wrapping).
-//     Falls back to origPane if no other YOUR TURN session exists.
+// tryInitialSelection auto-selects a pane on launch.
+//
+// Two modes controlled by env vars:
+//   - selectActive (ctrl-space): select the originating pane's session
+//   - rotateNext   (ctrl-tab):   skip originating pane, rotate to next YOUR TURN
+//
+// Fallback chain (both modes):
+//  1. Mode-specific selection (see above)
 //  2. Same tmux session: first Claude session in the same tmux session (in sort order)
 //  3. Default: cursor stays at 0 (first in sort order across all sessions)
 //
 // Only runs once, when both sessions and origPane are available.
 // Returns true if the cursor was moved (caller should fetch preview).
 func (m *Model) tryInitialSelection() bool {
-	if !m.selectActive {
+	if !m.selectActive && !m.rotateNext {
 		return false
 	}
 	if m.initialSelectionDone || len(m.sessions) == 0 {
@@ -141,20 +176,16 @@ func (m *Model) tryInitialSelection() bool {
 
 	items := m.list.Items()
 
-	// Try 1: origPane is a Claude session → select it.
-	// If origPane is YOUR TURN, skip it and rotate to the next YOUR TURN
-	// session (wrapping). Falls back to origPane if no other YOUR TURN exists.
-	origIdx := -1
-	for i, s := range items {
-		if s.PaneID == m.origPane.PaneID {
-			origIdx = i
-			break
+	if m.rotateNext {
+		// ctrl-tab: skip originating pane, rotate to next YOUR TURN session
+		origIdx := -1
+		for i, s := range items {
+			if s.PaneID == m.origPane.PaneID {
+				origIdx = i
+				break
+			}
 		}
-	}
-	if origIdx >= 0 {
-		origItem := items[origIdx]
-		if origItem.Status == claude.StatusDone {
-			// Already YOUR TURN — skip to next YOUR TURN session
+		if origIdx >= 0 {
 			n := len(items)
 			for offset := 1; offset < n; offset++ {
 				idx := (origIdx + offset) % n
@@ -162,19 +193,26 @@ func (m *Model) tryInitialSelection() bool {
 					return m.list.SelectByPaneID(items[idx].PaneID)
 				}
 			}
+			// No other YOUR TURN — fall back to origPane
+			return m.list.SelectByPaneID(m.origPane.PaneID)
 		}
-		// Not YOUR TURN, or no other YOUR TURN — select origPane itself
-		return m.list.SelectByPaneID(m.origPane.PaneID)
+	} else {
+		// ctrl-space: exact match on originating pane (any status)
+		for _, s := range m.sessions {
+			if s.PaneID == m.origPane.PaneID {
+				return m.list.SelectByPaneID(m.origPane.PaneID)
+			}
+		}
 	}
 
-	// Try 2: first session in same tmux session (already sorted)
+	// Fallback: first session in same tmux session (already sorted)
 	for _, s := range items {
 		if s.TmuxSession == m.origPane.Session {
 			return m.list.SelectByPaneID(s.PaneID)
 		}
 	}
 
-	// Fallback: cursor stays at 0
+	// Default: cursor stays at 0
 	return false
 }
 
@@ -270,6 +308,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case HooksReadyMsg:
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetHookEvents(msg.Events)
+		}
+		return m, nil
+
+	case RawTranscriptReadyMsg:
+		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.preview.SetRawTranscript(msg.JSON)
 		}
 		return m, nil
 
@@ -637,9 +681,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.palette.Activate(items)
 			return m, nil
 
-		case key.Matches(msg, Keys.Escape) && m.showHooks:
+		case key.Matches(msg, Keys.Escape) && (m.showHooks || m.showRawTranscript):
 			m.showHooks = false
+			m.showRawTranscript = false
 			m.preview.SetShowHooks(false)
+			m.preview.SetShowRawTranscript(false)
+			return m, nil
+
+		case m.showRawTranscript && msg.String() == "e":
+			if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
+				return m, openTranscriptInEditor(m.origPane.Session, s.SessionID)
+			}
 			return m, nil
 
 		case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
@@ -679,9 +731,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.fetchCachedSummary(s.PaneID, s.SessionID),
 						switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
 					}
-					if m.showHooks {
-						cmds = append(cmds, m.fetchHooks(s.PaneID))
-					}
+					cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
 					return m, tea.Batch(cmds...)
 				}
 			}
@@ -697,9 +747,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
 				}
-				if m.showHooks {
-					cmds = append(cmds, m.fetchHooks(s.PaneID))
-				}
+				cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
 				if m.showMinimap {
 					if s.TmuxSession != m.minimapSession {
 						cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -721,9 +769,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
 				}
-				if m.showHooks {
-					cmds = append(cmds, m.fetchHooks(s.PaneID))
-				}
+				cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
 				if m.showMinimap {
 					if s.TmuxSession != m.minimapSession {
 						cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -933,12 +979,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.preview.ScrollUp()
 			return m, nil
 
-		case !m.showHooks && key.Matches(msg, Keys.MsgNext):
-			m.preview.NavigateMsg(1)
+		case key.Matches(msg, Keys.MsgNext):
+			if m.showHooks || m.showRawTranscript {
+				m.preview.ScrollDown()
+			} else {
+				m.preview.NavigateMsg(1)
+			}
 			return m, nil
 
-		case !m.showHooks && key.Matches(msg, Keys.MsgPrev):
-			m.preview.NavigateMsg(-1)
+		case key.Matches(msg, Keys.MsgPrev):
+			if m.showHooks || m.showRawTranscript {
+				m.preview.ScrollUp()
+			} else {
+				m.preview.NavigateMsg(-1)
+			}
 			return m, nil
 		}
 	}

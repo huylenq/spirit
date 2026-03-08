@@ -50,6 +50,7 @@ type Model struct {
 	sessions       []claude.ClaudeSession
 	state          AppState
 	showHooks         bool
+	showRawTranscript bool
 	hideTranscript    bool
 	showMinimap       bool
 	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
@@ -73,6 +74,7 @@ type Model struct {
 	killTargetTitle      string // display title for kill confirmation
 	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
 	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
+	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
 	debugMode            bool   // toggle debug overlay (D key)
 	showHelp             bool   // toggle help overlay (? key)
 	palette              ui.PaletteModel
@@ -100,6 +102,7 @@ func NewModel(client *daemon.Client) Model {
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
 		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",
+		rotateNext:        os.Getenv("CMC_ROTATE_NEXT") == "1",
 		binaryPath:        bin,
 	}
 }
@@ -184,11 +187,33 @@ func (m Model) fetchTranscript(paneID, sessionID string) tea.Cmd {
 	}
 }
 
+func (m Model) fetchRawTranscript(paneID, sessionID string) tea.Cmd {
+	if sessionID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		raw, _ := m.client.RawTranscript(sessionID)
+		return RawTranscriptReadyMsg{PaneID: paneID, JSON: raw}
+	}
+}
+
 func (m Model) fetchHooks(paneID string) tea.Cmd {
 	return func() tea.Msg {
 		events, _ := m.client.HookEvents(paneID)
 		return HooksReadyMsg{PaneID: paneID, Events: events}
 	}
+}
+
+// fetchVisibleOverlays returns commands to refresh any active overlay (hooks, raw transcript).
+func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
+	var cmds []tea.Cmd
+	if m.showHooks {
+		cmds = append(cmds, m.fetchHooks(paneID))
+	}
+	if m.showRawTranscript {
+		cmds = append(cmds, m.fetchRawTranscript(paneID, sessionID))
+	}
+	return cmds
 }
 
 func (m Model) fetchDiffStats(paneID, sessionID string) tea.Cmd {

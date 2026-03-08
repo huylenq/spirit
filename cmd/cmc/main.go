@@ -75,7 +75,8 @@ func printUsage() {
 Usage:
   cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
   cmc popup            Open TUI in a tmux popup (respects zoom pref)
-  cmc popup --select-active  Same, but auto-select the current pane
+  cmc popup --select-active  Same, but auto-select the current pane (ctrl-space)
+  cmc popup --rotate-next    Same, but skip current pane → next YOUR TURN (ctrl-tab)
   cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
@@ -265,12 +266,17 @@ func readPref(key string) string {
 // Reads the fullscreen preference to determine popup size.
 // Flags:
 //
-//	--select-active  auto-select the pane the user was on when invoked
+//	--select-active  auto-select the pane the user was on when invoked (ctrl-space)
+//	--rotate-next    skip originating pane, select next YOUR TURN session (ctrl-tab)
 func runPopup() {
 	selectActive := false
+	rotateNext := false
 	for _, arg := range os.Args[2:] {
 		if arg == "--select-active" {
 			selectActive = true
+		}
+		if arg == "--rotate-next" {
+			rotateNext = true
 		}
 	}
 
@@ -293,6 +299,9 @@ func runPopup() {
 	}
 	if selectActive {
 		args = append(args, "-e", "CMC_SELECT_ACTIVE=1")
+	}
+	if rotateNext {
+		args = append(args, "-e", "CMC_ROTATE_NEXT=1")
 	}
 	args = append(args, bin)
 

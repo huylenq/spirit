@@ -91,43 +91,70 @@ func saveAvatarStore(activeKeys map[string]bool) {
 	os.WriteFile(path, data, 0o644)         //nolint:errcheck
 }
 
-// pickIdx selects an index in [0, n) for avatar assignment.
-// Prefers a random absent index (not currently used by active sessions).
-// Falls back to a random index from the least-assigned subset across all store entries.
-func pickIdx(n int, used map[int]bool, entries map[string]Avatar, field func(Avatar) int) int {
-	absent := make([]int, 0, n)
-	for i := 0; i < n; i++ {
-		if !used[i] {
-			absent = append(absent, i)
+// pickAvatarPair selects an (animal, color) pair for avatar assignment.
+// Tier 1: pairs with an unused animal (animal uniqueness prioritized).
+// Tier 2: pairs with a used animal but unused (animal, color) combo.
+// Tier 3: all 184 pairs exhausted — pick from least-assigned pairs across all entries.
+func pickAvatarPair(entries map[string]Avatar, activeKeys map[string]bool) (int, int) {
+	type pair = [2]int
+
+	usedAnimals := make(map[int]bool)
+	usedPairs := make(map[pair]bool)
+	for k, a := range entries {
+		if activeKeys[k] {
+			usedAnimals[a.AnimalIdx] = true
+			usedPairs[pair{a.AnimalIdx, a.ColorIdx}] = true
 		}
 	}
-	if len(absent) > 0 {
-		return absent[rand.IntN(len(absent))]
+
+	var tier1, tier2 []pair
+	for ai := range numAvatarAnimals {
+		for ci := range numAvatarColors {
+			p := pair{ai, ci}
+			if usedPairs[p] {
+				continue
+			}
+			if !usedAnimals[ai] {
+				tier1 = append(tier1, p)
+			} else {
+				tier2 = append(tier2, p)
+			}
+		}
 	}
-	counts := make([]int, n)
+
+	if len(tier1) > 0 {
+		p := tier1[rand.IntN(len(tier1))]
+		return p[0], p[1]
+	}
+	if len(tier2) > 0 {
+		p := tier2[rand.IntN(len(tier2))]
+		return p[0], p[1]
+	}
+
+	// All pairs in use — pick from least-assigned across all store entries.
+	counts := make(map[pair]int)
 	for _, a := range entries {
-		idx := field(a)
-		if idx >= 0 && idx < n {
-			counts[idx]++
+		counts[pair{a.AnimalIdx, a.ColorIdx}]++
+	}
+	minCount := -1
+	var subset []pair
+	for ai := range numAvatarAnimals {
+		for ci := range numAvatarColors {
+			c := counts[pair{ai, ci}]
+			if minCount < 0 || c < minCount {
+				minCount = c
+				subset = []pair{{ai, ci}}
+			} else if c == minCount {
+				subset = append(subset, pair{ai, ci})
+			}
 		}
 	}
-	minCount := counts[0]
-	for _, c := range counts {
-		if c < minCount {
-			minCount = c
-		}
-	}
-	subset := make([]int, 0, n)
-	for i, c := range counts {
-		if c == minCount {
-			subset = append(subset, i)
-		}
-	}
-	return subset[rand.IntN(len(subset))]
+	p := subset[rand.IntN(len(subset))]
+	return p[0], p[1]
 }
 
 // GetOrAssignAvatar returns the existing avatar for key, or assigns a new one.
-// activeKeys is used to avoid reusing animals/colors already visible.
+// activeKeys is used to avoid reusing (animal, color) pairs already visible.
 func GetOrAssignAvatar(key string, activeKeys map[string]bool) Avatar {
 	avStoreOnce.Do(loadAvatarStore)
 
@@ -138,17 +165,7 @@ func GetOrAssignAvatar(key string, activeKeys map[string]bool) Avatar {
 		return a
 	}
 
-	usedAnimals := make(map[int]bool)
-	usedColors := make(map[int]bool)
-	for k, a := range avStore.Entries {
-		if activeKeys[k] {
-			usedAnimals[a.AnimalIdx] = true
-			usedColors[a.ColorIdx] = true
-		}
-	}
-
-	animalIdx := pickIdx(numAvatarAnimals, usedAnimals, avStore.Entries, func(a Avatar) int { return a.AnimalIdx })
-	colorIdx := pickIdx(numAvatarColors, usedColors, avStore.Entries, func(a Avatar) int { return a.ColorIdx })
+	animalIdx, colorIdx := pickAvatarPair(avStore.Entries, activeKeys)
 
 	a := Avatar{AnimalIdx: animalIdx, ColorIdx: colorIdx, Seq: avStore.Counter}
 	avStore.Counter++

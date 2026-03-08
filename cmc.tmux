@@ -65,5 +65,5 @@ fi
 # Ctrl-Space (prefix-less) → popup with active pane selected (zoom state from prefs)
 tmux bind-key -n C-Space run-shell "$BINARY popup --select-active"
 
-# Ctrl-Tab (prefix-less) → popup with default sort order (zoom state from prefs)
-tmux bind-key -n C-Tab run-shell "$BINARY popup"
+# Ctrl-Tab (prefix-less) → popup, skip current pane, rotate to next YOUR TURN
+tmux bind-key -n C-Tab run-shell "$BINARY popup --rotate-next"

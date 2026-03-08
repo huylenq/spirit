@@ -72,6 +72,11 @@ func findTranscriptPath(sessionID string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+// TranscriptPath returns the filesystem path to the JSONL transcript for a session ID.
+func TranscriptPath(sessionID string) (string, error) {
+	return findTranscriptPath(sessionID)
+}
+
 // --- Shared JSONL types ---
 
 type transcriptLine struct {
