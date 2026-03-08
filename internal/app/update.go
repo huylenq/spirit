@@ -612,13 +612,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.PromptRelay):
-			if s, ok := m.list.SelectedItem(); ok {
-				if s.Status == claude.StatusDone {
-					m.state = StatePromptRelay
-					m.relay.Activate()
-				} else {
-					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-				}
+			if _, ok := m.list.SelectedItem(); ok {
+				m.state = StatePromptRelay
+				m.relay.Activate()
 			}
 			return m, nil
 

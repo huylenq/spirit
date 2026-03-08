@@ -86,25 +86,21 @@ func tickUsageBar() tea.Cmd {
 }
 
 // InlineView renders a compact usage bar for the header line.
-// Format: ████████░░░░ 38% · resets 6pm
-func (m *UsageBarModel) InlineView(totalWidth int) string {
+// Uses ▀ (upper half block) for filled — visually thinner than full blocks.
+func (m *UsageBarModel) InlineView(availWidth int) string {
 	if !m.hasData {
 		return ""
 	}
 
-	// Label: "38% · resets 6pm"
 	label := fmt.Sprintf("%d%%", m.sessionPct)
 	if m.resets != "" {
 		label += " · resets " + m.resets
 	}
+	labelW := len(label) + 1 // +1 for space before label
 
-	// Bar gets ~30% of total width, capped
-	barWidth := totalWidth * 25 / 100
+	barWidth := availWidth - labelW
 	if barWidth < 8 {
 		barWidth = 8
-	}
-	if barWidth > 30 {
-		barWidth = 30
 	}
 
 	filledChars := barWidth * m.sessionPct / 100
@@ -124,14 +120,14 @@ func (m *UsageBarModel) InlineView(totalWidth int) string {
 				}
 			}
 
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("█"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("▔"))
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(ColorUsageBarEmpty).Render("░"))
+			sb.WriteString(" ")
 		}
 	}
 
 	sb.WriteString(" ")
-	sb.WriteString(lipgloss.NewStyle().Foreground(ColorUsageBarText).Render(label))
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(label))
 	return sb.String()
 }
 

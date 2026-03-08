@@ -20,8 +20,8 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Error: " + m.err.Error())
 	}
 
-	// Header: always 1 line (includes inline usage bar when data available)
-	header := ui.RenderHeader(m.sessions, m.width, &m.usageBar)
+	// Header: always 1 line (usage bar when data available)
+	header := ui.RenderHeader(m.width, &m.usageBar)
 
 	// Footer: always 1 line
 	footer := m.renderFooter()
