@@ -192,14 +192,7 @@ func RemoveStatus(paneID string) {
 	os.Remove(queueFilePath(paneID))
 }
 
-func CleanStale(activePaneIDs map[string]bool) error {
-	// Build set of pane IDs with Later bookmarks — don't clean their status
-	laterPaneIDs := make(map[string]bool)
-	bookmarks, _ := ReadAllLaterBookmarks()
-	for _, b := range bookmarks {
-		laterPaneIDs[b.PaneID] = true
-	}
-
+func CleanStale(activePaneIDs, laterPaneIDs map[string]bool) error {
 	dir := statusDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {

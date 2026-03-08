@@ -164,8 +164,7 @@ func (m *ListModel) applyNarrow() {
 		m.filtered = nil
 		m.matchSet = make(map[string]bool)
 		for _, s := range m.items {
-			surface := s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage
-			if matchesNarrow(surface, f) {
+			if matchesNarrow(s.CustomTitle, f) || matchesNarrow(s.Headline, f) || matchesNarrow(s.FirstMessage, f) || matchesNarrow(s.LastUserMessage, f) {
 				m.filtered = append(m.filtered, s)
 				m.matchSet[s.PaneID] = true
 			}

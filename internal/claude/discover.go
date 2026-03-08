@@ -100,11 +100,20 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		return nil, err
 	}
 
+	// Load bookmarks once for the entire discover cycle
+	bookmarks, _ := ReadAllLaterBookmarks()
+	bookmarkByPane := make(map[string]string, len(bookmarks)) // paneID → bookmarkID
+	laterPaneIDs := make(map[string]bool, len(bookmarks))
+	for _, bm := range bookmarks {
+		bookmarkByPane[bm.PaneID] = bm.ID
+		laterPaneIDs[bm.PaneID] = true
+	}
+
 	activePaneIDs := make(map[string]bool)
 	for _, p := range panes {
 		activePaneIDs[p.PaneID] = true
 	}
-	CleanStale(activePaneIDs)
+	CleanStale(activePaneIDs, laterPaneIDs)
 
 	// Single ps call replaces all per-pane pgrep+ps invocations
 	procTree := buildProcessTree()
@@ -126,7 +135,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 				continue
 			}
 			if status == StatusLater {
-				s := buildSession(p, 0, status)
+				s := buildSession(p, 0, status, bookmarkByPane)
 				sessions = append(sessions, s)
 			} else if status == StatusDone {
 				// Claude process exited; clean up and don't show the session.
@@ -140,12 +149,11 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			status = StatusDone
 		}
 
-		s := buildSession(p, pid, status)
+		s := buildSession(p, pid, status, bookmarkByPane)
 		sessions = append(sessions, s)
 	}
 
 	// Merge phantom Later sessions from bookmarks
-	bookmarks, _ := ReadAllLaterBookmarks()
 	existingPaneIDs := make(map[string]bool)
 	for _, s := range sessions {
 		existingPaneIDs[s.PaneID] = true
@@ -172,7 +180,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	return sessions, nil
 }
 
-func buildSession(p tmux.PaneInfo, pid int, status Status) ClaudeSession {
+func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[string]string) ClaudeSession {
 	s := ClaudeSession{
 		PaneID:      p.PaneID,
 		Status:      status,
@@ -208,14 +216,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status) ClaudeSession {
 	}
 
 	if status == StatusLater {
-		// Look up matching bookmark
-		bookmarks, _ := ReadAllLaterBookmarks()
-		for _, bm := range bookmarks {
-			if bm.PaneID == p.PaneID {
-				s.LaterBookmarkID = bm.ID
-				break
-			}
-		}
+		s.LaterBookmarkID = bookmarkByPane[p.PaneID]
 	}
 
 	return s

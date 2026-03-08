@@ -119,7 +119,8 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 
 // tryInitialSelection auto-selects a pane on launch when selectActive is true
 // (ctrl-space / CMC_SELECT_ACTIVE=1). Fallback chain:
-//  1. Exact match: origPane is a Claude session → select it
+//  1. Exact match: origPane is a Claude session → skip it, select next YOUR TURN
+//     session (wrapping). If no other YOUR TURN session, select origPane itself.
 //  2. Same tmux session: first Claude session in the same tmux session (in sort order)
 //  3. Default: cursor stays at 0 (first in sort order across all sessions)
 //
@@ -137,15 +138,30 @@ func (m *Model) tryInitialSelection() bool {
 	}
 	m.initialSelectionDone = true
 
-	// Try 1: exact match on originating pane (any status)
-	for _, s := range m.sessions {
+	items := m.list.Items()
+
+	// Try 1: origPane is a Claude session → skip it, rotate to next YOUR TURN
+	origIdx := -1
+	for i, s := range items {
 		if s.PaneID == m.origPane.PaneID {
-			return m.list.SelectByPaneID(m.origPane.PaneID)
+			origIdx = i
+			break
 		}
+	}
+	if origIdx >= 0 {
+		n := len(items)
+		for offset := 1; offset < n; offset++ {
+			idx := (origIdx + offset) % n
+			if items[idx].Status == claude.StatusDone {
+				return m.list.SelectByPaneID(items[idx].PaneID)
+			}
+		}
+		// No other YOUR TURN session; select origPane as fallback
+		return m.list.SelectByPaneID(m.origPane.PaneID)
 	}
 
 	// Try 2: first session in same tmux session (already sorted)
-	for _, s := range m.list.Items() {
+	for _, s := range items {
 		if s.TmuxSession == m.origPane.Session {
 			return m.list.SelectByPaneID(s.PaneID)
 		}
