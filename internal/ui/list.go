@@ -544,13 +544,13 @@ func renderBadges(s claude.ClaudeSession) string {
 
 func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected) }
+	if s.CommitDonePending {
+		return bg(CommitDoneStyle).Render(m.spinnerView)
+	}
 	switch s.Status {
 	case claude.StatusDone:
 		return bg(ItemDetailStyle).Render(formatAge(s.LastChanged))
 	case claude.StatusWorking:
-		if s.CommitDonePending {
-			return bg(CommitDoneStyle).Render(m.spinnerView)
-		}
 		if s.PermissionMode == "plan" {
 			return bg(StatPlanStyle).Render(m.spinnerView)
 		}
