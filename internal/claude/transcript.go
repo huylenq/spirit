@@ -18,6 +18,10 @@ import (
 // rather than reject the entire message.
 var localCmdTagRe = regexp.MustCompile(`(?s)<(?:local-command-caveat|command-name|command-message|command-args|local-command-stdout)[^>]*>.*?</(?:local-command-caveat|command-name|command-message|command-args|local-command-stdout)>`)
 
+// planMsgPrefix is the prefix Claude Code injects when a plan is approved via ExitPlanMode.
+// The full message is "Implement the following plan:\n\n# Plan Title\n\n## Context..."
+const planMsgPrefix = "Implement the following plan:"
+
 // systemInjectedMsgs are messages injected by Claude Code internals (e.g. context
 // clear after plan tool exit) that should not be treated as real user messages.
 var systemInjectedMsgs = map[string]bool{
@@ -756,7 +760,7 @@ func extractUserText(line []byte) string {
 		if systemInjectedMsgs[stripped] {
 			return ""
 		}
-		return stripped
+		return extractPlanTitle(stripped)
 	}
 
 	// Try array of content blocks
@@ -782,5 +786,27 @@ func extractUserText(line []byte) string {
 	if systemInjectedMsgs[result] {
 		return ""
 	}
-	return result
+	return extractPlanTitle(result)
+}
+
+// extractPlanTitle detects Claude-generated plan implementation messages
+// ("Implement the following plan:\n\n# Title...") and returns just "[plan] Title".
+// Returns the original text unchanged for non-plan messages.
+func extractPlanTitle(text string) string {
+	after, ok := strings.CutPrefix(text, planMsgPrefix)
+	if !ok {
+		return text
+	}
+	after = strings.TrimSpace(after)
+	title, _ := strings.CutPrefix(after, "# ")
+	// Take only the first line of the title (stop at next newline)
+	if idx := strings.IndexByte(title, '\n'); idx >= 0 {
+		title = title[:idx]
+	}
+	// Strip redundant "Plan: " prefix if present
+	title = strings.TrimPrefix(title, "Plan: ")
+	if title == "" {
+		return "[plan]"
+	}
+	return "[plan] " + title
 }

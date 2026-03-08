@@ -146,7 +146,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.Width = msg.Width
 		m.ready = true
 		listWidth := max(m.width*m.listWidthPct/100, 20)
 		previewWidth := m.width - listWidth
@@ -495,6 +494,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	default: // StateNormal
+		// When help overlay is open, only ? and esc dismiss it; swallow everything else
+		if m.showHelp {
+			if key.Matches(msg, Keys.Help) || key.Matches(msg, Keys.Escape) {
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		// Handle multi-key chord sequences
 		if m.pendingChord != "" {
 			seq := m.pendingChord + msg.String()
@@ -742,6 +749,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, Keys.Debug):
 			m.debugMode = !m.debugMode
+			return m, nil
+
+		case key.Matches(msg, Keys.Help):
+			m.showHelp = true
 			return m, nil
 
 		case key.Matches(msg, Keys.Fullscreen):

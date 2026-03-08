@@ -4,7 +4,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/claude-mission-control/internal/claude"
@@ -56,7 +55,6 @@ type Model struct {
 	minimapSession    string // tmux session currently shown in minimap
 	origPane       originalPane // tmux state to restore on ESC
 	spinner        spinner.Model
-	help           help.Model
 	width          int
 	height         int
 	listWidthPct   int // percentage of total width for the session list
@@ -80,8 +78,6 @@ func NewModel(client *daemon.Client) Model {
 	list.SetGroupByProject(loadPrefBool("groupByProject"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
-	h := help.New()
-	h.Styles.ShortKey = ui.FooterKeyStyle
 	bin, _ := os.Executable()
 	return Model{
 		client:            client,
@@ -94,7 +90,6 @@ func NewModel(client *daemon.Client) Model {
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),
 		spinner:           s,
-		help:              h,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
 		binaryPath:        bin,
 	}

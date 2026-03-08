@@ -186,6 +186,103 @@ func debugTruncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
+// hint formats a single key hint for the footer bar.
+func hint(k, desc string) string {
+	return ui.FooterKeyStyle.Render(k) + " " + desc
+}
+
+// renderNormalFooterHints builds a context-sensitive footer based on the selected session.
+func (m Model) renderNormalFooterHints() string {
+	var parts []string
+
+	s, hasSelection := m.list.SelectedItem()
+
+	// Always show nav
+	parts = append(parts, hint("j/k", "nav"))
+
+	if !hasSelection {
+		parts = append(parts, hint("/", "filter"), hint("g", "group"), hint("m", "minimap"), hint("?", "help"), hint("q", "quit"))
+		return strings.Join(parts, "  ")
+	}
+
+	parts = append(parts, hint("enter", "switch"), hint(">", "reply"))
+
+	switch s.Status {
+	case claude.StatusDone:
+		if !s.CommitDonePending {
+			parts = append(parts, hint("c", "commit"), hint("C", "commit+done"))
+		}
+		parts = append(parts, hint("w", "defer"))
+	case claude.StatusWorking:
+		parts = append(parts, hint("w", "defer"))
+	case claude.StatusDeferred:
+		parts = append(parts, hint("u", "undefer"))
+	}
+
+	parts = append(parts, hint("d", "kill"))
+
+	if m.showMinimap {
+		parts = append(parts, hint("H/J/K/L", "spatial"))
+	}
+
+	parts = append(parts, hint("?", "help"), hint("q", "quit"))
+	return strings.Join(parts, "  ")
+}
+
+// renderHelpOverlay returns a styled help overlay showing all keybindings.
+func (m Model) renderHelpOverlay() string {
+	title := ui.HelpTitleStyle.Render("Keybindings")
+	nav := ui.HelpGroupStyle.Render("Navigation")
+	actions := ui.HelpGroupStyle.Render("Actions")
+	toggles := ui.HelpGroupStyle.Render("Toggles & Copy")
+
+	col1 := strings.Join([]string{
+		nav,
+		hint("j/k", "up/down"),
+		hint("enter", "switch to pane"),
+		hint("/", "filter"),
+		hint("ctrl+d/u", "scroll preview"),
+		hint("ctrl+j/k", "next/prev message"),
+		hint("alt+h/l", "resize list"),
+	}, "\n")
+
+	col2 := strings.Join([]string{
+		actions,
+		hint(">", "reply to session"),
+		hint("w", "defer session"),
+		hint("u", "undefer session"),
+		hint("d", "kill + close pane"),
+		hint("s", "synthesize"),
+		hint("S", "synthesize all"),
+		hint("R", "rename window"),
+		hint("c", "commit"),
+		hint("C", "commit + done"),
+		hint("r", "refresh preview"),
+	}, "\n")
+
+	chordHints := make([]string, 0, len(Chords))
+	for _, c := range Chords {
+		// Format "ys" as "y s" for readability
+		keys := strings.Join(strings.Split(c.Keys, ""), " ")
+		chordHints = append(chordHints, hint(keys, c.Help))
+	}
+
+	col3Parts := []string{
+		toggles,
+		hint("m", "minimap"),
+		hint("g", "group by project"),
+		hint("h", "hook events"),
+		hint("z", "fullscreen toggle"),
+	}
+	col3Parts = append(col3Parts, chordHints...)
+	col3Parts = append(col3Parts, "", ui.FooterDimStyle.Render("press ? or esc to close"))
+	col3 := strings.Join(col3Parts, "\n")
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2, "    ", col3)
+	body := title + "\n\n" + columns
+	return ui.HelpOverlayStyle.Render(body)
+}
+
 func (m Model) renderFooter() string {
 	switch m.state {
 	case StateFiltering:
