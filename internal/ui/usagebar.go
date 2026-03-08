@@ -32,6 +32,15 @@ func (m *UsageBarModel) HasData() bool {
 	return m.hasData
 }
 
+// SessionPct returns the current session usage percentage (for debug display).
+func (m *UsageBarModel) SessionPct() int { return m.sessionPct }
+
+// Resets returns the reset time string (for debug display).
+func (m *UsageBarModel) Resets() string { return m.resets }
+
+// RippleActive returns whether the ripple animation is running (for debug display).
+func (m *UsageBarModel) RippleActive() bool { return m.rippleActive }
+
 // SetUsage updates the bar with new usage data.
 // Returns a tea.Cmd to start the ripple animation if the fill changed visually.
 func (m *UsageBarModel) SetUsage(stats *claude.UsageStats) tea.Cmd {
@@ -76,59 +85,53 @@ func tickUsageBar() tea.Cmd {
 	})
 }
 
-// View renders the usage bar at the given width. Returns "" if no data.
-func (m *UsageBarModel) View(width int) string {
-	if !m.hasData || width < 10 {
+// InlineView renders a compact usage bar for the header line.
+// Format: ████████░░░░ 38% · resets 6pm
+func (m *UsageBarModel) InlineView(totalWidth int) string {
+	if !m.hasData {
 		return ""
 	}
 
-	// Right-side label: " 38% · resets 6pm"
-	label := fmt.Sprintf(" %d%%", m.sessionPct)
+	// Label: "38% · resets 6pm"
+	label := fmt.Sprintf("%d%%", m.sessionPct)
 	if m.resets != "" {
 		label += " · resets " + m.resets
 	}
-	labelLen := lipgloss.Width(label)
 
-	barWidth := width - labelLen
-	if barWidth < 5 {
-		barWidth = width
-		label = ""
+	// Bar gets ~30% of total width, capped
+	barWidth := totalWidth * 25 / 100
+	if barWidth < 8 {
+		barWidth = 8
+	}
+	if barWidth > 30 {
+		barWidth = 30
 	}
 
 	filledChars := barWidth * m.sessionPct / 100
 
 	var sb strings.Builder
-	sb.Grow(width * 4)
-
 	for i := 0; i < barWidth; i++ {
 		if i < filledChars {
-			// Gradient from dark to bright across the filled portion
 			t := float64(i) / float64(max(filledChars, 1))
-			baseColor := blendHex("#2a4a7f", "#60a5fa", t)
+			c := blendHex("#2a4a7f", "#60a5fa", t)
 
-			// Ripple effect: bright wave traveling from tail toward end
 			if m.rippleActive {
 				rippleCenter := filledChars - rippleWidth + (m.rippleFrame * (rippleWidth + 3) / rippleFrames)
 				dist := intAbs(i - rippleCenter)
 				if dist < rippleWidth {
 					intensity := 1.0 - float64(dist)/float64(rippleWidth)
-					baseColor = blendHex(baseColor, "#93c5fd", intensity*0.8)
+					c = blendHex(c, "#93c5fd", intensity*0.8)
 				}
 			}
 
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color(baseColor))
-			sb.WriteString(style.Render("█"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("█"))
 		} else {
-			style := lipgloss.NewStyle().Foreground(ColorUsageBarEmpty)
-			sb.WriteString(style.Render("░"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(ColorUsageBarEmpty).Render("░"))
 		}
 	}
 
-	if label != "" {
-		labelStyle := lipgloss.NewStyle().Foreground(ColorUsageBarText)
-		sb.WriteString(labelStyle.Render(label))
-	}
-
+	sb.WriteString(" ")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorUsageBarText).Render(label))
 	return sb.String()
 }
 

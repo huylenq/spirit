@@ -17,16 +17,6 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
-// contentHeight returns the available height for the main content area,
-// accounting for header, footer, and usage bar if present.
-func (m Model) contentHeight() int {
-	h := m.height - 2 // 1 header + 1 footer
-	if m.usageBar.HasData() {
-		h--
-	}
-	return h
-}
-
 // executeChord dispatches a completed chord sequence to its action.
 func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 	switch chord.Keys {
@@ -160,7 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		listWidth := max(m.width*m.listWidthPct/100, 20)
 		previewWidth := m.width - listWidth
-		contentHeight := m.contentHeight()
+		contentHeight := m.height - 2
 		m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 		m.preview.SetSize(previewWidth, contentHeight)
 		minimapH := contentHeight / 2
@@ -746,7 +736,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.ListShrink):
 			m.listWidthPct = max(m.listWidthPct-5, 10)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.contentHeight()
+			contentHeight := m.height - 2
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			savePrefInt("listWidthPct", m.listWidthPct)
@@ -755,7 +745,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.ListGrow):
 			m.listWidthPct = min(m.listWidthPct+5, 60)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.contentHeight()
+			contentHeight := m.height - 2
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			savePrefInt("listWidthPct", m.listWidthPct)

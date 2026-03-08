@@ -20,21 +20,14 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Error: " + m.err.Error())
 	}
 
-	// Usage bar: 1 line (only shown when we have data)
-	usageBar := m.usageBar.View(m.width)
-	hasUsageBar := usageBar != ""
-
-	// Header: always 1 line
-	header := ui.RenderHeader(m.sessions, m.width)
+	// Header: always 1 line (includes inline usage bar when data available)
+	header := ui.RenderHeader(m.sessions, m.width, &m.usageBar)
 
 	// Footer: always 1 line
 	footer := m.renderFooter()
 
 	// Content area gets the remaining height
 	contentHeight := m.height - 2 // 1 header + 1 footer
-	if hasUsageBar {
-		contentHeight-- // usage bar takes 1 line
-	}
 
 	// List panel
 	listWidth := max(m.width*m.listWidthPct/100, 20)
@@ -96,9 +89,6 @@ func (m Model) View() string {
 	} else if m.pendingChord != "" {
 		footer = ui.FooterStyle.Width(m.width).Render(m.renderChordHints())
 	}
-	if hasUsageBar {
-		return lipgloss.JoinVertical(lipgloss.Left, usageBar, header, content, footer)
-	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }
 
@@ -145,6 +135,16 @@ func (m Model) renderDebugOverlay() string {
 	lines = append(lines, line("Project", s.Project))
 	lines = append(lines, line("CWD", s.CWD))
 	lines = append(lines, line("GitBranch", s.GitBranch))
+
+	// Usage bar info
+	lines = append(lines, muted.Render("--- usage bar ---"))
+	if m.usageBar.HasData() {
+		lines = append(lines, line("SessionPct", fmt.Sprintf("%d%%", m.usageBar.SessionPct())))
+		lines = append(lines, line("Resets", m.usageBar.Resets()))
+		lines = append(lines, line("RippleActive", fmt.Sprintf("%v", m.usageBar.RippleActive())))
+	} else {
+		lines = append(lines, muted.Render("(no usage data yet)"))
+	}
 
 	// Summary cache info
 	if s.SessionID != "" {
