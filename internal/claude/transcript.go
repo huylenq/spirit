@@ -540,6 +540,9 @@ func ReadCustomTitle(sessionID string) string {
 	return last
 }
 
+// commitSuccessRe matches Claude's commit success output like "Commit 0141d9c created successfully."
+var commitSuccessRe = regexp.MustCompile(`(?i)\bcommit\s+[0-9a-f]{7,}.*\bcreated\b`)
+
 // --- Last action commit cache (mtime-based) ---
 
 type lastActionCommitCacheEntry struct {
@@ -552,9 +555,10 @@ var (
 	lastActionCommitCacheMu sync.Mutex
 )
 
-// ReadLastActionCommit returns true if the last substantive tool call in the
-// transcript was a git commit command. Checks up to 3 assistant tool_use calls
-// backwards to account for post-commit verification (git status, git log, etc).
+// ReadLastActionCommit returns true if the session's last action was a git commit.
+// Two heuristics (checked within the last 3 assistant messages each):
+//   - Assistant text matches commit success pattern (e.g. "Commit abc1234 created successfully.")
+//   - Bash tool_use input contains a git commit command
 func ReadLastActionCommit(sessionID string) bool {
 	path, err := findTranscriptPath(sessionID)
 	if err != nil {
@@ -600,63 +604,87 @@ func ReadLastActionCommit(sessionID string) bool {
 	return result
 }
 
-// scanLastActionCommit walks lines backwards looking for assistant tool_use Bash calls.
-// Returns true if a git commit command is found within the last 3 substantive tool_use calls.
+// scanLastActionCommit walks lines backwards looking for commit evidence.
+// Returns true if either:
+//   - The last 3 assistant text messages contain a commit success pattern
+//     (e.g. "Commit 0141d9c created successfully.")
+//   - The last 3 Bash tool_use calls contain a git commit command
 func scanLastActionCommit(data []byte) bool {
 	lines := bytes.Split(data, []byte("\n"))
 	toolUseCount := 0
+	textCount := 0
+	const maxChecks = 3
 
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
-		if len(line) == 0 {
+		if len(line) == 0 || !bytes.Contains(line, []byte(`"assistant"`)) {
 			continue
 		}
 
-		// Pre-filter: only parse lines that could contain a Bash tool_use
-		if !bytes.Contains(line, []byte(`"Bash"`)) {
-			continue
-		}
-
-		var tl transcriptLine
-		if json.Unmarshal(line, &tl) != nil || tl.Type != "assistant" {
-			continue
-		}
-
-		var msg messageContent
-		if json.Unmarshal(tl.Message, &msg) != nil {
-			continue
-		}
-
-		var blocks []toolUseBlock
-		if json.Unmarshal(msg.Content, &blocks) != nil {
-			continue
-		}
-
-		for _, b := range blocks {
-			if b.Type != "tool_use" || b.Name != "Bash" {
-				continue
+		// Check assistant text for commit success pattern
+		if textCount < maxChecks {
+			text := extractAssistantText(line)
+			if text != "" {
+				textCount++
+				if commitSuccessRe.MatchString(text) {
+					return true
+				}
 			}
+		}
 
-			toolUseCount++
-
-			var inp struct {
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(b.Input, &inp) != nil {
-				continue
-			}
-
-			if isGitCommitCommand(inp.Command) {
+		// Check Bash tool_use blocks for git commit command
+		if toolUseCount < maxChecks && bytes.Contains(line, []byte(`"Bash"`)) {
+			found, n := checkLineForGitCommit(line)
+			if found {
 				return true
 			}
+			toolUseCount += n
+		}
 
-			if toolUseCount >= 3 {
-				return false
-			}
+		if toolUseCount >= maxChecks && textCount >= maxChecks {
+			break
 		}
 	}
 
 	return false
+}
+
+// checkLineForGitCommit parses an assistant line for Bash tool_use blocks
+// containing a git commit command. Returns (found, bashBlockCount).
+func checkLineForGitCommit(line []byte) (bool, int) {
+	var tl transcriptLine
+	if json.Unmarshal(line, &tl) != nil || tl.Type != "assistant" {
+		return false, 0
+	}
+
+	var msg messageContent
+	if json.Unmarshal(tl.Message, &msg) != nil {
+		return false, 0
+	}
+
+	var blocks []toolUseBlock
+	if json.Unmarshal(msg.Content, &blocks) != nil {
+		return false, 0
+	}
+
+	count := 0
+	for _, b := range blocks {
+		if b.Type != "tool_use" || b.Name != "Bash" {
+			continue
+		}
+		count++
+
+		var inp struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(b.Input, &inp) != nil {
+			continue
+		}
+		if isGitCommitCommand(inp.Command) {
+			return true, count
+		}
+	}
+	return false, count
 }
 
 // isGitCommitCommand checks if a shell command contains a git commit invocation.

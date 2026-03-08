@@ -120,9 +120,9 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 				}
 			}
 
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("▔"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("─"))
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#e0e0e0", Dark: "#1a1a1a"}).Render("▔"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#303030"}).Render("─"))
 		}
 	}
 

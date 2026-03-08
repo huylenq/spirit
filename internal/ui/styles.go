@@ -14,12 +14,6 @@ var (
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 
-	// Usage bar
-	ColorUsageBarFill  = lipgloss.AdaptiveColor{Light: "#3b82f6", Dark: "#3b6db8"} // base fill
-	ColorUsageBarBright = lipgloss.AdaptiveColor{Light: "#93c5fd", Dark: "#93c5fd"} // ripple highlight
-	ColorUsageBarEmpty = lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2a2a2a"} // unfilled
-	ColorUsageBarText  = lipgloss.AdaptiveColor{Light: "#1f2937", Dark: "#e5e7eb"} // label text
-
 	// Header
 	HeaderStyle = lipgloss.NewStyle().
 			Bold(true).
