@@ -1,0 +1,242 @@
+package daemon
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/tmux"
+)
+
+// Client connects to the daemon over two Unix socket connections:
+// one for the subscribe stream (push), one for request/response RPCs.
+type Client struct {
+	// Subscribe stream (dedicated connection)
+	subConn    net.Conn
+	subEnc     *json.Encoder
+	subScanner *bufio.Scanner
+
+	// RPC connection (serialized with mutex)
+	rpcConn    net.Conn
+	rpcEnc     *json.Encoder
+	rpcScanner *bufio.Scanner
+	rpcMu      sync.Mutex
+}
+
+// Connect dials the daemon twice (sub + rpc), auto-starting if needed.
+func Connect() (*Client, error) {
+	info := DefaultDaemonInfo()
+
+	dial := func() (net.Conn, error) {
+		return net.DialTimeout("unix", info.SocketPath, 500*time.Millisecond)
+	}
+
+	subConn, err := dial()
+	if err != nil {
+		if startErr := autoStart(info); startErr != nil {
+			return nil, fmt.Errorf("connect failed and auto-start failed: dial=%w start=%w", err, startErr)
+		}
+		for i := range 5 {
+			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+			subConn, err = dial()
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("connect failed after auto-start: %w", err)
+		}
+	}
+
+	rpcConn, err := dial()
+	if err != nil {
+		subConn.Close()
+		return nil, fmt.Errorf("second connection failed: %w", err)
+	}
+
+	newScanner := func(conn net.Conn) *bufio.Scanner {
+		s := bufio.NewScanner(conn)
+		s.Buffer(make([]byte, 0, 1024*1024), 4*1024*1024)
+		return s
+	}
+
+	return &Client{
+		subConn:    subConn,
+		subEnc:     json.NewEncoder(subConn),
+		subScanner: newScanner(subConn),
+		rpcConn:    rpcConn,
+		rpcEnc:     json.NewEncoder(rpcConn),
+		rpcScanner: newScanner(rpcConn),
+	}, nil
+}
+
+func autoStart(_ DaemonInfo) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(exe, "daemon")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	return cmd.Start()
+}
+
+// Close shuts down both connections.
+func (c *Client) Close() error {
+	e1 := c.subConn.Close()
+	e2 := c.rpcConn.Close()
+	if e1 != nil {
+		return e1
+	}
+	return e2
+}
+
+func readResponse(scanner *bufio.Scanner) (Response, error) {
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return Response{}, err
+		}
+		return Response{}, fmt.Errorf("daemon disconnected")
+	}
+	var resp Response
+	if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+		return Response{}, fmt.Errorf("bad response: %w", err)
+	}
+	return resp, nil
+}
+
+func (c *Client) rpc(req Request) (Response, error) {
+	c.rpcMu.Lock()
+	defer c.rpcMu.Unlock()
+
+	if err := c.rpcEnc.Encode(req); err != nil {
+		return Response{}, err
+	}
+	return readResponse(c.rpcScanner)
+}
+
+// rpcInto sends an RPC and unmarshals the result into v.
+func (c *Client) rpcInto(req Request, v any) error {
+	resp, err := c.rpc(req)
+	if err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	if v != nil {
+		if err := json.Unmarshal(resp.Data, v); err != nil {
+			return fmt.Errorf("unmarshal response: %w", err)
+		}
+	}
+	return nil
+}
+
+// Subscribe sends the subscribe request and returns the initial sessions.
+// Call ReadNext() afterwards to get subsequent pushes.
+func (c *Client) Subscribe() ([]claude.ClaudeSession, error) {
+	if err := c.subEnc.Encode(Request{Type: ReqSubscribe}); err != nil {
+		return nil, err
+	}
+	resp, err := readResponse(c.subScanner)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("subscribe: %s", resp.Error)
+	}
+	var data SessionsData
+	json.Unmarshal(resp.Data, &data)
+	return data.Sessions, nil
+}
+
+// ReadNext blocks until the daemon pushes the next session update.
+func (c *Client) ReadNext() ([]claude.ClaudeSession, error) {
+	resp, err := readResponse(c.subScanner)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("subscribe: %s", resp.Error)
+	}
+	var data SessionsData
+	json.Unmarshal(resp.Data, &data)
+	return data.Sessions, nil
+}
+
+// Transcript fetches user messages for a session.
+func (c *Client) Transcript(sessionID string) ([]string, error) {
+	var data TranscriptData
+	err := c.rpcInto(Request{Type: ReqTranscript, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
+	return data.Messages, err
+}
+
+// DiffStats fetches file diff statistics for a session.
+func (c *Client) DiffStats(sessionID string) (map[string]claude.FileDiffStat, error) {
+	var data DiffStatsData
+	err := c.rpcInto(Request{Type: ReqDiffStats, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
+	return data.Stats, err
+}
+
+// Summary fetches the cached summary for a session.
+func (c *Client) Summary(sessionID string) (*claude.SessionSummary, error) {
+	var data SummaryData
+	err := c.rpcInto(Request{Type: ReqSummary, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
+	return data.Summary, err
+}
+
+// Summarize triggers haiku summarization. Daemon handles /rename side-effect.
+func (c *Client) Summarize(paneID, sessionID string) (*claude.SessionSummary, bool, error) {
+	var data SummarizeResultData
+	err := c.rpcInto(Request{Type: ReqSummarize, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, &data)
+	return data.Summary, data.FromCache, err
+}
+
+// SummarizeAll triggers summarization for all sessions except the most recently active.
+func (c *Client) SummarizeAll(skipPaneID string) ([]SummarizeResultData, error) {
+	var data SummarizeAllResultData
+	err := c.rpcInto(Request{Type: ReqSummarizeAll, Data: marshalData(SkipPaneData{SkipPaneID: skipPaneID})}, &data)
+	return data.Results, err
+}
+
+// HookEvents fetches debug hook events for a pane.
+func (c *Client) HookEvents(paneID string) ([]claude.HookEvent, error) {
+	var data HookEventsData
+	err := c.rpcInto(Request{Type: ReqHookEvents, Data: marshalData(PaneData{PaneID: paneID})}, &data)
+	return data.Events, err
+}
+
+// PaneGeometry fetches pane layout for the minimap.
+func (c *Client) PaneGeometry(sessionName string) ([]tmux.PaneGeometry, error) {
+	var data PaneGeometryData
+	err := c.rpcInto(Request{Type: ReqPaneGeometry, Data: marshalData(SessionNameData{SessionName: sessionName})}, &data)
+	return data.Panes, err
+}
+
+// Defer marks a session as deferred for the given number of minutes.
+func (c *Client) Defer(paneID string, minutes int) error {
+	return c.rpcInto(Request{Type: ReqDefer, Data: marshalData(DeferData{PaneID: paneID, Minutes: minutes})}, nil)
+}
+
+// Undefer removes the deferred status from a session.
+func (c *Client) Undefer(paneID string) error {
+	return c.rpcInto(Request{Type: ReqUndefer, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+}
+
+// RenameWindow asks the daemon to generate and apply a window name.
+func (c *Client) RenameWindow(sessionName string, windowIndex int) (string, error) {
+	var data RenameResultData
+	err := c.rpcInto(Request{Type: ReqRenameWindow, Data: marshalData(RenameWindowData{SessionName: sessionName, WindowIndex: windowIndex})}, &data)
+	return data.Name, err
+}

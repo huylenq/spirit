@@ -1,0 +1,7 @@
+bin/
+*.swp
+*.bak
+.DS_Store
+.idea/
+.claude/
+dist/
