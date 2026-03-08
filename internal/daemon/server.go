@@ -111,12 +111,6 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCancelQueue:
 		return d.handleCancelQueue(req.Data)
 
-	case ReqDefer:
-		return d.handleDefer(req.Data)
-
-	case ReqUndefer:
-		return d.handleUndefer(req.Data)
-
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r
@@ -532,31 +526,4 @@ func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
 
 
 
-func (d *Daemon) handleDefer(data json.RawMessage) *Response {
-	var req DeferData
-	if err := json.Unmarshal(data, &req); err != nil {
-		r := errResponse("bad data: " + err.Error())
-		return &r
-	}
-	t := time.Now().Add(time.Duration(req.Minutes) * time.Minute)
-	claude.WriteStatus(req.PaneID, claude.StatusLater)
-	claude.WriteDeferUntil(req.PaneID, t)
-	d.nudge()
-	log.Printf("defer: pane %s deferred for %d minutes", req.PaneID, req.Minutes)
-	r := resultResponse("ok")
-	return &r
-}
 
-func (d *Daemon) handleUndefer(data json.RawMessage) *Response {
-	var req PaneData
-	if err := json.Unmarshal(data, &req); err != nil {
-		r := errResponse("bad data: " + err.Error())
-		return &r
-	}
-	claude.WriteStatus(req.PaneID, claude.StatusDone)
-	claude.ClearDefer(req.PaneID)
-	d.nudge()
-	log.Printf("undefer: pane %s", req.PaneID)
-	r := resultResponse("ok")
-	return &r
-}

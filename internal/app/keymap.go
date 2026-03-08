@@ -229,11 +229,11 @@ var Keys = KeyMap{
 		key.WithKeys("esc"),
 	),
 	ScrollDown: key.NewBinding(
-		key.WithKeys("ctrl+d"),
-		key.WithHelp("ctrl+d/u", "scroll preview"),
+		key.WithKeys("ctrl+d", "ctrl+f"),
+		key.WithHelp("ctrl+d/f/u/b", "scroll preview"),
 	),
 	ScrollUp: key.NewBinding(
-		key.WithKeys("ctrl+u"),
+		key.WithKeys("ctrl+u", "ctrl+b"),
 	),
 	MsgNext: key.NewBinding(
 		key.WithKeys("ctrl+j"),

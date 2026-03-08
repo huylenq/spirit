@@ -211,13 +211,6 @@ func buildSession(p tmux.PaneInfo, pid int, status Status) ClaudeSession {
 	}
 
 	if status == StatusLater {
-		s.DeferUntil, _ = ReadDeferUntil(p.PaneID)
-		if !s.DeferUntil.IsZero() && time.Now().After(s.DeferUntil) {
-			WriteStatus(p.PaneID, StatusDone)
-			ClearDefer(p.PaneID)
-			s.Status = StatusDone
-			s.DeferUntil = time.Time{}
-		}
 		// Look up matching bookmark
 		bookmarks, _ := ReadAllLaterBookmarks()
 		for _, bm := range bookmarks {

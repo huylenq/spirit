@@ -31,7 +31,8 @@ var (
 // FetchUsage spawns claude in an internal pty, sends /usage, parses the output.
 // No tmux session is created — completely invisible to the user.
 func FetchUsage() (*UsageStats, error) {
-	cmd := exec.Command("claude")
+	cmd := exec.Command("claude",
+		"--no-session-persistence", "--tools", "", "--setting-sources", "")
 	// Unset env vars that trigger nested-session detection
 	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
 

@@ -184,33 +184,12 @@ func RemoveQueueMessage(paneID string) {
 	os.Remove(queueFilePath(paneID))
 }
 
-func deferFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".defer")
-}
-
-func ReadDeferUntil(paneID string) (time.Time, error) {
-	data, err := os.ReadFile(deferFilePath(paneID))
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
-}
-
-func WriteDeferUntil(paneID string, t time.Time) error {
-	return os.WriteFile(deferFilePath(paneID), []byte(t.Format(time.RFC3339)), 0o644)
-}
-
-func ClearDefer(paneID string) {
-	os.Remove(deferFilePath(paneID))
-}
-
 func RemoveStatus(paneID string) {
 	os.Remove(statusFilePath(paneID))
 	os.Remove(sessionFilePath(paneID))
 	os.Remove(hookFilePath(paneID))
 	os.Remove(lastMsgFilePath(paneID))
 	os.Remove(queueFilePath(paneID))
-	os.Remove(deferFilePath(paneID))
 }
 
 func CleanStale(activePaneIDs map[string]bool) error {
@@ -310,4 +289,24 @@ func RemoveLaterBookmark(id string) {
 
 func WriteLaterStatus(paneID string) error {
 	return WriteStatus(paneID, StatusLater)
+}
+
+func deferFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".defer")
+}
+
+func ReadDeferUntil(paneID string) (time.Time, error) {
+	data, err := os.ReadFile(deferFilePath(paneID))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+}
+
+func WriteDeferUntil(paneID string, t time.Time) error {
+	return os.WriteFile(deferFilePath(paneID), []byte(t.Format(time.RFC3339)), 0o644)
+}
+
+func ClearDefer(paneID string) {
+	os.Remove(deferFilePath(paneID)) //nolint:errcheck
 }

@@ -119,11 +119,13 @@ func (m Model) View() string {
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization
 	inner := labelLine + "\n" + content + "\n" + footer
+
+	if m.inFullscreenPopup {
+		return inner
+	}
+
 	bordered := ui.AddSideBorders(inner, innerWidth)
-
-	// Bottom border
 	bottomBorder := ui.BottomBorder(m.width)
-
 	return topBorder + "\n" + bordered + "\n" + bottomBorder
 }
 

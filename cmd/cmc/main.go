@@ -74,6 +74,8 @@ func printUsage() {
 
 Usage:
   cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
+  cmc popup            Open TUI in a tmux popup (respects zoom pref)
+  cmc popup --select-active  Same, but auto-select the current pane
   cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
