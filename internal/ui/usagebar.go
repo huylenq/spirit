@@ -92,7 +92,7 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 		return ""
 	}
 
-	label := fmt.Sprintf("%d%%", m.sessionPct)
+	label := fmt.Sprintf("session %d%%", m.sessionPct)
 	if m.resets != "" {
 		label += " · resets " + m.resets
 	}
@@ -109,7 +109,7 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 	for i := 0; i < barWidth; i++ {
 		if i < filledChars {
 			t := float64(i) / float64(max(filledChars, 1))
-			c := blendHex("#2a4a7f", "#60a5fa", t)
+			c := blendHex("#3d2b00", "#8a5a00", t)
 
 			if m.rippleActive {
 				rippleCenter := filledChars - rippleWidth + (m.rippleFrame * (rippleWidth + 3) / rippleFrames)
@@ -122,7 +122,7 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 
 			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("▔"))
 		} else {
-			sb.WriteString(" ")
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#e0e0e0", Dark: "#1a1a1a"}).Render("▔"))
 		}
 	}
 

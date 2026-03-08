@@ -28,6 +28,7 @@ type ListModel struct {
 	width                int
 	filter               string
 	spinnerView          string
+	commitDoneFrame      int
 	diffStats            map[string]map[string]claude.FileDiffStat // sessionID -> file stats
 	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight summarization
 	groupByProject       bool
@@ -72,8 +73,12 @@ func (m *ListModel) SetDiffStats(sessionID string, stats map[string]claude.FileD
 	m.diffStats[sessionID] = stats
 }
 
+// commitDoneFrames is a distinct animation for commit-and-done pending sessions.
+var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
+
 func (m *ListModel) SetSpinnerView(s string) {
 	m.spinnerView = s
+	m.commitDoneFrame = (m.commitDoneFrame + 1) % len(commitDoneFrames)
 }
 
 func (m *ListModel) SetItems(items []claude.ClaudeSession) {
@@ -545,7 +550,7 @@ func renderBadges(s claude.ClaudeSession) string {
 func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected) }
 	if s.CommitDonePending {
-		return bg(CommitDoneStyle).Render(m.spinnerView)
+		return bg(CommitDoneStyle).Render(commitDoneFrames[m.commitDoneFrame])
 	}
 	switch s.Status {
 	case claude.StatusDone:
