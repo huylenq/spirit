@@ -50,9 +50,13 @@ type KeyMap struct {
 	SpatialLeft  key.Binding
 	SpatialRight key.Binding
 
-	// Preview free-scrolling (line-by-line)
+	// Preview half-page scroll (ctrl+d / ctrl+u)
 	ScrollDown key.Binding
 	ScrollUp   key.Binding
+
+	// Preview full-page scroll (ctrl+f / ctrl+b)
+	PageDown key.Binding
+	PageUp   key.Binding
 
 	// Conversation message navigation
 	MsgNext key.Binding
@@ -230,11 +234,18 @@ var Keys = KeyMap{
 		key.WithKeys("esc"),
 	),
 	ScrollDown: key.NewBinding(
-		key.WithKeys("ctrl+d", "ctrl+f"),
-		key.WithHelp("ctrl+d/f/u/b", "scroll preview"),
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl+d/u", "½page"),
 	),
 	ScrollUp: key.NewBinding(
-		key.WithKeys("ctrl+u", "ctrl+b"),
+		key.WithKeys("ctrl+u"),
+	),
+	PageDown: key.NewBinding(
+		key.WithKeys("ctrl+f"),
+		key.WithHelp("ctrl+f/b", "page"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("ctrl+b"),
 	),
 	MsgNext: key.NewBinding(
 		key.WithKeys("ctrl+j"),
