@@ -135,26 +135,15 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 }
 
 func (d *Daemon) handleNudge(data json.RawMessage) *Response {
-	t0 := time.Now()
 	var req NudgeData
 	if err := json.Unmarshal(data, &req); err != nil || req.PaneID == "" {
 		// Bare nudge without data — fall back to full poll
 		d.nudge()
-		log.Printf("nudge: bare (full poll) total=%dms", time.Since(t0).Milliseconds())
 	} else {
-		var transitMs int64
-		if req.SentAt > 0 {
-			transitMs = time.Now().UnixMilli() - req.SentAt
-		}
 		status := claude.ParseStatus(req.Status)
 		if !d.patchSession(req.PaneID, status, req.LastUserMessage) {
 			// Pane not in session list yet — need full discovery
 			d.nudge()
-			log.Printf("nudge: pane=%s status=%s NOT_FOUND (full poll) transit=%dms total=%dms",
-				req.PaneID, req.Status, transitMs, time.Since(t0).Milliseconds())
-		} else {
-			log.Printf("nudge: pane=%s status=%s PATCHED transit=%dms total=%dms",
-				req.PaneID, req.Status, transitMs, time.Since(t0).Milliseconds())
 		}
 	}
 	r := Response{Type: RespPong}
@@ -378,10 +367,11 @@ func (d *Daemon) handleCommitDone(data json.RawMessage) *Response {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
-	// Register the pending commit-done
+	// Register the pending commit-done and nudge so subscribers see CommitDonePending immediately
 	d.commitDoneMu.Lock()
 	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID}
 	d.commitDoneMu.Unlock()
+	d.nudge()
 	log.Printf("commit-done: registered pane %s", req.PaneID)
 	r := resultResponse("ok")
 	return &r

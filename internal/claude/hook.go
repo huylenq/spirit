@@ -21,13 +21,11 @@ type hookInput struct {
 // HandleHook processes a Claude Code hook event. This replaces claude-status.sh.
 // It resolves the current tmux pane, reads stdin JSON, and writes status files.
 func HandleHook(hookType string) {
-	t0 := time.Now()
 	if os.Getenv("TMUX") == "" {
 		return // not in tmux, nothing to do
 	}
 
 	paneID := resolveCurrentPane()
-	tPane := time.Since(t0)
 	if paneID == "" {
 		return
 	}
@@ -45,7 +43,6 @@ func HandleHook(hookType string) {
 			json.Unmarshal(data, &input)
 		}
 	}
-	tStdin := time.Since(t0)
 
 	// Persist session ID
 	if input.SessionID != "" {
@@ -82,21 +79,9 @@ func HandleHook(hookType string) {
 		newStatus = "stopped"
 		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
 	}
-	tWrite := time.Since(t0)
 
 	if newStatus != "" {
 		nudgeDaemon(paneID, newStatus, lastMsg)
-	}
-	tTotal := time.Since(t0)
-
-	// Timing log for troubleshooting latency
-	timingPath := filepath.Join(dir, "hook-timing.log")
-	timing := fmt.Sprintf("%s %s pane=%s resolve=%dms stdin=%dms write=%dms total=%dms\n",
-		time.Now().Format("15:04:05.000"), hookType, paneID,
-		tPane.Milliseconds(), tStdin.Milliseconds(), tWrite.Milliseconds(), tTotal.Milliseconds())
-	if tf, err := os.OpenFile(timingPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
-		tf.WriteString(timing)
-		tf.Close()
 	}
 }
 
@@ -171,7 +156,6 @@ type nudgeData struct {
 	PaneID          string `json:"paneID"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
-	SentAt          int64  `json:"sentAt,omitempty"`
 }
 
 // nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon with the
@@ -187,7 +171,7 @@ func nudgeDaemon(paneID, status, lastUserMessage string) {
 
 	json.NewEncoder(conn).Encode(nudgeRequest{
 		Type: "nudge",
-		Data: nudgeData{PaneID: paneID, Status: status, LastUserMessage: lastUserMessage, SentAt: time.Now().UnixMilli()},
+		Data: nudgeData{PaneID: paneID, Status: status, LastUserMessage: lastUserMessage},
 	})
 }
 

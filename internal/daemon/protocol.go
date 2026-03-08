@@ -86,7 +86,6 @@ type NudgeData struct {
 	PaneID          string `json:"paneID"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
-	SentAt          int64  `json:"sentAt,omitempty"` // UnixMilli timestamp for latency measurement
 }
 
 type CommitDoneData struct {
