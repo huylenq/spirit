@@ -31,6 +31,7 @@ type PreviewModel struct {
 	diffStats       map[string]claude.FileDiffStat
 	diffFiles       []diffFileStat // cached sorted file entries
 	summary         *claude.SessionSummary
+	relayView       string // when set, rendered inline after the ❯ prompt line
 	hookEvents     []claude.HookEvent
 	showHooks      bool
 	hookCursor     int
@@ -147,6 +148,10 @@ func (m *PreviewModel) ToggleExpand() {
 		return
 	}
 	m.hookExpanded = !m.hookExpanded
+}
+
+func (m *PreviewModel) SetRelayView(v string) {
+	m.relayView = v
 }
 
 func (m *PreviewModel) SetHookEvents(events []claude.HookEvent) {
@@ -365,6 +370,10 @@ func (m PreviewModel) View() string {
 
 	// Content viewport, optionally with transcript side panel
 	contentWidth := m.width - 4
+	vpRaw := m.viewport.View()
+	if m.relayView != "" {
+		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
+	}
 	var contentBox string
 	if len(m.userMessages) > 0 || m.summary != nil {
 		transcriptWidth := contentWidth * 40 / 100
@@ -375,7 +384,7 @@ func (m PreviewModel) View() string {
 			transcriptWidth = 50
 		}
 		vpWidth := contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
-		vpView := truncateLines(m.viewport.View(), vpWidth)
+		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
 		transcriptPanel := m.renderTranscript(transcriptWidth, m.viewport.Height-2)
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", transcriptPanel)
@@ -383,7 +392,7 @@ func (m PreviewModel) View() string {
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = PreviewContentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
-		contentBox = PreviewContentStyle.Width(contentWidth).Render(m.viewport.View())
+		contentBox = PreviewContentStyle.Width(contentWidth).Render(vpRaw)
 	}
 
 	// Hook events overlay on top of content
@@ -543,6 +552,24 @@ func formatJSON(raw string) string {
 		return raw
 	}
 	return "  " + string(b)
+}
+
+// injectAfterPrompt finds the last line containing ❯ in the viewport output
+// and replaces the line immediately after it with the relay input view.
+func injectAfterPrompt(vpView, relayView string) string {
+	lines := strings.Split(vpView, "\n")
+	promptIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(ansi.Strip(lines[i]), "❯") {
+			promptIdx = i
+			break
+		}
+	}
+	if promptIdx < 0 {
+		return vpView
+	}
+	lines[promptIdx] = relayView
+	return strings.Join(lines, "\n")
 }
 
 func hookTypeStyled(hookType string) string {

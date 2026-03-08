@@ -213,7 +213,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case SummaryReadyMsg:
-		m.list.SetSummaryLoading(msg.PaneID, false)
 		if msg.Err != nil {
 			m.flashMsg = "Summarize failed: " + msg.Err.Error()
 			m.flashIsError = true
@@ -250,7 +249,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		updated := false
 		for _, r := range msg.Results {
-			m.list.SetSummaryLoading(r.PaneID, false)
 			if s, ok := m.list.SelectedItem(); ok && s.PaneID == r.PaneID {
 				m.preview.SetSummary(r.Summary)
 			}
@@ -658,7 +656,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					latestPaneID = sess.PaneID
 				}
 			}
-			// Mark all as loading
 			for _, sess := range m.sessions {
 				if sess.PaneID != latestPaneID && sess.SessionID != "" {
 					m.list.SetSummaryLoading(sess.PaneID, true)
@@ -687,11 +684,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if s.Status != claude.StatusDone {
 					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 				}
-				m.state = StateCommitAndDone
-				m.commitDonePaneID = s.PaneID
-				m.commitDonePID = s.PID
-				m.commitDoneTitle = sessionDisplayTitle(s)
-				return m, sendPromptRelay(s.PaneID, "/commit-commands:commit")
+				if s.CommitDonePending {
+					return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
+				}
+				paneID, pid := s.PaneID, s.PID
+				return m, func() tea.Msg {
+					if err := m.client.CommitAndDone(paneID, pid); err != nil {
+						return flashErrorMsg("commit+done failed: " + err.Error())
+					}
+					return flashInfoMsg("commit+done started")
+				}
 			}
 			return m, nil
 
@@ -708,6 +710,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			contentHeight := m.height - 2
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
+			savePrefInt("listWidthPct", m.listWidthPct)
 			return m, nil
 
 		case key.Matches(msg, Keys.ListGrow):
@@ -716,6 +719,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			contentHeight := m.height - 2
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
+			savePrefInt("listWidthPct", m.listWidthPct)
 			return m, nil
 
 		case key.Matches(msg, Keys.Refresh):

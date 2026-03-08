@@ -90,7 +90,7 @@ func NewModel(client *daemon.Client) Model {
 		relay:             ui.NewRelayModel(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
-		listWidthPct:      30,
+		listWidthPct:      loadPrefInt("listWidthPct", 30),
 		spinner:           s,
 		help:              h,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",

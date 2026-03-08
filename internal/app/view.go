@@ -40,6 +40,13 @@ func (m Model) View() string {
 		MaxHeight(contentHeight).
 		Render(listContent)
 
+	// Set inline relay prompt on preview when active
+	if m.state == StatePromptRelay {
+		m.preview.SetRelayView(m.relay.View())
+	} else {
+		m.preview.SetRelayView("")
+	}
+
 	// Preview panel
 	previewContent := m.preview.View()
 	previewPanel := ui.PreviewPanelStyle.
@@ -171,17 +178,16 @@ func (m Model) renderFooter() string {
 	case StateDeferPrompt:
 		return m.deferPrompt.View()
 	case StatePromptRelay:
-		return m.relay.View()
+		hint := ui.FooterKeyStyle.Render("enter") + " send  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel  " +
+			ui.FooterKeyStyle.Render("ctrl+j/k") + " navigate"
+		return ui.FooterStyle.Width(m.width).Render(hint)
 	case StateKillConfirm:
 		prompt := ui.FooterDimStyle.Render("Kill ") +
 			ui.FooterDangerStyle.Render(m.killTargetTitle) +
 			ui.FooterDimStyle.Render(" ? ") +
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"
-		return ui.FooterStyle.Width(m.width).Render(prompt)
-	case StateCommitAndDone:
-		prompt := ui.SummaryStyle.Render("committing… ") +
-			ui.FooterDimStyle.Render(m.commitDoneTitle)
 		return ui.FooterStyle.Width(m.width).Render(prompt)
 	default:
 		hints := m.help.View(Keys)

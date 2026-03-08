@@ -20,7 +20,9 @@ func selBg(st lipgloss.Style, selected bool) lipgloss.Style {
 
 type ListModel struct {
 	items                []claude.ClaudeSession
-	filtered             []claude.ClaudeSession
+	filtered             []claude.ClaudeSession            // cursor-navigable matching items
+	allSorted            []claude.ClaudeSession            // all items sorted (for stable group rendering)
+	matchSet             map[string]bool                   // PaneIDs of filter-matching items; nil = all match
 	cursor               int
 	height               int
 	width                int
@@ -51,6 +53,7 @@ func (m ListModel) SummaryLoadingCount() int {
 	return len(m.summaryLoadingPanes)
 }
 
+// SetSummaryLoading sets immediate client-side loading state for instant UI feedback.
 func (m *ListModel) SetSummaryLoading(paneID string, loading bool) {
 	if m.summaryLoadingPanes == nil {
 		m.summaryLoadingPanes = make(map[string]bool)
@@ -75,6 +78,13 @@ func (m *ListModel) SetSpinnerView(s string) {
 
 func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 	m.items = items
+	// Sync summary loading state from daemon-pushed SummarizePending flags
+	m.summaryLoadingPanes = make(map[string]bool)
+	for _, s := range items {
+		if s.SummarizePending {
+			m.summaryLoadingPanes[s.PaneID] = true
+		}
+	}
 	m.applyFilter()
 	// Clamp cursor
 	if len(m.filtered) > 0 && m.cursor >= len(m.filtered) {
@@ -136,23 +146,32 @@ func (m ListModel) Items() []claude.ClaudeSession {
 }
 
 func (m *ListModel) applyFilter() {
+	// Always maintain a sorted copy of all items for stable group rendering
+	m.allSorted = make([]claude.ClaudeSession, len(m.items))
+	copy(m.allSorted, m.items)
+
 	if m.filter == "" {
 		m.filtered = make([]claude.ClaudeSession, len(m.items))
 		copy(m.filtered, m.items)
+		m.matchSet = nil // nil = all match
 	} else {
 		f := strings.ToLower(m.filter)
 		m.filtered = nil
+		m.matchSet = make(map[string]bool)
 		for _, s := range m.items {
 			surface := strings.ToLower(s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage)
 			if strings.Contains(surface, f) {
 				m.filtered = append(m.filtered, s)
+				m.matchSet[s.PaneID] = true
 			}
 		}
 	}
 	if m.groupByProject {
 		sortByProject(m.filtered)
+		sortByProject(m.allSorted)
 	} else {
 		sortByStatus(m.filtered)
+		sortByStatus(m.allSorted)
 	}
 }
 
@@ -236,45 +255,54 @@ func (m ListModel) computeDiffColWidths() diffColWidths {
 }
 
 func (m ListModel) View() string {
-	if len(m.filtered) == 0 {
+	if len(m.items) == 0 {
 		return EmptyStyle.Width(m.width).Render("No Claude sessions found\n\nStart Claude in a tmux pane to see it here.")
 	}
 
 	dw := m.computeDiffColWidths()
 
+	// Determine selected PaneID for cursor tracking across the full list
+	var selectedPaneID string
+	if m.cursor >= 0 && m.cursor < len(m.filtered) {
+		selectedPaneID = m.filtered[m.cursor].PaneID
+	}
+
 	var lines []string
-	isFiltered := m.filter != ""
 	currentProject := ""
 	currentStatus := claude.Status(-1)
 
-	for i, s := range m.filtered {
-		// Group header (only in non-filtered mode)
-		if !isFiltered {
-			if m.groupByProject {
-				if s.Project != currentProject {
-					currentProject = s.Project
-					if len(lines) > 0 {
-						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-					}
-					lines = append(lines, renderGroupHeader(s.Project))
+	for _, s := range m.allSorted {
+		// Group headers — always rendered for spatial stability during filtering
+		if m.groupByProject {
+			if s.Project != currentProject {
+				currentProject = s.Project
+				if len(lines) > 0 {
+					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 				}
-			} else {
-				if s.Status != currentStatus {
-					currentStatus = s.Status
-					currentProject = "" // reset project tracking for new status group
-					if len(lines) > 0 {
-						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-					}
-					lines = append(lines, renderStatusGroupHeader(s.Status))
+				lines = append(lines, renderGroupHeader(s.Project))
+			}
+		} else {
+			if s.Status != currentStatus {
+				currentStatus = s.Status
+				currentProject = "" // reset project tracking for new status group
+				if len(lines) > 0 {
+					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 				}
-				if s.Project != currentProject {
-					currentProject = s.Project
-					lines = append(lines, renderProjectSubHeader(s.Project))
-				}
+				lines = append(lines, renderStatusGroupHeader(s.Status))
+			}
+			if s.Project != currentProject {
+				currentProject = s.Project
+				lines = append(lines, renderProjectSubHeader(s.Project))
 			}
 		}
 
-		lines = append(lines, m.renderItem(i, s, dw))
+		// Only render items that match the filter (matchSet nil = all match)
+		if m.matchSet != nil && !m.matchSet[s.PaneID] {
+			continue
+		}
+
+		isSelected := s.PaneID == selectedPaneID
+		lines = append(lines, m.renderItem(isSelected, s, dw))
 	}
 
 	// Truncate to fit available height
@@ -306,8 +334,7 @@ func renderStatusGroupHeader(status claude.Status) string {
 	}
 }
 
-func (m ListModel) renderItem(idx int, s claude.ClaudeSession, dw diffColWidths) string {
-	isSelected := idx == m.cursor
+func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths) string {
 
 	// Display name priority: custom title → headline → first message → project (fallback)
 	var displayName, sourceIcon string
@@ -521,6 +548,9 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	case claude.StatusDone:
 		return bg(ItemDetailStyle).Render(formatAge(s.LastChanged))
 	case claude.StatusWorking:
+		if s.CommitDonePending {
+			return bg(CommitDoneStyle).Render(m.spinnerView)
+		}
 		if s.PermissionMode == "plan" {
 			return bg(StatPlanStyle).Render(m.spinnerView)
 		}

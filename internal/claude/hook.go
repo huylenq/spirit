@@ -21,11 +21,13 @@ type hookInput struct {
 // HandleHook processes a Claude Code hook event. This replaces claude-status.sh.
 // It resolves the current tmux pane, reads stdin JSON, and writes status files.
 func HandleHook(hookType string) {
+	t0 := time.Now()
 	if os.Getenv("TMUX") == "" {
 		return // not in tmux, nothing to do
 	}
 
 	paneID := resolveCurrentPane()
+	tPane := time.Since(t0)
 	if paneID == "" {
 		return
 	}
@@ -43,6 +45,7 @@ func HandleHook(hookType string) {
 			json.Unmarshal(data, &input)
 		}
 	}
+	tStdin := time.Since(t0)
 
 	// Persist session ID
 	if input.SessionID != "" {
@@ -63,20 +66,38 @@ func HandleHook(hookType string) {
 		}
 	}
 
-	// Write status and optional data
+	// Write status and optional data, then nudge daemon with the change
+	var newStatus string
+	var lastMsg string
 	switch hookType {
 	case "UserPromptSubmit", "PreToolUse":
+		newStatus = "working"
 		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
 		os.Remove(deferFilePath(paneID)) // auto-cancel defer
 		if hookType == "UserPromptSubmit" && input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
+			lastMsg = input.Prompt
 		}
 	case "Stop":
+		newStatus = "stopped"
 		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
 	}
+	tWrite := time.Since(t0)
 
-	// Nudge daemon to poll immediately (fire-and-forget)
-	nudgeDaemon()
+	if newStatus != "" {
+		nudgeDaemon(paneID, newStatus, lastMsg)
+	}
+	tTotal := time.Since(t0)
+
+	// Timing log for troubleshooting latency
+	timingPath := filepath.Join(dir, "hook-timing.log")
+	timing := fmt.Sprintf("%s %s pane=%s resolve=%dms stdin=%dms write=%dms total=%dms\n",
+		time.Now().Format("15:04:05.000"), hookType, paneID,
+		tPane.Milliseconds(), tStdin.Milliseconds(), tWrite.Milliseconds(), tTotal.Milliseconds())
+	if tf, err := os.OpenFile(timingPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+		tf.WriteString(timing)
+		tf.Close()
+	}
 }
 
 // resolveCurrentPane walks the process tree upward to find which tmux pane
@@ -141,17 +162,33 @@ func compactJSONString(raw string) string {
 	return string(b)
 }
 
-// nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon
-// so it polls immediately instead of waiting for the next tick.
-func nudgeDaemon() {
+type nudgeRequest struct {
+	Type string    `json:"type"`
+	Data nudgeData `json:"data"`
+}
+
+type nudgeData struct {
+	PaneID          string `json:"paneID"`
+	Status          string `json:"status"`
+	LastUserMessage string `json:"lastUserMessage,omitempty"`
+	SentAt          int64  `json:"sentAt,omitempty"`
+}
+
+// nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon with the
+// status change data so it can patch the session in-place without re-polling.
+func nudgeDaemon(paneID, status, lastUserMessage string) {
 	sock := filepath.Join(StatusDir(), "daemon.sock")
 	conn, err := net.DialTimeout("unix", sock, 50*time.Millisecond)
 	if err != nil {
 		return // daemon not running, no big deal
 	}
+	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
-	conn.Write([]byte(`{"type":"nudge"}` + "\n"))
-	conn.Close()
+
+	json.NewEncoder(conn).Encode(nudgeRequest{
+		Type: "nudge",
+		Data: nudgeData{PaneID: paneID, Status: status, LastUserMessage: lastUserMessage, SentAt: time.Now().UnixMilli()},
+	})
 }
 
 func trimHookFile(path string) {

@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -49,5 +50,24 @@ func savePrefBool(key string, val bool) {
 	} else {
 		delete(prefs, key)
 	}
+	savePrefs(prefs)
+}
+
+func loadPrefInt(key string, defaultVal int) int {
+	prefs := loadPrefs()
+	if v, ok := prefs[key]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
+func savePrefInt(key string, val int) {
+	prefs := loadPrefs()
+	if prefs == nil {
+		prefs = map[string]string{}
+	}
+	prefs[key] = strconv.Itoa(val)
 	savePrefs(prefs)
 }

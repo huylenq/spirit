@@ -1,9 +1,6 @@
 package ui
 
-import (
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/lipgloss"
-)
+import "github.com/charmbracelet/bubbles/textinput"
 
 type RelayModel struct {
 	input  textinput.Model
@@ -12,8 +9,8 @@ type RelayModel struct {
 
 func NewRelayModel() RelayModel {
 	ti := textinput.New()
-	ti.Placeholder = "type a message..."
-	ti.Prompt = "> "
+	ti.Placeholder = ""
+	ti.Prompt = "❯ "
 	ti.PromptStyle = RelayPromptStyle
 	ti.CharLimit = 512
 	return RelayModel{input: ti}
@@ -50,7 +47,7 @@ func (m RelayModel) View() string {
 	if !m.active {
 		return ""
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(m.input.View())
+	return m.input.View()
 }
 
 func (m *RelayModel) TextInput() *textinput.Model {

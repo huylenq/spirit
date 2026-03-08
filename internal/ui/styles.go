@@ -28,6 +28,7 @@ var (
 	StatDoneStyle     = lipgloss.NewStyle().Foreground(ColorDone)
 	StatDeferredStyle = lipgloss.NewStyle().Foreground(ColorDeferred)
 	StatPlanStyle     = lipgloss.NewStyle().Foreground(ColorPlan)
+	CommitDoneStyle   = DiffAddedStyle
 
 	// List panel
 	ListPanelStyle = lipgloss.NewStyle().

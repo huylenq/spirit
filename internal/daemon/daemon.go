@@ -40,6 +40,9 @@ type Daemon struct {
 	commitDoneMu    sync.Mutex
 	commitDonePanes map[string]commitDoneEntry // paneID → entry
 
+	summarizingMu    sync.Mutex
+	summarizingPanes map[string]bool // paneIDs with in-flight summarization
+
 	listener   net.Listener
 	lockFile   *os.File
 	socketPath string
@@ -53,8 +56,9 @@ type Daemon struct {
 // Run starts the daemon: acquires lock, cleans up stale socket, writes PID, listens, polls.
 func Run(info DaemonInfo) error {
 	d := &Daemon{
-		subscribers:     make(map[*subscriber]struct{}),
-		commitDonePanes: make(map[string]commitDoneEntry),
+		subscribers:      make(map[*subscriber]struct{}),
+		commitDonePanes:  make(map[string]commitDoneEntry),
+		summarizingPanes: make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
 		pidPath:     info.PIDPath,
@@ -220,13 +224,19 @@ func (d *Daemon) poll() {
 	// Resolve pending commit-and-done operations
 	d.resolveCommitDone(sessions)
 
-	// Annotate sessions with commit-done pending state
+	// Annotate sessions with daemon-side pending states
 	d.commitDoneMu.Lock()
+	d.summarizingMu.Lock()
 	for i := range sessions {
-		if _, pending := d.commitDonePanes[sessions[i].PaneID]; pending {
+		paneID := sessions[i].PaneID
+		if _, pending := d.commitDonePanes[paneID]; pending {
 			sessions[i].CommitDonePending = true
 		}
+		if d.summarizingPanes[paneID] {
+			sessions[i].SummarizePending = true
+		}
 	}
+	d.summarizingMu.Unlock()
 	d.commitDoneMu.Unlock()
 
 	d.mu.Lock()
@@ -374,7 +384,8 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].LastUserMessage != b[i].LastUserMessage ||
 			a[i].PermissionMode != b[i].PermissionMode ||
 			a[i].LastActionCommit != b[i].LastActionCommit ||
-			a[i].CommitDonePending != b[i].CommitDonePending {
+			a[i].CommitDonePending != b[i].CommitDonePending ||
+			a[i].SummarizePending != b[i].SummarizePending {
 			return false
 		}
 	}

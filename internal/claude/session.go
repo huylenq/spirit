@@ -35,17 +35,21 @@ func (s *Status) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &str); err != nil {
 		return err
 	}
+	*s = ParseStatus(str)
+	return nil
+}
+
+func ParseStatus(str string) Status {
 	switch str {
 	case "working":
-		*s = StatusWorking
+		return StatusWorking
 	case "stopped", "done":
-		*s = StatusDone
+		return StatusDone
 	case "deferred":
-		*s = StatusDeferred
+		return StatusDeferred
 	default:
-		*s = StatusDone
+		return StatusDone
 	}
-	return nil
 }
 
 type Location struct {
@@ -79,5 +83,6 @@ type ClaudeSession struct {
 	CustomTitle string // user-set name via /rename in Claude Code
 	PermissionMode   string // "plan", "bypassPermissions", etc. (empty = unknown)
 	LastActionCommit bool   // last tool call was git commit
-	CommitDonePending bool  // daemon is waiting for commit-and-done to resolve
+	CommitDonePending  bool // daemon is waiting for commit-and-done to resolve
+	SummarizePending   bool // daemon has in-flight summarization for this pane
 }
