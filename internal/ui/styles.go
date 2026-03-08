@@ -7,7 +7,7 @@ var (
 	ColorWorking     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"} // amber
 	ColorDone        = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorDeferred    = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple
-	ColorPlan        = lipgloss.AdaptiveColor{Light: "#6d28d9", Dark: "#8b5cf6"} // violet (plan mode)
+	ColorPlan        = lipgloss.AdaptiveColor{Light: "#006666", Dark: "#48968c"} // teal (plan mode, matches Claude Code)
 	ColorMuted       = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#9ca3af"} // gray
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
@@ -90,6 +90,11 @@ var (
 	// Filter
 	FilterPromptStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
+				Bold(true)
+
+	// Relay (prompt relay input)
+	RelayPromptStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen).
 				Bold(true)
 
 	// Group separator
