@@ -10,10 +10,7 @@ const (
 	IconClock     = "\uf252"  // clock
 	IconFolder    = "\uf07b"  // folder
 	IconFile      = "\uf15b"  // file — diff file count
-	// Session entry name source indicators (shown dimmed before display name)
-	IconTag   = "\uf02b"  // tag — custom title set via /rename
-	IconQuote = "\uf10d"  // quote-left — display name derived from first message
-	IconAsterisk = "\uf069" // asterisk — new session (no conversation yet)
+	IconQuote = "\uf10d"  // quote-left — user message subtitle
 	IconGitCommit = "\ue729" // nf-dev-git_commit
 	// Subtitle icons
 	IconInput    = "\uf11c"  // keyboard — last user message subtitle

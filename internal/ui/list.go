@@ -197,7 +197,7 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: status order (Done, Working, Deferred); secondary: newest created first
+	// Primary: status order (Done, Working, Later); secondary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
@@ -342,22 +342,19 @@ func renderStatusGroupHeader(status claude.Status) string {
 
 func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths, filterLower string) string {
 
-	// Display name priority: custom title → headline → first message → project (fallback)
-	var displayName, sourceIcon string
+	// Display name priority: custom title → headline → first message → (new session)
+	var displayName string
 	if s.CustomTitle != "" {
 		displayName = s.CustomTitle
-		sourceIcon = IconTag
 	} else if s.Headline != "" {
 		displayName = s.Headline
-		sourceIcon = IconTag
 	} else if s.FirstMessage != "" {
 		displayName = strings.ReplaceAll(s.FirstMessage, "\n", " ")
-		sourceIcon = IconQuote
 	} else {
-		displayName = "(New session)"
-		sourceIcon = IconAsterisk
-		displayName = lipgloss.NewStyle().Italic(true).Render(displayName)
+		displayName = lipgloss.NewStyle().Italic(true).Render("(New session)")
 	}
+
+	glyph := AvatarGlyph(s.AvatarAnimalIdx)
 
 	isNewSession := s.CustomTitle == "" && s.Headline == "" && s.FirstMessage == ""
 	filterActive := filterLower != ""
@@ -397,7 +394,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 
 	// prefix is always 4 cells: "  ▌ " (selected) or "    " (unselected)
 	const prefixWidth = 4
-	iconStr := ItemDetailStyle.Render(sourceIcon + " ")
+	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph + "  ")
 	iconWidth := lipgloss.Width(iconStr)
 
 	// 2 for outer padding, 2 for minimum gap
@@ -428,7 +425,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		namePart = bg.Render("  ") +
 			SelectedBarStyle.Render("▌") +
 			bg.Render(" ") +
-			bg.Foreground(ColorMuted).Render(sourceIcon+" ") +
+			AvatarStyle(s.AvatarColorIdx).Background(ColorSelectionBg).Render(glyph + "  ") +
 			styledName
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {
@@ -469,7 +466,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := filterActive && containsFilter(s.LastUserMessage, filterLower)
-		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconInput, isSelected, doHL)
+		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconQuote, isSelected, doHL)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the filter

@@ -69,7 +69,7 @@ var (
 	minimapPaneDoneStyle = lipgloss.NewStyle().
 				Foreground(ColorDone)
 
-	minimapPaneDeferredStyle = lipgloss.NewStyle().
+	minimapPaneLaterStyle = lipgloss.NewStyle().
 				Foreground(ColorLater)
 
 	minimapPaneSelectedStyle = lipgloss.NewStyle().
@@ -526,7 +526,7 @@ var statusStyleMap = map[int]paneStatusStyles{
 		FillBg:      lipgloss.AdaptiveColor{Light: "#dbeafe", Dark: "#1e2240"}, // blue tint
 	},
 	PaneStatusLater: {
-		Style:       minimapPaneDeferredStyle,
+		Style:       minimapPaneLaterStyle,
 		BorderColor: ColorLater,
 		FillBg:      lipgloss.AdaptiveColor{Light: "#ede9fe", Dark: "#2a1e40"}, // purple tint
 	},

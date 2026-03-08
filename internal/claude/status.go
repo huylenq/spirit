@@ -291,22 +291,6 @@ func WriteLaterStatus(paneID string) error {
 	return WriteStatus(paneID, StatusLater)
 }
 
-func deferFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".defer")
-}
 
-func ReadDeferUntil(paneID string) (time.Time, error) {
-	data, err := os.ReadFile(deferFilePath(paneID))
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
-}
 
-func WriteDeferUntil(paneID string, t time.Time) error {
-	return os.WriteFile(deferFilePath(paneID), []byte(t.Format(time.RFC3339)), 0o644)
-}
 
-func ClearDefer(paneID string) {
-	os.Remove(deferFilePath(paneID)) //nolint:errcheck
-}

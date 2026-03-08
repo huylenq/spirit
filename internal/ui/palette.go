@@ -27,7 +27,7 @@ type PaletteModel struct {
 func NewPaletteModel() PaletteModel {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter..."
-	ti.Prompt = ": "
+	ti.Prompt = "; "
 	ti.PromptStyle = FilterPromptStyle
 	ti.CharLimit = 64
 	return PaletteModel{input: ti}
@@ -119,16 +119,22 @@ func (m PaletteModel) View(width int) string {
 	lines = append(lines, m.input.View())
 	lines = append(lines, PaletteSepStyle.Render(strings.Repeat("─", contentWidth)))
 
-	maxVisible := 15
+	maxVisible := min(15, len(m.items)) // fixed to initial item count
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	rendered := 0
 	for i, item := range m.filtered {
-		if i >= maxVisible {
+		if rendered >= maxVisible {
 			break
 		}
 		lines = append(lines, renderPaletteItem(item, i == m.cursor, contentWidth))
+		rendered++
 	}
-
-	if len(m.filtered) == 0 {
-		lines = append(lines, PaletteDisabledStyle.Render("  no matching commands"))
+	// Pad with empty rows to keep overlay height stable
+	for rendered < maxVisible {
+		lines = append(lines, strings.Repeat(" ", contentWidth))
+		rendered++
 	}
 
 	body := strings.Join(lines, "\n")

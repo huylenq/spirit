@@ -11,7 +11,6 @@ const (
 	StatusWorking  Status = iota
 	StatusDone
 	StatusLater    // kept for compatibility
-	StatusDeferred = StatusLater
 )
 
 func (s Status) String() string {
@@ -71,7 +70,6 @@ type ClaudeSession struct {
 	Location    Location
 	LastChanged     time.Time
 	CreatedAt       time.Time // pane creation time (from tmux pane_created)
-	DeferUntil      time.Time // non-zero when deferred until a specific time
 	IsPhantom       bool      // true when session has no live tmux pane (created from bookmark)
 	LaterBookmarkID string    // links to the bookmark file (empty if not a Deferred session)
 	SessionID       string

@@ -38,12 +38,6 @@ type DiffStatsReadyMsg struct {
 	Stats     map[string]claude.FileDiffStat
 }
 
-// DeferConfirmedMsg is sent when user confirms a defer duration.
-type DeferConfirmedMsg struct {
-	PaneID  string
-	Minutes int
-}
-
 // SummaryReadyMsg is sent when a conversation summary completes.
 type SummaryReadyMsg struct {
 	PaneID        string

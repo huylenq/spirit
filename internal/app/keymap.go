@@ -281,7 +281,7 @@ var Keys = KeyMap{
 		key.WithHelp("?", "help"),
 	),
 	Palette: key.NewBinding(
-		key.WithKeys(":"),
-		key.WithHelp(":", "commands"),
+		key.WithKeys(";"),
+		key.WithHelp(";", "commands"),
 	),
 }

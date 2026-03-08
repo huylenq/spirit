@@ -11,7 +11,7 @@ import (
 
 // Command represents a single dispatchable action for the command palette.
 type Command struct {
-	Name    string                          // display name: "Defer session"
+	Name    string                          // display name shown in palette
 	Hotkey  string                          // key hint: "w"
 	Enabled func(m *Model) bool             // nil = always enabled
 	Execute func(m *Model) (Model, tea.Cmd) // run the action

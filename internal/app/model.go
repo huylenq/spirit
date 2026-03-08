@@ -25,7 +25,6 @@ const (
 	StateKillConfirm
 	StatePromptRelay
 	StateQueueRelay
-	StateDeferPrompt
 	StatePalette
 )
 
@@ -46,7 +45,6 @@ type Model struct {
 	filter         ui.FilterModel
 	relay          ui.RelayModel
 	queueRelay     ui.RelayModel
-	deferPrompt    ui.DeferPromptModel
 	minimap        ui.MinimapModel
 	usageBar       ui.UsageBarModel
 	sessions       []claude.ClaudeSession
@@ -94,7 +92,6 @@ func NewModel(client *daemon.Client) Model {
 		filter:            ui.NewFilterModel(),
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
-		deferPrompt:       ui.NewDeferPromptModel(),
 		palette:           ui.NewPaletteModel(),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),

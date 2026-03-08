@@ -43,10 +43,7 @@ const (
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 	ReqQueue            = "queue"
-	ReqCancelQueue      = "cancel_queue"
-	ReqDefer            = "defer"
-	ReqUndefer          = "undefer"
-)
+	ReqCancelQueue      = "cancel_queue")
 
 // Response type constants.
 const (
@@ -119,11 +116,6 @@ type CommitDoneData struct {
 type QueueData struct {
 	PaneID  string `json:"paneID"`
 	Message string `json:"message"`
-}
-
-type DeferData struct {
-	PaneID  string `json:"paneID"`
-	Minutes int    `json:"minutes"`
 }
 
 // --- Response data payloads ---

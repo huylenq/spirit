@@ -1,4 +1,5 @@
 .PHONY: build clean restart
+.DEFAULT_GOAL := restart
 
 BINARY := bin/cmc
 VERSION ?= dev
