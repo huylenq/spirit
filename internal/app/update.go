@@ -667,7 +667,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Queue):
 			if s, ok := m.list.SelectedItem(); ok {
 				m.state = StateQueueRelay
-				m.queueRelay.SetPrompt("❮ ", ui.QueuePromptStyle)
 				if s.QueuePending != "" {
 					m.queueRelay.ActivateWithValue(s.QueuePending)
 				} else {

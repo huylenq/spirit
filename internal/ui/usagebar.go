@@ -16,11 +16,7 @@ const (
 	rippleWidth    = 5 // characters wide for the bright wave
 )
 
-// Pre-computed styles for bar rendering (avoids per-character allocation).
-var (
-	unfilledStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#303030"})
-	labelStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-)
+var labelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 
 // UsageBarModel renders a thin progress bar showing account-level session usage.
 type UsageBarModel struct {
@@ -91,80 +87,40 @@ func tickUsageBar() tea.Cmd {
 	})
 }
 
-// InlineView renders a compact usage bar for the header line.
-// Uses ▀ (upper half block) for filled — visually thinner than full blocks.
-func (m *UsageBarModel) InlineView(availWidth int) string {
-	if !m.hasData {
-		return ""
-	}
-
-	label := fmt.Sprintf("session %d%%", m.sessionPct)
-	if m.resets != "" {
-		resets := m.resets
-		if i := strings.Index(resets, " ("); i >= 0 {
-			resets = resets[:i]
-		}
-		label += " · resets " + resets
-	}
-	labelW := len(label) + 1 // +1 for space before label
-
-	barWidth := availWidth - labelW
-	if barWidth < 8 {
-		barWidth = 8
-	}
-
-	filledChars := barWidth * m.sessionPct / 100
-
-	var sb strings.Builder
-	for i := 0; i < barWidth; i++ {
-		if i < filledChars {
-			t := float64(i) / float64(max(filledChars, 1))
-			c := blendHex("#3d2b00", "#8a5a00", t)
-
-			if m.rippleActive {
-				rippleCenter := filledChars - rippleWidth + (m.rippleFrame * (rippleWidth + 3) / rippleFrames)
-				dist := intAbs(i - rippleCenter)
-				if dist < rippleWidth {
-					intensity := 1.0 - float64(dist)/float64(rippleWidth)
-					c = blendHex(c, "#93c5fd", intensity*0.8)
-				}
-			}
-
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("─"))
-		} else {
-			sb.WriteString(unfilledStyle.Render("─"))
-		}
-	}
-
-	sb.WriteString(" ")
-	sb.WriteString(labelStyle.Render(label))
-	return sb.String()
-}
-
 // TopBorderView renders the usage bar as the top border of the TUI frame.
-// Corners ╭/╮ are colored as part of the usage bar gradient.
+// Uses heavy ━ with thin ─ transitions into rounded ╭/╮ corners.
 // When no data is available, renders a plain border using BorderCharStyle.
 func (m *UsageBarModel) TopBorderView(width int) string {
 	if width < 2 {
 		return ""
 	}
 
+	// filledChars is computed over the thick region (positions 2..width-3)
+	thickStart := 2
+	thickEnd := width - 2 // exclusive
+	thickWidth := thickEnd - thickStart
 	filledChars := 0
-	if m.hasData {
-		filledChars = width * m.sessionPct / 100
+	if m.hasData && thickWidth > 0 {
+		filledChars = thickStart + thickWidth*m.sessionPct/100
 	}
 
 	var sb strings.Builder
 	for i := 0; i < width; i++ {
-		glyph := "─"
-		if i == 0 {
+		glyph := "━"
+		switch i {
+		case 0:
 			glyph = "╭"
-		} else if i == width-1 {
+		case 1, width - 2:
+			glyph = "─"
+		case width - 1:
 			glyph = "╮"
 		}
 
-		if m.hasData && i < filledChars {
-			t := float64(i) / float64(max(filledChars, 1))
+		// Only the thick ━ region (positions 2..width-3) gets usage bar coloring;
+		// corners and thin ─ transitions always use the plain border style.
+		isThick := i >= 2 && i <= width-3
+		if isThick && m.hasData && i < filledChars {
+			t := float64(i-2) / float64(max(filledChars-2, 1))
 			c := blendHex("#3d2b00", "#8a5a00", t)
 
 			if m.rippleActive {

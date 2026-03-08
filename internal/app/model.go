@@ -88,7 +88,7 @@ func NewModel(client *daemon.Client) Model {
 		filter:            ui.NewFilterModel(),
 		deferPrompt:       ui.NewDeferPromptModel(),
 		relay:             ui.NewRelayModel(),
-		queueRelay:        ui.NewRelayModel(),
+		queueRelay:        ui.NewQueueRelayModel(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),

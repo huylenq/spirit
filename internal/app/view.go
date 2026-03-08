@@ -26,11 +26,7 @@ func (m Model) View() string {
 	topBorder := m.usageBar.TopBorderView(m.width)
 
 	// Label line: usage stats right-aligned below the top border
-	labelLine := lipgloss.NewStyle().
-		Width(innerWidth).
-		Align(lipgloss.Right).
-		PaddingRight(1).
-		Render(m.usageBar.LabelView())
+	labelLine := ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
 
 	// Footer: always 1 line
 	footer := m.renderFooter(innerWidth)
@@ -107,8 +103,8 @@ func (m Model) View() string {
 		footer = ui.FooterStyle.Width(innerWidth).Render(m.renderChordHints())
 	}
 
-	// Assemble inner content (label + content + footer), add side borders
-	inner := lipgloss.JoinVertical(lipgloss.Left, labelLine, content, footer)
+	// Assemble inner content — manual join avoids JoinVertical width normalization
+	inner := labelLine + "\n" + content + "\n" + footer
 	bordered := ui.AddSideBorders(inner, innerWidth)
 
 	// Bottom border
@@ -179,6 +175,7 @@ func (m Model) renderDebugOverlay() string {
 		if cached != nil {
 			lines = append(lines, line("Objective", debugTruncate(cached.Objective, 40)))
 			lines = append(lines, line("CacheHL", debugTruncate(cached.Headline, 40)))
+			lines = append(lines, line("ProblemType", cached.ProblemType))
 			lines = append(lines, line("InputWords", fmt.Sprintf("%d", cached.InputWords)))
 		} else {
 			lines = append(lines, muted.Render("(no cached summary)"))

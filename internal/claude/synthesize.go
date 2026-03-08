@@ -11,10 +11,11 @@ import (
 
 // SessionSummary holds the structured synthesis of a coding session.
 type SessionSummary struct {
-	Objective  string `json:"objective"`
-	Status     string `json:"status"`
-	Headline   string `json:"headline"`    // brief one-liner for list display
-	InputWords int    `json:"input_words"` // word count of user messages fed to haiku
+	Objective   string `json:"objective"`
+	Status      string `json:"status"`
+	ProblemType string `json:"problem_type"` // bug, feature, refactoring, etc.
+	Headline    string `json:"headline"`     // brief one-liner for list display
+	InputWords  int    `json:"input_words"`  // word count of user messages fed to haiku
 }
 
 func summaryFilePath(sessionID string) string {
@@ -82,7 +83,7 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	inputWords := len(strings.Fields(input))
 
 	prompt := "Analyze these user messages from a coding session. Output ONLY valid JSON, no markdown fences:\n" +
-		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","headline":"<objective condensed to a single short phrase under 60 chars, no quotes, no period>"}` +
+		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","problem_type":"<one of: bug, feature, refactoring, chore, docs, test, exploration, debug, performance>","headline":"<objective condensed to a single short phrase under 60 chars, no quotes, no period>"}` +
 		"\n\n" + input
 
 	cmd := newLightweightClaude("Output ONLY valid JSON. No markdown, no explanation.", prompt)

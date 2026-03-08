@@ -203,10 +203,6 @@ func ReadQueueMessage(paneID string) string {
 }
 
 func WriteQueueMessage(paneID, message string) error {
-	dir := statusDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	return os.WriteFile(queueFilePath(paneID), []byte(message), 0o644)
 }
 

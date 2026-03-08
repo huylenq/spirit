@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // BottomBorder renders the bottom border line: ╰──...──╯
@@ -15,7 +16,7 @@ func BottomBorder(width int) string {
 }
 
 // AddSideBorders wraps each line of content with │ on left and right.
-// Lines shorter than innerWidth are padded with spaces.
+// Lines are padded or truncated to exactly innerWidth visible characters.
 func AddSideBorders(content string, innerWidth int) string {
 	lines := strings.Split(content, "\n")
 	border := BorderCharStyle.Render("│")
@@ -24,6 +25,8 @@ func AddSideBorders(content string, innerWidth int) string {
 		lineW := lipgloss.Width(line)
 		if lineW < innerWidth {
 			line += strings.Repeat(" ", innerWidth-lineW)
+		} else if lineW > innerWidth {
+			line = ansi.Truncate(line, innerWidth, "")
 		}
 		sb.WriteString(border)
 		sb.WriteString(line)

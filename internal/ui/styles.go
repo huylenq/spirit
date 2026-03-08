@@ -15,12 +15,8 @@ var (
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 
 	// Border frame (custom TUI outline)
-	BorderCharStyle = lipgloss.NewStyle().Foreground(ColorBorder)
-
-	// Header
-	HeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Padding(0, 1)
+	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
+	BorderLabelStyle = lipgloss.NewStyle().Align(lipgloss.Right).PaddingRight(1)
 
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
