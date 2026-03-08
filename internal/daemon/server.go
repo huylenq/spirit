@@ -326,6 +326,10 @@ func (d *Daemon) handleLater(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
+	// Remove any existing bookmark for this pane to prevent duplicates
+	if existing := claude.FindBookmarkIDByPane(req.PaneID); existing != "" {
+		claude.RemoveLaterBookmark(existing)
+	}
 	bm := d.buildBookmarkFromSession(req.PaneID)
 	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())

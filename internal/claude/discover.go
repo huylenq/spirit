@@ -153,15 +153,16 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		sessions = append(sessions, s)
 	}
 
-	// Merge phantom Later sessions from bookmarks
-	existingPaneIDs := make(map[string]bool)
+	// Merge phantom Later sessions from bookmarks (one per pane, newest wins)
+	seenPaneIDs := make(map[string]bool)
 	for _, s := range sessions {
-		existingPaneIDs[s.PaneID] = true
+		seenPaneIDs[s.PaneID] = true
 	}
 	for _, bm := range bookmarks {
-		if existingPaneIDs[bm.PaneID] {
-			continue // pane already represented in any status
+		if seenPaneIDs[bm.PaneID] {
+			continue // pane already represented (live session or earlier bookmark)
 		}
+		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
 			PaneID:          bm.PaneID,
 			Status:          StatusLater,

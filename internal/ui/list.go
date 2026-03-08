@@ -82,6 +82,12 @@ func (m *ListModel) SetSpinnerView(s string) {
 }
 
 func (m *ListModel) SetItems(items []claude.ClaudeSession) {
+	// Remember currently selected PaneID before rebuilding
+	var selectedPaneID string
+	if m.cursor >= 0 && m.cursor < len(m.filtered) {
+		selectedPaneID = m.filtered[m.cursor].PaneID
+	}
+
 	m.items = items
 	// Sync summary loading state from daemon-pushed SynthesizePending flags
 	m.summaryLoadingPanes = make(map[string]bool)
@@ -91,12 +97,15 @@ func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 		}
 	}
 	m.applyNarrow()
-	// Clamp cursor
-	if len(m.filtered) > 0 && m.cursor >= len(m.filtered) {
-		m.cursor = len(m.filtered) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
+
+	// Restore selection to same session; fall back to clamping
+	if selectedPaneID == "" || !m.SelectByPaneID(selectedPaneID) {
+		if len(m.filtered) > 0 && m.cursor >= len(m.filtered) {
+			m.cursor = len(m.filtered) - 1
+		}
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
 	}
 }
 
