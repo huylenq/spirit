@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -34,6 +35,9 @@ func main() {
 			return
 		case "capture":
 			runCapture()
+			return
+		case "popup":
+			runPopup()
 			return
 		case "-h", "--help", "help":
 			printUsage()
@@ -237,6 +241,64 @@ func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
 		},
 	}
 	return append(groups, newGroup), true
+}
+
+// readPref reads a single key from the cmc prefs file (~/.cache/cmc/prefs).
+func readPref(key string) string {
+	home, _ := os.UserHomeDir()
+	data, err := os.ReadFile(filepath.Join(home, ".cache", "cmc", "prefs"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if ok && k == key {
+			return v
+		}
+	}
+	return ""
+}
+
+// runPopup opens a tmux display-popup with the cmc TUI.
+// Reads the fullscreen preference to determine popup size.
+// Flags:
+//
+//	--select-active  auto-select the pane the user was on when invoked
+func runPopup() {
+	selectActive := false
+	for _, arg := range os.Args[2:] {
+		if arg == "--select-active" {
+			selectActive = true
+		}
+	}
+
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error finding executable: %v\n", err)
+		os.Exit(1)
+	}
+	bin, _ = filepath.EvalSymlinks(bin)
+
+	fullscreen := readPref("fullscreen") == "true"
+	w, h := "80%", "70%"
+	if fullscreen {
+		w, h = "100%", "100%"
+	}
+
+	args := []string{"display-popup", "-B", "-E", "-w", w, "-h", h}
+	if fullscreen {
+		args = append(args, "-e", "CLAUDE_TUI_FULLSCREEN=1")
+	}
+	if selectActive {
+		args = append(args, "-e", "CMC_SELECT_ACTIVE=1")
+	}
+	args = append(args, bin)
+
+	cmd := exec.Command("tmux", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run() //nolint:errcheck
 }
 
 func runCapture() {

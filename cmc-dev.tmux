@@ -14,8 +14,8 @@ fi
 # Auto-install Claude Code hooks (idempotent)
 "$BINARY" setup 2>/dev/null || true
 
-# <prefix> C-Space → fullscreen popup (borderless — TUI draws its own frame)
-tmux bind-key C-Space display-popup -B -E -w 100% -h 100% -e CLAUDE_TUI_FULLSCREEN=1 "$BINARY"
+# Ctrl-Space (prefix-less) → popup with active pane selected (zoom state from prefs)
+tmux bind-key -n C-Space run-shell "$BINARY popup --select-active"
 
-# Ctrl-Tab (prefix-less, tmux 3.5+) → normal popup
-tmux bind-key -n C-Tab display-popup -B -E -w 80% -h 70% "$BINARY"
+# Ctrl-Tab (prefix-less) → popup with default sort order (zoom state from prefs)
+tmux bind-key -n C-Tab run-shell "$BINARY popup"

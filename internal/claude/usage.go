@@ -1,11 +1,16 @@
 package claude
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // UsageStats holds account-level subscription usage fetched via the /usage TUI command.
@@ -23,52 +28,70 @@ var (
 	reResets = regexp.MustCompile(`Resets\s+(.+)`)
 )
 
-// FetchUsage spawns a hidden tmux session, starts an interactive claude session,
-// sends /usage, captures the dialog output, parses it, then cleans up.
+// FetchUsage spawns claude in an internal pty, sends /usage, parses the output.
+// No tmux session is created — completely invisible to the user.
 func FetchUsage() (*UsageStats, error) {
-	session := fmt.Sprintf("cmc-usage-%d", time.Now().UnixNano())
+	cmd := exec.Command("claude")
+	// Unset env vars that trigger nested-session detection
+	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
 
-	// Create hidden tmux session (1 line tall is enough — we resize after)
-	if err := exec.Command("tmux", "new-session", "-d", "-s", session, "-x", "220", "-y", "50").Run(); err != nil {
-		return nil, fmt.Errorf("create tmux session: %w", err)
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 50, Cols: 220})
+	if err != nil {
+		return nil, fmt.Errorf("start pty: %w", err)
 	}
-	defer exec.Command("tmux", "kill-session", "-t", session).Run()
+	defer ptmx.Close()
+	defer cmd.Process.Kill()
 
-	// Start claude with CLAUDECODE unset so nested-session check passes
-	if err := exec.Command("tmux", "send-keys", "-t", session,
-		"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude", "Enter").Run(); err != nil {
-		return nil, fmt.Errorf("start claude: %w", err)
+	// Accumulate pty output in background
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	go func() {
+		tmp := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(tmp)
+			if n > 0 {
+				mu.Lock()
+				buf.Write(tmp[:n])
+				mu.Unlock()
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	snapshot := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return buf.String()
 	}
 
-	// Wait for the claude status bar to appear — "Claude Code v" is specific to the
-	// claude TUI and won't match the shell prompt that precedes it.
-	if err := waitForText(session, "Claude Code v", 30*time.Second); err != nil {
+	// Wait for Claude Code to be ready
+	if err := pollFor(snapshot, "Claude Code v", 30*time.Second); err != nil {
 		return nil, fmt.Errorf("waiting for claude ready: %w", err)
 	}
 
-	// Send /usage
-	if err := exec.Command("tmux", "send-keys", "-t", session, "/usage", "Enter").Run(); err != nil {
+	// Send /usage command
+	if _, err := ptmx.Write([]byte("/usage\n")); err != nil {
 		return nil, fmt.Errorf("send /usage: %w", err)
 	}
 
-	// Wait for the dialog to render (look for "% used")
-	if err := waitForText(session, "% used", 15*time.Second); err != nil {
+	// Wait for usage dialog to render
+	if err := pollFor(snapshot, "% used", 15*time.Second); err != nil {
 		return nil, fmt.Errorf("waiting for usage dialog: %w", err)
 	}
 
-	content, err := capturePane(session)
-	if err != nil {
-		return nil, err
-	}
+	// Small extra wait for the full dialog to render
+	time.Sleep(500 * time.Millisecond)
 
-	return parseUsageDialog(content)
+	return parseUsageDialog(stripANSI(snapshot()))
 }
 
-func waitForText(session, needle string, timeout time.Duration) error {
+// pollFor polls snapshotFn until the output contains needle or timeout expires.
+func pollFor(snapshotFn func() string, needle string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		content, err := capturePane(session)
-		if err == nil && strings.Contains(content, needle) {
+		if strings.Contains(snapshotFn(), needle) {
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -76,12 +99,10 @@ func waitForText(session, needle string, timeout time.Duration) error {
 	return fmt.Errorf("timed out waiting for %q", needle)
 }
 
-func capturePane(session string) (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-p", "-t", session).Output()
-	if err != nil {
-		return "", fmt.Errorf("capture-pane: %w", err)
-	}
-	return string(out), nil
+var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return reANSI.ReplaceAllString(s, "")
 }
 
 // parseUsageDialog extracts usage % and reset times from the /usage dialog text.

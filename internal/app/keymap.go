@@ -8,7 +8,7 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Filter, k.Defer, k.Undefer,
+		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Filter, k.Later, k.LaterKill,
 		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
@@ -20,7 +20,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Enter, k.Filter, k.Refresh, k.Quit},
-		{k.Defer, k.Undefer, k.GroupMode, k.Minimap},
+		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
 		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Transcript},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
 	}
@@ -30,10 +30,10 @@ type KeyMap struct {
 	Up      key.Binding
 	Down    key.Binding
 	Enter   key.Binding
-	Filter  key.Binding
-	Defer   key.Binding
-	Undefer key.Binding
-	Refresh key.Binding
+	Filter    key.Binding
+	Later     key.Binding
+	LaterKill key.Binding
+	Refresh   key.Binding
 	Transcript key.Binding
 	Quit       key.Binding
 	Escape  key.Binding
@@ -85,6 +85,9 @@ type KeyMap struct {
 
 	// Help overlay toggle
 	Help key.Binding
+
+	// Command palette
+	Palette key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -169,13 +172,13 @@ var Keys = KeyMap{
 		key.WithKeys("/"),
 		key.WithHelp("/", "filter"),
 	),
-	Defer: key.NewBinding(
+	Later: key.NewBinding(
 		key.WithKeys("w"),
-		key.WithHelp("w", "defer"),
+		key.WithHelp("w", "later"),
 	),
-	Undefer: key.NewBinding(
-		key.WithKeys("u"),
-		key.WithHelp("u", "undefer"),
+	LaterKill: key.NewBinding(
+		key.WithKeys("W"),
+		key.WithHelp("W", "later+kill"),
 	),
 	Refresh: key.NewBinding(
 		key.WithKeys("r"),
@@ -276,5 +279,9 @@ var Keys = KeyMap{
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
+	),
+	Palette: key.NewBinding(
+		key.WithKeys(":"),
+		key.WithHelp(":", "commands"),
 	),
 }

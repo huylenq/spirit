@@ -224,14 +224,24 @@ func (c *Client) PaneGeometry(sessionName string) ([]tmux.PaneGeometry, error) {
 	return data.Panes, err
 }
 
-// Defer marks a session as deferred for the given number of minutes.
-func (c *Client) Defer(paneID string, minutes int) error {
-	return c.rpcInto(Request{Type: ReqDefer, Data: marshalData(DeferData{PaneID: paneID, Minutes: minutes})}, nil)
+// Later bookmarks a session for later (keeps pane alive).
+func (c *Client) Later(paneID, sessionID string) error {
+	return c.rpcInto(Request{Type: ReqLater, Data: marshalData(LaterData{PaneID: paneID, SessionID: sessionID})}, nil)
 }
 
-// Undefer removes the deferred status from a session.
-func (c *Client) Undefer(paneID string) error {
-	return c.rpcInto(Request{Type: ReqUndefer, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+// LaterKill bookmarks a session and kills the pane.
+func (c *Client) LaterKill(paneID string, pid int, sessionID string) error {
+	return c.rpcInto(Request{Type: ReqLaterKill, Data: marshalData(LaterKillData{PaneID: paneID, PID: pid, SessionID: sessionID})}, nil)
+}
+
+// Unlater removes a Later bookmark.
+func (c *Client) Unlater(bookmarkID string) error {
+	return c.rpcInto(Request{Type: ReqUnlater, Data: marshalData(UnlaterData{BookmarkID: bookmarkID})}, nil)
+}
+
+// OpenLater creates a new tmux window from a dead Later bookmark.
+func (c *Client) OpenLater(bookmarkID, cwd, tmuxSession string) error {
+	return c.rpcInto(Request{Type: ReqOpenLater, Data: marshalData(OpenLaterData{BookmarkID: bookmarkID, CWD: cwd, TmuxSession: tmuxSession})}, nil)
 }
 
 // RenameWindow asks the daemon to generate and apply a window name.
@@ -264,5 +274,15 @@ func (c *Client) Queue(paneID, message string) error {
 // CancelQueue removes a pending queued message for a pane.
 func (c *Client) CancelQueue(paneID string) error {
 	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+}
+
+// Defer marks a session as deferred for the given number of minutes.
+func (c *Client) Defer(paneID string, minutes int) error {
+	return c.rpcInto(Request{Type: ReqDefer, Data: marshalData(DeferData{PaneID: paneID, Minutes: minutes})}, nil)
+}
+
+// Undefer removes the deferred status from a session.
+func (c *Client) Undefer(paneID string) error {
+	return c.rpcInto(Request{Type: ReqUndefer, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
 

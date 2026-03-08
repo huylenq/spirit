@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -78,13 +77,16 @@ func sessionDisplayTitle(s claude.ClaudeSession) string {
 }
 
 // killPaneCmd sends SIGTERM to the claude process, kills the tmux pane, and cleans up status files.
-func killPaneCmd(paneID string, pid int) tea.Cmd {
+func killPaneCmd(paneID string, pid int, bookmarkID string) tea.Cmd {
 	return func() tea.Msg {
 		if pid > 0 {
 			syscall.Kill(pid, syscall.SIGTERM) //nolint:errcheck
 		}
 		tmux.KillPane(paneID) //nolint:errcheck
 		claude.RemoveStatus(paneID)
+		if bookmarkID != "" {
+			claude.RemoveLaterBookmark(bookmarkID)
+		}
 		return PaneKilledMsg{}
 	}
 }
@@ -93,9 +95,11 @@ type flashInfoMsg string
 type flashErrorMsg string
 
 // reopenPopup schedules a new tmux popup to open after the current one closes.
-// It uses run-shell with a short sleep so the new popup opens after the old one exits.
-// bin must be the cached os.Executable() path from Model.binaryPath.
+// It persists the new fullscreen state to prefs so `cmc popup` picks it up,
+// then uses run-shell with a short sleep so the new popup opens after the old one exits.
 func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
+	// Persist the toggled state so future `cmc popup` invocations use it
+	savePrefBool("fullscreen", !currentlyFullscreen)
 	return func() tea.Msg {
 		if bin == "" || os.Getenv("TMUX") == "" {
 			return tea.QuitMsg{}
@@ -113,33 +117,41 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
-// enableSmartSelection controls whether the TUI auto-selects the originating pane on launch.
-// There's a perceivable latency when Claude sends its UserPromptSubmit hook, making it
-// unable to instantaneously update the session state from user turn to working. That
-// limitation makes the smart selection feature really annoying.
-const enableSmartSelection = false
-
-// tryInitialSelection sets the cursor to the user's originating pane if it's a
-// Done Claude session, otherwise leaves cursor at 0 (oldest Done session after sort).
+// tryInitialSelection auto-selects a pane on launch when selectActive is true
+// (ctrl-space / CMC_SELECT_ACTIVE=1). Fallback chain:
+//  1. Exact match: origPane is a Claude session → select it
+//  2. Same tmux session: first Claude session in the same tmux session (in sort order)
+//  3. Default: cursor stays at 0 (first in sort order across all sessions)
+//
 // Only runs once, when both sessions and origPane are available.
-// Returns true if the cursor was moved to origPane (caller should fetch preview).
+// Returns true if the cursor was moved (caller should fetch preview).
 func (m *Model) tryInitialSelection() bool {
-	if !enableSmartSelection {
+	if !m.selectActive {
 		return false
 	}
 	if m.initialSelectionDone || len(m.sessions) == 0 {
 		return false
 	}
-	if m.origPane.Captured {
-		for _, s := range m.sessions {
-			if s.PaneID == m.origPane.PaneID && s.Status == claude.StatusDone {
-				m.initialSelectionDone = true
-				return m.list.SelectByPaneID(m.origPane.PaneID)
-			}
-		}
-		// origPane is not a Done Claude session — cursor stays at 0 (oldest Done)
-		m.initialSelectionDone = true
+	if !m.origPane.Captured {
+		return false
 	}
+	m.initialSelectionDone = true
+
+	// Try 1: exact match on originating pane (any status)
+	for _, s := range m.sessions {
+		if s.PaneID == m.origPane.PaneID {
+			return m.list.SelectByPaneID(m.origPane.PaneID)
+		}
+	}
+
+	// Try 2: first session in same tmux session (already sorted)
+	for _, s := range m.list.Items() {
+		if s.TmuxSession == m.origPane.Session {
+			return m.list.SelectByPaneID(s.PaneID)
+		}
+	}
+
+	// Fallback: cursor stays at 0
 	return false
 }
 
@@ -150,8 +162,8 @@ func claudeStatusToPane(s claude.Status) int {
 		return ui.PaneStatusWorking
 	case claude.StatusDone:
 		return ui.PaneStatusDone
-	case claude.StatusDeferred:
-		return ui.PaneStatusDeferred
+	case claude.StatusLater:
+		return ui.PaneStatusLater
 	default:
 		return ui.PaneStatusNone
 	}
@@ -332,6 +344,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.killTargetPaneID = ""
 		m.killTargetPID = 0
 		m.killTargetTitle = ""
+		m.killTargetBookmarkID = ""
 		if msg.Err != nil {
 			m.flashMsg = "kill failed: " + msg.Err.Error()
 			m.flashIsError = true
@@ -438,44 +451,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateKillConfirm:
 		switch msg.String() {
 		case "y":
-			return m, killPaneCmd(m.killTargetPaneID, m.killTargetPID)
+			return m, killPaneCmd(m.killTargetPaneID, m.killTargetPID, m.killTargetBookmarkID)
 		case "n", "esc":
 			m.state = StateNormal
 			m.killTargetPaneID = ""
 			m.killTargetPID = 0
 			m.killTargetTitle = ""
+			m.killTargetBookmarkID = ""
 			return m, nil
 		default:
 			return m, nil
-		}
-
-	case StateDeferPrompt:
-		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.state = StateNormal
-			m.deferPrompt.Deactivate()
-			return m, nil
-		case key.Matches(msg, Keys.Enter):
-			val := m.deferPrompt.Confirm()
-			m.state = StateNormal
-			minutes, err := strconv.Atoi(val)
-			if err != nil || minutes <= 0 {
-				return m, nil
-			}
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, func() tea.Msg {
-					if err := m.client.Defer(s.PaneID, minutes); err != nil {
-						return nil
-					}
-					return nil
-				}
-			}
-			return m, nil
-		default:
-			ti := m.deferPrompt.TextInput()
-			newTI, cmd := ti.Update(msg)
-			*ti = newTI
-			return m, cmd
 		}
 
 	case StatePromptRelay:
@@ -541,13 +526,52 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+	case StatePalette:
+		switch {
+		case key.Matches(msg, Keys.Escape):
+			m.state = StateNormal
+			m.palette.Deactivate()
+			return m, nil
+		case key.Matches(msg, Keys.Enter):
+			idx, ok := m.palette.SelectedIndex()
+			m.state = StateNormal
+			m.palette.Deactivate()
+			if !ok {
+				return m, nil
+			}
+			command := m.commands[idx]
+			if command.Enabled != nil && !command.Enabled(&m) {
+				return m, nil
+			}
+			m, c := command.Execute(&m)
+			return m, c
+		case msg.String() == "up", key.Matches(msg, Keys.MsgPrev):
+			m.palette.MoveUp()
+			return m, nil
+		case msg.String() == "down", key.Matches(msg, Keys.MsgNext):
+			m.palette.MoveDown()
+			return m, nil
+		default:
+			ti := m.palette.TextInput()
+			newTI, cmd := ti.Update(msg)
+			*ti = newTI
+			m.palette.Filter()
+			return m, cmd
+		}
+
 	default: // StateNormal
 		// When help overlay is open, only ? and esc dismiss it; swallow everything else
 		if m.showHelp {
-			if key.Matches(msg, Keys.Help) || key.Matches(msg, Keys.Escape) {
+			switch {
+			case key.Matches(msg, Keys.Help), key.Matches(msg, Keys.Escape):
 				m.showHelp = false
+				return m, nil
+			case key.Matches(msg, Keys.Palette):
+				m.showHelp = false
+				// fall through to palette handling below
+			default:
+				return m, nil
 			}
-			return m, nil
 		}
 
 		// Handle multi-key chord sequences
@@ -572,6 +596,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, Keys.Palette):
+			items := make([]ui.PaletteItem, len(m.commands))
+			for i, cmd := range m.commands {
+				enabled := true
+				if cmd.Enabled != nil {
+					enabled = cmd.Enabled(&m)
+				}
+				items[i] = ui.PaletteItem{
+					Name:    cmd.Name,
+					Hotkey:  cmd.Hotkey,
+					Enabled: enabled,
+					Index:   i,
+				}
+			}
+			m.state = StatePalette
+			m.palette.Activate(items)
+			return m, nil
+
+		case key.Matches(msg, Keys.Escape) && m.showHooks:
+			m.showHooks = false
+			m.preview.SetShowHooks(false)
+			return m, nil
+
 		case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
 			if m.origPane.Captured {
 				tmux.SwitchToPaneQuiet(m.origPane.Session, m.origPane.Window, m.origPane.Pane)
@@ -602,13 +649,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if isClaude && m.list.SelectByPaneID(paneID) {
 				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(
+					cmds := []tea.Cmd{
 						capturePreview(s.PaneID),
 						m.fetchTranscript(s.PaneID, s.SessionID),
 						m.fetchDiffStats(s.PaneID, s.SessionID),
 						m.fetchCachedSummary(s.PaneID, s.SessionID),
 						switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-					)
+					}
+					if m.showHooks {
+						cmds = append(cmds, m.fetchHooks(s.PaneID))
+					}
+					return m, tea.Batch(cmds...)
 				}
 			}
 			return m, nil
@@ -622,6 +673,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.fetchDiffStats(s.PaneID, s.SessionID),
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
+				}
+				if m.showHooks {
+					cmds = append(cmds, m.fetchHooks(s.PaneID))
 				}
 				if m.showMinimap {
 					if s.TmuxSession != m.minimapSession {
@@ -644,6 +698,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
 				}
+				if m.showHooks {
+					cmds = append(cmds, m.fetchHooks(s.PaneID))
+				}
 				if m.showMinimap {
 					if s.TmuxSession != m.minimapSession {
 						cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -661,6 +718,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if s, ok := m.list.SelectedItem(); ok {
+				if s.IsPhantom {
+					// Dead Later → create new window + remove bookmark
+					bookmarkID, cwd := s.LaterBookmarkID, s.CWD
+					tmuxSession := m.origPane.Session
+					return m, func() tea.Msg {
+						if err := m.client.OpenLater(bookmarkID, cwd, tmuxSession); err != nil {
+							return flashErrorMsg("open failed: " + err.Error())
+						}
+						return tea.QuitMsg{}
+					}
+				}
+				// Live Later → auto-remove bookmark before switching
+				if s.LaterBookmarkID != "" {
+					m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
+				}
 				tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
 				return m, tea.Quit
 			}
@@ -689,18 +761,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter.Activate()
 			return m, nil
 
-		case key.Matches(msg, Keys.Defer):
-			if _, ok := m.list.SelectedItem(); ok {
-				m.state = StateDeferPrompt
-				m.deferPrompt.Activate()
+		case key.Matches(msg, Keys.Later):
+			if s, ok := m.list.SelectedItem(); ok {
+				paneID, sessionID := s.PaneID, s.SessionID
+				return m, func() tea.Msg {
+					if err := m.client.Later(paneID, sessionID); err != nil {
+						return flashErrorMsg("later failed: " + err.Error())
+					}
+					return flashInfoMsg("saved for later")
+				}
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.Undefer):
+		case key.Matches(msg, Keys.LaterKill):
 			if s, ok := m.list.SelectedItem(); ok {
+				paneID, pid, sessionID := s.PaneID, s.PID, s.SessionID
 				return m, func() tea.Msg {
-					m.client.Undefer(s.PaneID)
-					return nil
+					if err := m.client.LaterKill(paneID, pid, sessionID); err != nil {
+						return flashErrorMsg("later+kill failed: " + err.Error())
+					}
+					return flashInfoMsg("saved for later, pane killed")
 				}
 			}
 			return m, nil
@@ -758,10 +838,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, Keys.Kill):
 			if s, ok := m.list.SelectedItem(); ok {
+				if s.IsPhantom && s.LaterBookmarkID != "" {
+					// Phantom Later — no pane to kill, just remove bookmark
+					bookmarkID := s.LaterBookmarkID
+					return m, func() tea.Msg {
+						claude.RemoveLaterBookmark(bookmarkID)
+						return PaneKilledMsg{}
+					}
+				}
 				m.state = StateKillConfirm
 				m.killTargetPaneID = s.PaneID
 				m.killTargetPID = s.PID
 				m.killTargetTitle = sessionDisplayTitle(s)
+				m.killTargetBookmarkID = s.LaterBookmarkID
 			}
 			return m, nil
 

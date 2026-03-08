@@ -20,10 +20,16 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Error: " + m.err.Error())
 	}
 
-	innerWidth := m.width - 2 // inside left/right border chars
+	innerWidth := m.width
+	if !m.inFullscreenPopup {
+		innerWidth -= 2 // inside left/right border chars
+	}
 
-	// Top border: usage bar as the frame's top edge
-	topBorder := m.usageBar.TopBorderView(m.width)
+	// Top border: usage bar as the frame's top edge (skipped in fullscreen)
+	topBorder := ""
+	if !m.inFullscreenPopup {
+		topBorder = m.usageBar.TopBorderView(m.width)
+	}
 
 	// Label line: usage stats right-aligned below the top border
 	labelLine := ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
@@ -31,8 +37,11 @@ func (m Model) View() string {
 	// Footer: always 1 line
 	footer := m.renderFooter(innerWidth)
 
-	// Content area: total height minus top border, label, footer, bottom border
-	contentHeight := m.height - 4
+	// Content area: total height minus label and footer (and borders when not fullscreen)
+	contentHeight := m.height - 2
+	if !m.inFullscreenPopup {
+		contentHeight -= 2
+	}
 
 	// List panel
 	listWidth := max(innerWidth*m.listWidthPct/100, 20)
@@ -91,6 +100,11 @@ func (m Model) View() string {
 	// Help overlay centered
 	if m.showHelp {
 		content = ui.OverlayCentered(content, m.renderHelpOverlay(), innerWidth)
+	}
+
+	// Command palette overlay centered
+	if m.state == StatePalette {
+		content = ui.OverlayCentered(content, m.palette.View(innerWidth), innerWidth)
 	}
 
 	if m.flashMsg != "" {
@@ -229,11 +243,11 @@ func (m Model) renderNormalFooterHints() string {
 		if !s.CommitDonePending {
 			parts = append(parts, hint("c", "commit"), hint("C", "commit+done"))
 		}
-		parts = append(parts, hint("w", "defer"))
+		parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
 	case claude.StatusWorking:
-		parts = append(parts, hint("w", "defer"))
-	case claude.StatusDeferred:
-		parts = append(parts, hint("u", "undefer"))
+		parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
+	case claude.StatusLater:
+		// No special actions — enter opens, d removes
 	}
 
 	parts = append(parts, hint("d", "kill"))
@@ -267,8 +281,8 @@ func (m Model) renderHelpOverlay() string {
 		actions,
 		hint(">", "send to session"),
 		hint("<", "queue message"),
-		hint("w", "defer session"),
-		hint("u", "undefer session"),
+		hint("w", "later"),
+		hint("W", "later + kill"),
 		hint("d", "kill + close pane"),
 		hint("s", "synthesize"),
 		hint("S", "synthesize all"),
@@ -303,6 +317,11 @@ func (m Model) renderHelpOverlay() string {
 
 func (m Model) renderFooter(width int) string {
 	switch m.state {
+	case StatePalette:
+		h := ui.FooterKeyStyle.Render("enter") + " execute  " +
+			ui.FooterKeyStyle.Render("↑/↓") + " navigate  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateFiltering:
 		filterView := m.filter.View()
 		hint := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
@@ -315,8 +334,6 @@ func (m Model) renderFooter(width int) string {
 			return filterView
 		}
 		return filterView + strings.Repeat(" ", gap) + hint
-	case StateDeferPrompt:
-		return m.deferPrompt.View()
 	case StatePromptRelay:
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"

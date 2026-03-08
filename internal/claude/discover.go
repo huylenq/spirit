@@ -125,7 +125,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 				RemoveStatus(p.PaneID)
 				continue
 			}
-			if status == StatusDeferred {
+			if status == StatusLater {
 				s := buildSession(p, 0, status)
 				sessions = append(sessions, s)
 			} else if status == StatusDone {
@@ -144,6 +144,34 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		sessions = append(sessions, s)
 	}
 
+	// Merge phantom Later sessions from bookmarks
+	bookmarks, _ := ReadAllLaterBookmarks()
+	liveLaterPanes := make(map[string]bool)
+	for _, s := range sessions {
+		if s.Status == StatusLater {
+			liveLaterPanes[s.PaneID] = true
+		}
+	}
+	for _, bm := range bookmarks {
+		if liveLaterPanes[bm.PaneID] {
+			continue // already have a live session for this bookmark
+		}
+		sessions = append(sessions, ClaudeSession{
+			PaneID:          bm.PaneID,
+			Status:          StatusLater,
+			Project:         bm.Project,
+			CWD:             bm.CWD,
+			Headline:        bm.Headline,
+			CustomTitle:     bm.CustomTitle,
+			FirstMessage:    bm.FirstMessage,
+			SessionID:       bm.SessionID,
+			IsPhantom:       true,
+			LaterBookmarkID: bm.ID,
+			LastChanged:     bm.CreatedAt,
+		})
+	}
+
+	AssignAvatars(sessions)
 	return sessions, nil
 }
 
@@ -159,6 +187,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status) ClaudeSession {
 		TmuxPane:    p.PaneIndex,
 		PID:         pid,
 		LastChanged: getStatusModTime(p.PaneID),
+		CreatedAt:   p.PaneCreated,
 		SessionID:   ReadSessionID(p.PaneID),
 	}
 
@@ -181,13 +210,21 @@ func buildSession(p tmux.PaneInfo, pid int, status Status) ClaudeSession {
 		s.LastActionCommit = ReadLastActionCommit(s.SessionID)
 	}
 
-	if status == StatusDeferred {
+	if status == StatusLater {
 		s.DeferUntil, _ = ReadDeferUntil(p.PaneID)
 		if !s.DeferUntil.IsZero() && time.Now().After(s.DeferUntil) {
 			WriteStatus(p.PaneID, StatusDone)
 			ClearDefer(p.PaneID)
 			s.Status = StatusDone
 			s.DeferUntil = time.Time{}
+		}
+		// Look up matching bookmark
+		bookmarks, _ := ReadAllLaterBookmarks()
+		for _, bm := range bookmarks {
+			if bm.PaneID == p.PaneID {
+				s.LaterBookmarkID = bm.ID
+				break
+			}
 		}
 	}
 

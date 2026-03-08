@@ -181,13 +181,13 @@ func (m *ListModel) applyFilter() {
 }
 
 func sortByProject(sessions []claude.ClaudeSession) {
-	// Primary: project name alphabetically; secondary: status order; tertiary: oldest LastChanged first
+	// Primary: project name alphabetically; secondary: status order; tertiary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
 			if a.Project > b.Project ||
 				(a.Project == b.Project && statusOrder(a.Status) > statusOrder(b.Status)) ||
-				(a.Project == b.Project && statusOrder(a.Status) == statusOrder(b.Status) && a.LastChanged.After(b.LastChanged)) {
+				(a.Project == b.Project && statusOrder(a.Status) == statusOrder(b.Status) && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -197,12 +197,12 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: status order (Done, Working, Deferred); secondary: oldest LastChanged first
+	// Primary: status order (Done, Working, Deferred); secondary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
 			if statusOrder(a.Status) > statusOrder(b.Status) ||
-				(statusOrder(a.Status) == statusOrder(b.Status) && a.LastChanged.After(b.LastChanged)) {
+				(statusOrder(a.Status) == statusOrder(b.Status) && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -217,7 +217,7 @@ func statusOrder(s claude.Status) int {
 		return 0
 	case claude.StatusWorking:
 		return 1
-	case claude.StatusDeferred:
+	case claude.StatusLater:
 		return 2
 	default:
 		return 3
@@ -333,8 +333,8 @@ func renderStatusGroupHeader(status claude.Status) string {
 		return GroupHeaderDoneStyle.Render(IconFlag + " YOUR TURN")
 	case claude.StatusWorking:
 		return GroupHeaderWorkingStyle.Render(IconBolt + " CLAUDING")
-	case claude.StatusDeferred:
-		return GroupHeaderDeferredStyle.Render(IconHourglass + " DEFERRED")
+	case claude.StatusLater:
+		return GroupHeaderLaterStyle.Render(IconBookmark + " LATER")
 	default:
 		return ""
 	}
@@ -566,15 +566,12 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 			return bg(StatPlanStyle).Render(m.spinnerView)
 		}
 		return bg(StatWorkingStyle).Render(m.spinnerView)
-	case claude.StatusDeferred:
-		if s.DeferUntil.IsZero() {
-			return bg(ItemDetailStyle).Render("deferred")
+	case claude.StatusLater:
+		age := formatAge(s.LastChanged)
+		if s.IsPhantom {
+			return bg(StatLaterStyle).Render(IconBookmark + " " + age)
 		}
-		remaining := time.Until(s.DeferUntil)
-		if remaining < 0 {
-			return bg(ItemDetailStyle).Render("expired")
-		}
-		return bg(ItemDetailStyle).Render(fmt.Sprintf("%dm left", int(remaining.Minutes())))
+		return bg(StatLaterStyle).Render(age)
 	default:
 		return ""
 	}

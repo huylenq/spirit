@@ -70,7 +70,6 @@ func HandleHook(hookType string) {
 	case "UserPromptSubmit", "PreToolUse":
 		newStatus = "working"
 		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
-		os.Remove(deferFilePath(paneID)) // auto-cancel defer
 		if hookType == "UserPromptSubmit" && input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
 			lastMsg = input.Prompt

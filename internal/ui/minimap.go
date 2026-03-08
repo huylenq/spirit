@@ -26,7 +26,7 @@ const (
 	PaneStatusNone     = 0 // not a Claude pane
 	PaneStatusWorking  = 1
 	PaneStatusDone     = 2 // "your turn"
-	PaneStatusDeferred = 3
+	PaneStatusLater    = 3
 )
 
 type minimapPane struct {
@@ -70,7 +70,7 @@ var (
 				Foreground(ColorDone)
 
 	minimapPaneDeferredStyle = lipgloss.NewStyle().
-				Foreground(ColorDeferred)
+				Foreground(ColorLater)
 
 	minimapPaneSelectedStyle = lipgloss.NewStyle().
 					Foreground(ColorAccent).
@@ -525,9 +525,9 @@ var statusStyleMap = map[int]paneStatusStyles{
 		BorderColor: ColorDone,
 		FillBg:      lipgloss.AdaptiveColor{Light: "#dbeafe", Dark: "#1e2240"}, // blue tint
 	},
-	PaneStatusDeferred: {
+	PaneStatusLater: {
 		Style:       minimapPaneDeferredStyle,
-		BorderColor: ColorDeferred,
+		BorderColor: ColorLater,
 		FillBg:      lipgloss.AdaptiveColor{Light: "#ede9fe", Dark: "#2a1e40"}, // purple tint
 	},
 }

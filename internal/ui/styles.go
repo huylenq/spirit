@@ -6,7 +6,7 @@ var (
 	// Colors — adaptive for light/dark terminals
 	ColorWorking     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"} // amber
 	ColorDone        = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
-	ColorDeferred    = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple
+	ColorLater       = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple
 	ColorPlan        = lipgloss.AdaptiveColor{Light: "#006666", Dark: "#48968c"} // teal (plan mode, matches Claude Code)
 	ColorMuted       = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#9ca3af"} // gray
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
@@ -25,7 +25,7 @@ var (
 	// Stats in header
 	StatWorkingStyle  = lipgloss.NewStyle().Foreground(ColorWorking)
 	StatDoneStyle     = lipgloss.NewStyle().Foreground(ColorDone)
-	StatDeferredStyle = lipgloss.NewStyle().Foreground(ColorDeferred)
+	StatLaterStyle    = lipgloss.NewStyle().Foreground(ColorLater)
 	StatPlanStyle     = lipgloss.NewStyle().Foreground(ColorPlan)
 	CommitDoneStyle   = DiffAddedStyle
 
@@ -42,7 +42,7 @@ var (
 
 	GroupHeaderWorkingStyle  = GroupHeaderStyle.Foreground(ColorWorking)
 	GroupHeaderDoneStyle     = GroupHeaderStyle.Foreground(ColorDone)
-	GroupHeaderDeferredStyle = GroupHeaderStyle.Foreground(ColorDeferred)
+	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
 	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
 	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
@@ -167,4 +167,20 @@ var (
 			Bold(true).
 			Foreground(ColorMuted).
 			Underline(true)
+
+	// Command palette
+	PaletteOverlayStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorAccent).
+				Padding(0, 1)
+
+	PaletteSelectedStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent).
+				Bold(true)
+
+	PaletteDisabledStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	PaletteSepStyle = lipgloss.NewStyle().
+			Foreground(ColorBorder)
 )

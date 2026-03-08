@@ -22,10 +22,11 @@ type AppState int
 const (
 	StateNormal AppState = iota
 	StateFiltering
-	StateDeferPrompt
 	StateKillConfirm
 	StatePromptRelay
 	StateQueueRelay
+	StateDeferPrompt
+	StatePalette
 )
 
 // originalPane stores the tmux pane that was active when the TUI launched,
@@ -43,9 +44,9 @@ type Model struct {
 	list           ui.ListModel
 	preview        ui.PreviewModel
 	filter         ui.FilterModel
-	deferPrompt    ui.DeferPromptModel
 	relay          ui.RelayModel
 	queueRelay     ui.RelayModel
+	deferPrompt    ui.DeferPromptModel
 	minimap        ui.MinimapModel
 	usageBar       ui.UsageBarModel
 	sessions       []claude.ClaudeSession
@@ -72,8 +73,12 @@ type Model struct {
 	killTargetPaneID     string // pane being confirmed for kill
 	killTargetPID        int    // PID of the claude process to kill
 	killTargetTitle      string // display title for kill confirmation
+	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
+	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	debugMode            bool   // toggle debug overlay (D key)
 	showHelp             bool   // toggle help overlay (? key)
+	palette              ui.PaletteModel
+	commands             []Command
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -87,23 +92,30 @@ func NewModel(client *daemon.Client) Model {
 		list:              list,
 		preview:           ui.NewPreviewModel(),
 		filter:            ui.NewFilterModel(),
-		deferPrompt:       ui.NewDeferPromptModel(),
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
+		deferPrompt:       ui.NewDeferPromptModel(),
+		palette:           ui.NewPaletteModel(),
+		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
+		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",
 		binaryPath:        bin,
 	}
 }
 
 // applyLayout recomputes and applies component sizes from m.width, m.height, m.listWidthPct.
 func (m *Model) applyLayout() {
-	innerWidth := m.width - 2 // inside left/right border chars
+	innerWidth := m.width
+	contentHeight := m.height - 2 // label + footer
+	if !m.inFullscreenPopup {
+		innerWidth -= 2 // left/right border chars
+		contentHeight -= 2 // top border + bottom border
+	}
 	listWidth := max(innerWidth*m.listWidthPct/100, 20)
-	contentHeight := m.height - 4 // top border + label + footer + bottom border
 	m.list.SetSize(listWidth-1, contentHeight)
 	m.preview.SetSize(innerWidth-listWidth, contentHeight)
 	minimapH := min(contentHeight/2, 14)

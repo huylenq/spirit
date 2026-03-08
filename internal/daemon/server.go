@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
@@ -80,11 +81,17 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqPaneGeometry:
 		return d.handlePaneGeometry(req.Data)
 
-	case ReqDefer:
-		return d.handleDefer(req.Data)
+	case ReqLater:
+		return d.handleLater(req.Data)
 
-	case ReqUndefer:
-		return d.handleUndefer(req.Data)
+	case ReqLaterKill:
+		return d.handleLaterKill(req.Data)
+
+	case ReqUnlater:
+		return d.handleUnlater(req.Data)
+
+	case ReqOpenLater:
+		return d.handleOpenLater(req.Data)
 
 	case ReqRenameWindow:
 		return d.handleRenameWindow(req.Data)
@@ -103,6 +110,12 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 
 	case ReqCancelQueue:
 		return d.handleCancelQueue(req.Data)
+
+	case ReqDefer:
+		return d.handleDefer(req.Data)
+
+	case ReqUndefer:
+		return d.handleUndefer(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
@@ -313,30 +326,108 @@ func (d *Daemon) handlePaneGeometry(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleDefer(data json.RawMessage) *Response {
-	var req DeferData
+func (d *Daemon) handleLater(data json.RawMessage) *Response {
+	var req LaterData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	until := time.Now().Add(time.Duration(req.Minutes) * time.Minute)
-	if err := claude.WriteDeferUntil(req.PaneID, until); err != nil {
+	bm := d.buildBookmarkFromSession(req.PaneID)
+	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
-	r := Response{Type: RespResult, Data: marshalData("ok")}
+	if err := claude.WriteLaterStatus(req.PaneID); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	d.nudge()
+	log.Printf("later: bookmarked pane %s", req.PaneID)
+	r := resultResponse("ok")
 	return &r
 }
 
-func (d *Daemon) handleUndefer(data json.RawMessage) *Response {
-	var req PaneData
+func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
+	var req LaterKillData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	claude.Undefer(req.PaneID)
-	r := Response{Type: RespResult, Data: marshalData("ok")}
+	bm := d.buildBookmarkFromSession(req.PaneID)
+	if err := claude.WriteLaterBookmark(bm); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	if req.PID > 0 {
+		syscall.Kill(req.PID, syscall.SIGTERM) //nolint:errcheck
+	}
+	tmux.KillPane(req.PaneID) //nolint:errcheck
+	claude.RemoveStatus(req.PaneID)
+	d.nudge()
+	log.Printf("later+kill: bookmarked and killed pane %s", req.PaneID)
+	r := resultResponse("ok")
 	return &r
+}
+
+func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
+	var req UnlaterData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	// Find the bookmark to get its paneID for status cleanup
+	bm, _ := claude.ReadLaterBookmark(req.BookmarkID)
+	claude.RemoveLaterBookmark(req.BookmarkID)
+	if bm != nil {
+		// If the pane is still alive, write status back to "stopped"
+		claude.WriteStatus(bm.PaneID, claude.StatusDone)
+	}
+	d.nudge()
+	log.Printf("unlater: removed bookmark %s", req.BookmarkID)
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleOpenLater(data json.RawMessage) *Response {
+	var req OpenLaterData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	paneID, err := tmux.NewWindow(req.TmuxSession, req.CWD)
+	if err != nil {
+		r := errResponse("new window: " + err.Error())
+		return &r
+	}
+	tmux.SendKeysLiteral(paneID, "claude") //nolint:errcheck
+	claude.RemoveLaterBookmark(req.BookmarkID)
+	d.nudge()
+	log.Printf("open-later: created window in %s at %s, pane %s", req.TmuxSession, req.CWD, paneID)
+	r := resultResponse("ok")
+	return &r
+}
+
+// buildBookmarkFromSession extracts session metadata from current sessions to create a bookmark.
+func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
+	sessions := d.currentSessions()
+	bm := claude.LaterBookmark{
+		ID:        claude.GenerateBookmarkID(),
+		PaneID:    paneID,
+		CreatedAt: time.Now(),
+	}
+	for _, s := range sessions {
+		if s.PaneID == paneID {
+			bm.Project = s.Project
+			bm.CWD = s.CWD
+			bm.GitBranch = s.GitBranch
+			bm.Headline = s.Headline
+			bm.CustomTitle = s.CustomTitle
+			bm.FirstMessage = s.FirstMessage
+			bm.SessionID = s.SessionID
+			break
+		}
+	}
+	return bm
 }
 
 func (d *Daemon) handleRenameWindow(data json.RawMessage) *Response {
@@ -440,3 +531,32 @@ func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
 }
 
 
+
+func (d *Daemon) handleDefer(data json.RawMessage) *Response {
+	var req DeferData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	t := time.Now().Add(time.Duration(req.Minutes) * time.Minute)
+	claude.WriteStatus(req.PaneID, claude.StatusLater)
+	claude.WriteDeferUntil(req.PaneID, t)
+	d.nudge()
+	log.Printf("defer: pane %s deferred for %d minutes", req.PaneID, req.Minutes)
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleUndefer(data json.RawMessage) *Response {
+	var req PaneData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	claude.WriteStatus(req.PaneID, claude.StatusDone)
+	claude.ClearDefer(req.PaneID)
+	d.nudge()
+	log.Printf("undefer: pane %s", req.PaneID)
+	r := resultResponse("ok")
+	return &r
+}

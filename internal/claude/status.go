@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,10 +24,6 @@ func StatusDir() string {
 
 func statusFilePath(paneID string) string {
 	return filepath.Join(statusDir(), paneID+".status")
-}
-
-func deferFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".defer")
 }
 
 func sessionFilePath(paneID string) string {
@@ -50,8 +48,8 @@ func ReadStatus(paneID string) (Status, error) {
 		return StatusWorking, nil
 	case "stopped", "done":
 		return StatusDone, nil
-	case "deferred":
-		return StatusDeferred, nil
+	case "later", "deferred":
+		return StatusLater, nil
 	default:
 		return StatusDone, fmt.Errorf("unknown status: %s", string(data))
 	}
@@ -63,30 +61,6 @@ func WriteStatus(paneID string, status Status) error {
 		return err
 	}
 	return os.WriteFile(statusFilePath(paneID), []byte(status.String()+"\n"), 0o644)
-}
-
-func ReadDeferUntil(paneID string) (time.Time, error) {
-	data, err := os.ReadFile(deferFilePath(paneID))
-	if err != nil {
-		return time.Time{}, err
-	}
-	epoch, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Unix(epoch, 0), nil
-}
-
-func WriteDeferUntil(paneID string, until time.Time) error {
-	dir := statusDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	epoch := strconv.FormatInt(until.Unix(), 10)
-	if err := WriteStatus(paneID, StatusDeferred); err != nil {
-		return err
-	}
-	return os.WriteFile(deferFilePath(paneID), []byte(epoch+"\n"), 0o644)
 }
 
 func hookFilePath(paneID string) string {
@@ -210,25 +184,43 @@ func RemoveQueueMessage(paneID string) {
 	os.Remove(queueFilePath(paneID))
 }
 
-func RemoveStatus(paneID string) {
-	os.Remove(statusFilePath(paneID))
-	os.Remove(deferFilePath(paneID))
-	os.Remove(sessionFilePath(paneID))
-	os.Remove(hookFilePath(paneID))
-	os.Remove(lastMsgFilePath(paneID))
-	os.Remove(queueFilePath(paneID))
+func deferFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".defer")
+}
+
+func ReadDeferUntil(paneID string) (time.Time, error) {
+	data, err := os.ReadFile(deferFilePath(paneID))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+}
+
+func WriteDeferUntil(paneID string, t time.Time) error {
+	return os.WriteFile(deferFilePath(paneID), []byte(t.Format(time.RFC3339)), 0o644)
 }
 
 func ClearDefer(paneID string) {
 	os.Remove(deferFilePath(paneID))
 }
 
-func Undefer(paneID string) {
-	ClearDefer(paneID)
-	WriteStatus(paneID, StatusDone)
+func RemoveStatus(paneID string) {
+	os.Remove(statusFilePath(paneID))
+	os.Remove(sessionFilePath(paneID))
+	os.Remove(hookFilePath(paneID))
+	os.Remove(lastMsgFilePath(paneID))
+	os.Remove(queueFilePath(paneID))
+	os.Remove(deferFilePath(paneID))
 }
 
 func CleanStale(activePaneIDs map[string]bool) error {
+	// Build set of pane IDs with Later bookmarks — don't clean their status
+	laterPaneIDs := make(map[string]bool)
+	bookmarks, _ := ReadAllLaterBookmarks()
+	for _, b := range bookmarks {
+		laterPaneIDs[b.PaneID] = true
+	}
+
 	dir := statusDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -242,9 +234,80 @@ func CleanStale(activePaneIDs map[string]bool) error {
 			continue
 		}
 		paneID := strings.TrimSuffix(e.Name(), ".status")
-		if !activePaneIDs[paneID] {
+		if !activePaneIDs[paneID] && !laterPaneIDs[paneID] {
 			RemoveStatus(paneID)
 		}
 	}
 	return nil
+}
+
+// --- Later bookmark CRUD ---
+
+func laterDir() string {
+	return filepath.Join(StatusDir(), "later")
+}
+
+func GenerateBookmarkID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func WriteLaterBookmark(bm LaterBookmark) error {
+	dir := laterDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(bm)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, bm.ID+".json"), data, 0o644)
+}
+
+func ReadLaterBookmark(id string) (*LaterBookmark, error) {
+	data, err := os.ReadFile(filepath.Join(laterDir(), id+".json"))
+	if err != nil {
+		return nil, err
+	}
+	var bm LaterBookmark
+	if err := json.Unmarshal(data, &bm); err != nil {
+		return nil, err
+	}
+	return &bm, nil
+}
+
+func ReadAllLaterBookmarks() ([]LaterBookmark, error) {
+	dir := laterDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var bookmarks []LaterBookmark
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var bm LaterBookmark
+		if err := json.Unmarshal(data, &bm); err != nil {
+			continue
+		}
+		bookmarks = append(bookmarks, bm)
+	}
+	return bookmarks, nil
+}
+
+func RemoveLaterBookmark(id string) {
+	os.Remove(filepath.Join(laterDir(), id+".json"))
+}
+
+func WriteLaterStatus(paneID string) error {
+	return WriteStatus(paneID, StatusLater)
 }

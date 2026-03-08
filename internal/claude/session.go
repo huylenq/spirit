@@ -8,9 +8,9 @@ import (
 type Status int
 
 const (
-	StatusWorking  Status = iota
+	StatusWorking Status = iota
 	StatusDone
-	StatusDeferred
+	StatusLater
 )
 
 func (s Status) String() string {
@@ -19,8 +19,8 @@ func (s Status) String() string {
 		return "working"
 	case StatusDone:
 		return "stopped"
-	case StatusDeferred:
-		return "deferred"
+	case StatusLater:
+		return "later"
 	default:
 		return "unknown"
 	}
@@ -45,8 +45,8 @@ func ParseStatus(str string) Status {
 		return StatusWorking
 	case "stopped", "done":
 		return StatusDone
-	case "deferred":
-		return StatusDeferred
+	case "later", "deferred":
+		return StatusLater
 	default:
 		return StatusDone
 	}
@@ -68,8 +68,11 @@ type ClaudeSession struct {
 	TmuxPane    int
 	PID         int
 	Location    Location
-	LastChanged time.Time
-	DeferUntil  time.Time
+	LastChanged     time.Time
+	CreatedAt       time.Time // pane creation time (from tmux pane_created)
+	DeferUntil      time.Time // non-zero when deferred until a specific time
+	IsPhantom       bool      // true when session has no live tmux pane (created from bookmark)
+	LaterBookmarkID string    // links to the bookmark file (empty if not a Deferred session)
 	SessionID       string
 	FirstMessage    string // first user message in transcript (display name heuristic)
 	LastUserMessage string
@@ -83,7 +86,23 @@ type ClaudeSession struct {
 	CustomTitle string // user-set name via /rename in Claude Code
 	PermissionMode   string // "plan", "bypassPermissions", etc. (empty = unknown)
 	LastActionCommit bool   // last tool call was git commit
-	CommitDonePending  bool // daemon is waiting for commit-and-done to resolve
-	SynthesizePending  bool // daemon has in-flight synthesis for this pane
+	CommitDonePending  bool   // daemon is waiting for commit-and-done to resolve
+	SynthesizePending  bool   // daemon has in-flight synthesis for this pane
 	QueuePending       string // daemon-annotated: message queued for delivery when Done
+	AvatarAnimalIdx    int    // index into avatarAnimals slice
+	AvatarColorIdx     int    // index into avatarColors slice
+}
+
+// LaterBookmark is the persistent on-disk record for a bookmarked session.
+type LaterBookmark struct {
+	ID           string    `json:"id"`
+	PaneID       string    `json:"paneID"`       // original pane (may be dead)
+	Project      string    `json:"project"`
+	CWD          string    `json:"cwd"`
+	GitBranch    string    `json:"gitBranch"`
+	Headline     string    `json:"headline"`
+	CustomTitle  string    `json:"customTitle"`
+	FirstMessage string    `json:"firstMessage"`
+	SessionID    string    `json:"sessionID"`
+	CreatedAt    time.Time `json:"createdAt"`
 }

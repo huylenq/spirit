@@ -4,7 +4,8 @@ package ui
 const (
 	IconBolt      = "\uf0e7"  // lightning bolt — working
 	IconFlag      = "\uf024"  // flag — your turn / needs attention
-	IconHourglass = "\uf251"  // hourglass — deferred
+	IconBookmark  = "\uf02e"  // bookmark — later
+	IconHourglass = "\uf251"  // hourglass (legacy)
 	IconGitBranch = "\uf418"  // git branch
 	IconClock     = "\uf252"  // clock
 	IconFolder    = "\uf07b"  // folder

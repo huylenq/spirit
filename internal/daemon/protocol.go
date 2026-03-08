@@ -34,14 +34,18 @@ const (
 	ReqSynthesizeAll = "synthesize_all"
 	ReqHookEvents   = "hookevents"
 	ReqPaneGeometry = "panegeometry"
-	ReqDefer        = "defer"
-	ReqUndefer      = "undefer"
+	ReqLater     = "later"
+	ReqLaterKill = "later_kill"
+	ReqUnlater   = "unlater"
+	ReqOpenLater = "open_later"
 	ReqRenameWindow    = "rename_window"
 	ReqCommitOnly       = "commit_only"
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 	ReqQueue            = "queue"
 	ReqCancelQueue      = "cancel_queue"
+	ReqDefer            = "defer"
+	ReqUndefer          = "undefer"
 )
 
 // Response type constants.
@@ -75,9 +79,25 @@ type SessionNameData struct {
 	SessionName string `json:"sessionName"`
 }
 
-type DeferData struct {
-	PaneID  string `json:"paneID"`
-	Minutes int    `json:"minutes"`
+type LaterData struct {
+	PaneID    string `json:"paneID"`
+	SessionID string `json:"sessionID"`
+}
+
+type LaterKillData struct {
+	PaneID    string `json:"paneID"`
+	PID       int    `json:"pid"`
+	SessionID string `json:"sessionID"`
+}
+
+type UnlaterData struct {
+	BookmarkID string `json:"bookmarkID"`
+}
+
+type OpenLaterData struct {
+	BookmarkID  string `json:"bookmarkID"`
+	CWD         string `json:"cwd"`
+	TmuxSession string `json:"tmuxSession"`
 }
 
 type RenameWindowData struct {
@@ -99,6 +119,11 @@ type CommitDoneData struct {
 type QueueData struct {
 	PaneID  string `json:"paneID"`
 	Message string `json:"message"`
+}
+
+type DeferData struct {
+	PaneID  string `json:"paneID"`
+	Minutes int    `json:"minutes"`
 }
 
 // --- Response data payloads ---

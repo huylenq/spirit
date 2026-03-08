@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type PaneInfo struct {
@@ -14,11 +15,12 @@ type PaneInfo struct {
 	SessionName string
 	WindowIndex int
 	PaneIndex   int
+	PaneCreated time.Time
 }
 
 func ListAllPanes() ([]PaneInfo, error) {
 	out, err := exec.Command("tmux", "list-panes", "-a", "-F",
-		"#{pane_id}:#{pane_pid}:#{pane_current_path}:#{session_name}:#{window_index}:#{pane_index}").Output()
+		"#{pane_id}:#{pane_pid}:#{pane_current_path}:#{session_name}:#{window_index}:#{pane_index}:#{pane_created}").Output()
 	if err != nil {
 		return nil, fmt.Errorf("tmux list-panes: %w", err)
 	}
@@ -28,13 +30,14 @@ func ListAllPanes() ([]PaneInfo, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 6)
-		if len(parts) != 6 {
+		parts := strings.SplitN(line, ":", 7)
+		if len(parts) != 7 {
 			continue
 		}
 		pid, _ := strconv.Atoi(parts[1])
 		winIdx, _ := strconv.Atoi(parts[4])
 		paneIdx, _ := strconv.Atoi(parts[5])
+		created, _ := strconv.ParseInt(parts[6], 10, 64)
 		panes = append(panes, PaneInfo{
 			PaneID:      parts[0],
 			PanePID:     pid,
@@ -42,6 +45,7 @@ func ListAllPanes() ([]PaneInfo, error) {
 			SessionName: parts[3],
 			WindowIndex: winIdx,
 			PaneIndex:   paneIdx,
+			PaneCreated: time.Unix(created, 0),
 		})
 	}
 	return panes, nil
@@ -122,7 +126,7 @@ func ListPaneGeometry(sessionName string) ([]PaneGeometry, error) {
 func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
 	target := fmt.Sprintf("%s:%d", sessionName, windowIndex)
 	out, err := exec.Command("tmux", "list-panes", "-t", target, "-F",
-		"#{pane_id}:#{pane_pid}:#{pane_current_path}:#{session_name}:#{window_index}:#{pane_index}").Output()
+		"#{pane_id}:#{pane_pid}:#{pane_current_path}:#{session_name}:#{window_index}:#{pane_index}:#{pane_created}").Output()
 	if err != nil {
 		return nil, fmt.Errorf("tmux list-panes -t %s: %w", target, err)
 	}
@@ -132,13 +136,14 @@ func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 6)
-		if len(parts) != 6 {
+		parts := strings.SplitN(line, ":", 7)
+		if len(parts) != 7 {
 			continue
 		}
 		pid, _ := strconv.Atoi(parts[1])
 		winIdx, _ := strconv.Atoi(parts[4])
 		paneIdx, _ := strconv.Atoi(parts[5])
+		created, _ := strconv.ParseInt(parts[6], 10, 64)
 		panes = append(panes, PaneInfo{
 			PaneID:      parts[0],
 			PanePID:     pid,
@@ -146,6 +151,7 @@ func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
 			SessionName: parts[3],
 			WindowIndex: winIdx,
 			PaneIndex:   paneIdx,
+			PaneCreated: time.Unix(created, 0),
 		})
 	}
 	return panes, nil
@@ -161,6 +167,17 @@ func RenameWindow(sessionName string, windowIndex int, name string) error {
 		return fmt.Errorf("rename-window %s to %q: %w", target, name, err)
 	}
 	return nil
+}
+
+// NewWindow creates a new tmux window in the given session, starting in cwd.
+// Returns the new pane's ID.
+func NewWindow(sessionName, cwd string) (string, error) {
+	out, err := exec.Command("tmux", "new-window", "-t", sessionName,
+		"-c", cwd, "-P", "-F", "#{pane_id}").Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux new-window: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // KillPane closes a tmux pane by ID.
