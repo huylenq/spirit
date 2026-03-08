@@ -90,6 +90,16 @@ func (m Model) execFilter() (Model, tea.Cmd) {
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.list.SelectedItem(); ok {
+		if s.Status == claude.StatusLater && s.LaterBookmarkID != "" {
+			// Toggle: unlater to restore real status
+			bookmarkID := s.LaterBookmarkID
+			return m, func() tea.Msg {
+				if err := m.client.Unlater(bookmarkID); err != nil {
+					return flashErrorMsg("unlater failed: " + err.Error())
+				}
+				return flashInfoMsg("restored from later")
+			}
+		}
 		paneID, sessionID := s.PaneID, s.SessionID
 		return m, func() tea.Msg {
 			if err := m.client.Later(paneID, sessionID); err != nil {

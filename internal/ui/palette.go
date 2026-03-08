@@ -63,7 +63,7 @@ func (m *PaletteModel) Filter() {
 	} else {
 		m.filtered = nil
 		for _, item := range m.items {
-			if fuzzyMatch(strings.ToLower(item.Name), query) {
+			if containsFilter(item.Name, query) {
 				m.filtered = append(m.filtered, item)
 			}
 		}
@@ -73,16 +73,6 @@ func (m *PaletteModel) Filter() {
 	}
 }
 
-// fuzzyMatch returns true if all characters in pattern appear in text in order.
-func fuzzyMatch(text, pattern string) bool {
-	pi := 0
-	for i := 0; i < len(text) && pi < len(pattern); i++ {
-		if text[i] == pattern[pi] {
-			pi++
-		}
-	}
-	return pi == len(pattern)
-}
 
 func (m *PaletteModel) MoveUp() {
 	if m.cursor > 0 {
@@ -135,11 +125,12 @@ func (m PaletteModel) View(width int) string {
 		maxVisible = 1
 	}
 	rendered := 0
+	query := strings.ToLower(m.input.Value())
 	for i, item := range m.filtered {
 		if rendered >= maxVisible {
 			break
 		}
-		lines = append(lines, renderPaletteItem(item, i == m.cursor, contentWidth))
+		lines = append(lines, renderPaletteItem(item, i == m.cursor, contentWidth, query))
 		rendered++
 	}
 	// Pad with empty rows to keep overlay height stable
@@ -152,7 +143,7 @@ func (m PaletteModel) View(width int) string {
 	return PaletteOverlayStyle.Render(body)
 }
 
-func renderPaletteItem(item PaletteItem, selected bool, width int) string {
+func renderPaletteItem(item PaletteItem, selected bool, width int, query string) string {
 	prefix := "  "
 	if selected {
 		prefix = "> "
@@ -170,15 +161,17 @@ func renderPaletteItem(item PaletteItem, selected bool, width int) string {
 		gap = 1
 	}
 
-	row := prefix + name + strings.Repeat(" ", gap) + hotkey
+	padding := strings.Repeat(" ", gap)
 
 	switch {
 	case !item.Enabled:
+		row := prefix + name + padding + hotkey
 		return PaletteDisabledStyle.Render(row)
 	case selected:
-		return PaletteSelectedStyle.Render(row)
+		nameRendered := highlightFilter(name, query, PaletteSelectedStyle)
+		return PaletteSelectedStyle.Render(prefix) + nameRendered + PaletteSelectedStyle.Render(padding+hotkey)
 	default:
-		// Dim the hotkey, leave the rest unstyled
-		return prefix + name + strings.Repeat(" ", gap) + lipgloss.NewStyle().Foreground(ColorMuted).Render(hotkey)
+		nameRendered := highlightFilter(name, query, lipgloss.NewStyle())
+		return prefix + nameRendered + padding + lipgloss.NewStyle().Foreground(ColorMuted).Render(hotkey)
 	}
 }

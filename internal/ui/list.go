@@ -164,8 +164,8 @@ func (m *ListModel) applyFilter() {
 		m.filtered = nil
 		m.matchSet = make(map[string]bool)
 		for _, s := range m.items {
-			surface := strings.ToLower(s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage)
-			if strings.Contains(surface, f) {
+			surface := s.CustomTitle + " " + s.Headline + " " + s.FirstMessage + " " + s.LastUserMessage
+			if containsFilter(surface, f) {
 				m.filtered = append(m.filtered, s)
 				m.matchSet[s.PaneID] = true
 			}

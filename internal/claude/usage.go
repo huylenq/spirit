@@ -31,8 +31,7 @@ var (
 // FetchUsage spawns claude in an internal pty, sends /usage, parses the output.
 // No tmux session is created — completely invisible to the user.
 func FetchUsage() (*UsageStats, error) {
-	cmd := exec.Command("claude",
-		"--no-session-persistence", "--tools", "", "--setting-sources", "")
+	cmd := exec.Command("claude")
 	// Unset env vars that trigger nested-session detection
 	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
 
@@ -72,9 +71,16 @@ func FetchUsage() (*UsageStats, error) {
 		return nil, fmt.Errorf("waiting for claude ready: %w", err)
 	}
 
-	// Send /usage command
-	if _, err := ptmx.Write([]byte("/usage\n")); err != nil {
-		return nil, fmt.Errorf("send /usage: %w", err)
+	// Type /usage char-by-char (autocomplete intercepts bulk writes) then Enter
+	for _, ch := range "/usage" {
+		if _, err := ptmx.Write([]byte(string(ch))); err != nil {
+			return nil, fmt.Errorf("send /usage: %w", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if _, err := ptmx.Write([]byte("\r")); err != nil {
+		return nil, fmt.Errorf("send enter: %w", err)
 	}
 
 	// Wait for usage dialog to render
@@ -88,11 +94,11 @@ func FetchUsage() (*UsageStats, error) {
 	return parseUsageDialog(stripANSI(snapshot()))
 }
 
-// pollFor polls snapshotFn until the output contains needle or timeout expires.
+// pollFor polls snapshotFn until the ANSI-stripped output contains needle or timeout expires.
 func pollFor(snapshotFn func() string, needle string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if strings.Contains(snapshotFn(), needle) {
+		if strings.Contains(stripANSI(snapshotFn()), needle) {
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -100,9 +106,23 @@ func pollFor(snapshotFn func() string, needle string, timeout time.Duration) err
 	return fmt.Errorf("timed out waiting for %q", needle)
 }
 
-var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+var (
+	// Cursor-right movement: \x1b[<N>C → replace with N spaces
+	reCursorRight = regexp.MustCompile(`\x1b\[(\d+)C`)
+	// All other ANSI: CSI sequences, DEC private modes, OSC (title), etc.
+	reANSI = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])`)
+)
 
 func stripANSI(s string) string {
+	// First, replace cursor-right movements with actual spaces
+	s = reCursorRight.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reCursorRight.FindStringSubmatch(m)
+		n := 1
+		if len(sub) > 1 {
+			fmt.Sscanf(sub[1], "%d", &n)
+		}
+		return strings.Repeat(" ", n)
+	})
 	return reANSI.ReplaceAllString(s, "")
 }
 

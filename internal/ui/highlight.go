@@ -2,46 +2,87 @@ package ui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-// highlightFilter renders text with matched substrings bold+underlined.
-// Each segment gets exactly one Render call — no nesting.
+// fuzzyMatch checks if all characters of patternLower appear in order in text (case-insensitive).
+// Returns the byte indices of matched characters and whether the match succeeded.
+func fuzzyMatch(text, patternLower string) ([]int, bool) {
+	if patternLower == "" {
+		return nil, true
+	}
+	if text == "" {
+		return nil, false
+	}
+
+	lower := strings.ToLower(text)
+	var indices []int
+	pos := 0
+	for _, pr := range patternLower {
+		found := strings.IndexRune(lower[pos:], pr)
+		if found < 0 {
+			return nil, false
+		}
+		byteIdx := pos + found
+		indices = append(indices, byteIdx)
+		pos = byteIdx + utf8.RuneLen(pr)
+	}
+	return indices, true
+}
+
+// highlightFilter renders text with fuzzy-matched characters bold+underlined.
+// Each run of matched/unmatched characters gets exactly one Render call.
 func highlightFilter(text, filterLower string, baseStyle lipgloss.Style) string {
 	if filterLower == "" || text == "" {
 		return baseStyle.Render(text)
 	}
 
-	lower := strings.ToLower(text)
-	idx := strings.Index(lower, filterLower)
-	if idx < 0 {
+	indices, ok := fuzzyMatch(text, filterLower)
+	if !ok || len(indices) == 0 {
 		return baseStyle.Render(text)
 	}
 
 	matchStyle := baseStyle.Bold(true).Underline(true)
+
+	matchSet := make(map[int]bool, len(indices))
+	for _, idx := range indices {
+		matchSet[idx] = true
+	}
+
 	var b strings.Builder
-	pos := 0
-	for idx >= 0 {
-		if idx > pos {
-			b.WriteString(baseStyle.Render(text[pos:idx]))
+	var run strings.Builder
+	inMatch := false
+
+	for i, r := range text {
+		isMatch := matchSet[i]
+		if isMatch != inMatch && run.Len() > 0 {
+			if inMatch {
+				b.WriteString(matchStyle.Render(run.String()))
+			} else {
+				b.WriteString(baseStyle.Render(run.String()))
+			}
+			run.Reset()
+			inMatch = isMatch
+		} else if run.Len() == 0 {
+			inMatch = isMatch
 		}
-		end := idx + len(filterLower)
-		b.WriteString(matchStyle.Render(text[idx:end]))
-		pos = end
-		next := strings.Index(lower[pos:], filterLower)
-		if next < 0 {
-			break
+		run.WriteRune(r)
+	}
+	if run.Len() > 0 {
+		if inMatch {
+			b.WriteString(matchStyle.Render(run.String()))
+		} else {
+			b.WriteString(baseStyle.Render(run.String()))
 		}
-		idx = pos + next
 	}
-	if pos < len(text) {
-		b.WriteString(baseStyle.Render(text[pos:]))
-	}
+
 	return b.String()
 }
 
-// containsFilter reports whether text contains filterLower (case-insensitive).
+// containsFilter reports whether text fuzzy-matches filterLower (case-insensitive).
 func containsFilter(text, filterLower string) bool {
-	return strings.Contains(strings.ToLower(text), filterLower)
+	_, ok := fuzzyMatch(text, filterLower)
+	return ok
 }
