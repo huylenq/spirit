@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,8 +25,17 @@ func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
 			return m, copyToClipboard(s.SessionID)
 		}
+	case "yc":
+		text := stripAnsi(m.View())
+		return m, copyToClipboard(text)
 	}
 	return m, nil
+}
+
+var ansiRe = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
+
+func stripAnsi(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
 }
 
 // copyToClipboard copies text to the system clipboard via pbcopy and shows a flash.
@@ -36,7 +46,11 @@ func copyToClipboard(text string) tea.Cmd {
 		if err := cmd.Run(); err != nil {
 			return flashErrorMsg("copy failed: " + err.Error())
 		}
-		return flashInfoMsg("copied " + text)
+		// Show truncated preview for short strings, generic message for long ones
+		if len(text) < 100 {
+			return flashInfoMsg("copied " + text)
+		}
+		return flashInfoMsg(fmt.Sprintf("captured %d chars", len(text)))
 	}
 }
 

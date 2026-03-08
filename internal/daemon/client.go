@@ -255,3 +255,10 @@ func (c *Client) CommitAndDone(paneID string, pid int) error {
 func (c *Client) CancelCommitDone(paneID string) error {
 	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
+
+// Capture returns a text snapshot of all sessions with their pane content.
+func (c *Client) Capture() (string, error) {
+	var data CaptureData
+	err := c.rpcInto(Request{Type: ReqCapture}, &data)
+	return data.Text, err
+}

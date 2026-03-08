@@ -112,6 +112,7 @@ type Chord struct {
 // Chords is the global list of chord bindings.
 var Chords = []Chord{
 	{Keys: "ys", Help: "copy session id"},
+	{Keys: "yc", Help: "capture view"},
 }
 
 // ChordsWithPrefix returns chords whose key sequence starts with prefix.

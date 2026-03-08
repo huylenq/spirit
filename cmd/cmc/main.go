@@ -32,6 +32,9 @@ func main() {
 		case "setup":
 			runSetup()
 			return
+		case "capture":
+			runCapture()
+			return
 		case "-h", "--help", "help":
 			printUsage()
 			return
@@ -67,6 +70,7 @@ func printUsage() {
 
 Usage:
   cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
+  cmc capture          Capture a text snapshot of all sessions to stdout
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
   cmc daemon           Start the background daemon
@@ -233,5 +237,21 @@ func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
 		},
 	}
 	return append(groups, newGroup), true
+}
+
+func runCapture() {
+	client, err := daemon.Connect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to daemon: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	text, err := client.Capture()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error capturing: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Print(text)
 }
 

@@ -40,6 +40,7 @@ const (
 	ReqCommitOnly       = "commit_only"
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
+	ReqCapture          = "capture"
 )
 
 // Response type constants.
@@ -134,6 +135,10 @@ type SynthesizeResultData struct {
 
 type SynthesizeAllResultData struct {
 	Results []SynthesizeResultData `json:"results"`
+}
+
+type CaptureData struct {
+	Text string `json:"text"`
 }
 
 // --- Helpers ---
