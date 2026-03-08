@@ -506,7 +506,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 // Each segment gets its own Render call — no nesting of lipgloss Render.
 func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHighlight bool) string {
 	if isSelected {
-		prefix := "   " + icon + "  "
+		prefix := "   " + icon + " "
 		prefixWidth := lipgloss.Width(prefix)
 		msgWidth := m.width - 5 - prefixWidth
 		if msgWidth < 1 {
@@ -532,7 +532,7 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHi
 	}
 
 	// Unselected
-	prefix := "      " + icon + "  "
+	prefix := "      " + icon + " "
 	prefixWidth := lipgloss.Width(prefix)
 	msgWidth := m.width - 2 - prefixWidth
 	if msgWidth < 1 {
