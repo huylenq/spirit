@@ -37,7 +37,8 @@ const (
 	ReqDefer        = "defer"
 	ReqUndefer      = "undefer"
 	ReqRenameWindow    = "rename_window"
-	ReqCommitDone      = "commit_done"
+	ReqCommitOnly       = "commit_only"
+	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 )
 

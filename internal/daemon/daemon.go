@@ -20,11 +20,12 @@ type subscriber struct {
 	done chan struct{}
 }
 
-// commitDoneEntry tracks a pending commit-and-done operation.
+// commitDoneEntry tracks a pending commit operation (commit-only or commit-and-done).
 type commitDoneEntry struct {
-	PaneID    string
-	PID       int
+	PaneID     string
+	PID        int
 	SawWorking bool // true once the session has transitioned to Working
+	KillOnDone bool // true for C (commit+done), false for c (commit only)
 }
 
 // Daemon is the long-lived background process that polls sessions and serves clients.
@@ -366,15 +367,17 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 		if !entry.SawWorking {
 			continue // command hasn't been picked up yet, keep waiting
 		}
-		if s.LastActionCommit {
+		if s.LastActionCommit && entry.KillOnDone {
 			log.Printf("commit-done: pane %s committed, killing", paneID)
 			if entry.PID > 0 {
 				syscall.Kill(entry.PID, syscall.SIGTERM) //nolint:errcheck
 			}
 			tmux.KillPane(paneID)   //nolint:errcheck
 			claude.RemoveStatus(paneID)
+		} else if s.LastActionCommit {
+			log.Printf("commit: pane %s committed", paneID)
 		} else {
-			log.Printf("commit-done: pane %s done but no commit detected, aborting", paneID)
+			log.Printf("commit: pane %s done but no commit detected", paneID)
 		}
 		delete(d.commitDonePanes, paneID)
 	}
