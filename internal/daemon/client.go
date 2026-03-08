@@ -143,36 +143,36 @@ func (c *Client) rpcInto(req Request, v any) error {
 	return nil
 }
 
-// Subscribe sends the subscribe request and returns the initial sessions.
+// Subscribe sends the subscribe request and returns the initial sessions + usage.
 // Call ReadNext() afterwards to get subsequent pushes.
-func (c *Client) Subscribe() ([]claude.ClaudeSession, error) {
+func (c *Client) Subscribe() ([]claude.ClaudeSession, *claude.UsageStats, error) {
 	if err := c.subEnc.Encode(Request{Type: ReqSubscribe}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	resp, err := readResponse(c.subScanner)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if resp.Error != "" {
-		return nil, fmt.Errorf("subscribe: %s", resp.Error)
+		return nil, nil, fmt.Errorf("subscribe: %s", resp.Error)
 	}
 	var data SessionsData
 	json.Unmarshal(resp.Data, &data)
-	return data.Sessions, nil
+	return data.Sessions, data.Usage, nil
 }
 
 // ReadNext blocks until the daemon pushes the next session update.
-func (c *Client) ReadNext() ([]claude.ClaudeSession, error) {
+func (c *Client) ReadNext() ([]claude.ClaudeSession, *claude.UsageStats, error) {
 	resp, err := readResponse(c.subScanner)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if resp.Error != "" {
-		return nil, fmt.Errorf("subscribe: %s", resp.Error)
+		return nil, nil, fmt.Errorf("subscribe: %s", resp.Error)
 	}
 	var data SessionsData
 	json.Unmarshal(resp.Data, &data)
-	return data.Sessions, nil
+	return data.Sessions, data.Usage, nil
 }
 
 // Transcript fetches user messages for a session.

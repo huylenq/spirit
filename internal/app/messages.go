@@ -8,6 +8,7 @@ import (
 // SessionsRefreshedMsg is sent when session discovery completes (pushed by daemon).
 type SessionsRefreshedMsg struct {
 	Sessions []claude.ClaudeSession
+	Usage    *claude.UsageStats
 	Err      error
 }
 

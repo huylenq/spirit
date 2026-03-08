@@ -260,6 +260,7 @@ func (m ListModel) View() string {
 	}
 
 	dw := m.computeDiffColWidths()
+	filterLower := strings.ToLower(m.filter)
 
 	// Determine selected PaneID for cursor tracking across the full list
 	var selectedPaneID string
@@ -302,7 +303,7 @@ func (m ListModel) View() string {
 		}
 
 		isSelected := s.PaneID == selectedPaneID
-		lines = append(lines, m.renderItem(isSelected, s, dw))
+		lines = append(lines, m.renderItem(isSelected, s, dw, filterLower))
 	}
 
 	// Truncate to fit available height
@@ -334,7 +335,7 @@ func renderStatusGroupHeader(status claude.Status) string {
 	}
 }
 
-func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths) string {
+func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths, filterLower string) string {
 
 	// Display name priority: custom title → headline → first message → project (fallback)
 	var displayName, sourceIcon string
@@ -354,8 +355,7 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	}
 
 	isNewSession := s.CustomTitle == "" && s.Headline == "" && s.FirstMessage == ""
-	filterActive := m.filter != ""
-	filterLower := strings.ToLower(m.filter)
+	filterActive := filterLower != ""
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected) }
 	sp := func(s string) string {

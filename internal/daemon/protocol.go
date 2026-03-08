@@ -97,6 +97,7 @@ type CommitDoneData struct {
 
 type SessionsData struct {
 	Sessions []claude.ClaudeSession `json:"sessions"`
+	Usage    *claude.UsageStats     `json:"usage,omitempty"`
 }
 
 type TranscriptData struct {

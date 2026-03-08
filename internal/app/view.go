@@ -20,6 +20,10 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Error: " + m.err.Error())
 	}
 
+	// Usage bar: 1 line (only shown when we have data)
+	usageBar := m.usageBar.View(m.width)
+	hasUsageBar := usageBar != ""
+
 	// Header: always 1 line
 	header := ui.RenderHeader(m.sessions, m.width)
 
@@ -28,6 +32,9 @@ func (m Model) View() string {
 
 	// Content area gets the remaining height
 	contentHeight := m.height - 2 // 1 header + 1 footer
+	if hasUsageBar {
+		contentHeight-- // usage bar takes 1 line
+	}
 
 	// List panel
 	listWidth := max(m.width*m.listWidthPct/100, 20)
@@ -88,6 +95,9 @@ func (m Model) View() string {
 		footer = style.Width(m.width).Render(m.flashMsg)
 	} else if m.pendingChord != "" {
 		footer = ui.FooterStyle.Width(m.width).Render(m.renderChordHints())
+	}
+	if hasUsageBar {
+		return lipgloss.JoinVertical(lipgloss.Left, usageBar, header, content, footer)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }

@@ -109,7 +109,7 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 	sessions := d.currentSessions()
 	resp := Response{
 		Type:    RespSessions,
-		Data:    marshalData(SessionsData{Sessions: sessions}),
+		Data:    marshalData(SessionsData{Sessions: sessions, Usage: d.currentUsage()}),
 		Version: d.currentVersion(),
 	}
 	if err := enc.Encode(resp); err != nil {
@@ -122,7 +122,7 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 		case sessions := <-sub.ch:
 			resp := Response{
 				Type:    RespSessions,
-				Data:    marshalData(SessionsData{Sessions: sessions}),
+				Data:    marshalData(SessionsData{Sessions: sessions, Usage: d.currentUsage()}),
 				Version: d.currentVersion(),
 			}
 			if err := enc.Encode(resp); err != nil {

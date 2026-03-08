@@ -46,6 +46,7 @@ type Model struct {
 	deferPrompt    ui.DeferPromptModel
 	relay          ui.RelayModel
 	minimap        ui.MinimapModel
+	usageBar       ui.UsageBarModel
 	sessions       []claude.ClaudeSession
 	state          AppState
 	showHooks         bool
@@ -127,22 +128,22 @@ func switchPaneQuiet(sessionName string, windowIndex, paneIndex int) tea.Cmd {
 // subscribeToDaemon sends the subscribe request and returns the initial sessions.
 func (m Model) subscribeToDaemon() tea.Cmd {
 	return func() tea.Msg {
-		sessions, err := m.client.Subscribe()
+		sessions, usage, err := m.client.Subscribe()
 		if err != nil {
 			return DaemonDisconnectedMsg{Err: err}
 		}
-		return SessionsRefreshedMsg{Sessions: sessions}
+		return SessionsRefreshedMsg{Sessions: sessions, Usage: usage}
 	}
 }
 
 // waitForDaemonUpdate blocks until the daemon pushes the next session snapshot.
 func (m Model) waitForDaemonUpdate() tea.Cmd {
 	return func() tea.Msg {
-		sessions, err := m.client.ReadNext()
+		sessions, usage, err := m.client.ReadNext()
 		if err != nil {
 			return DaemonDisconnectedMsg{Err: err}
 		}
-		return SessionsRefreshedMsg{Sessions: sessions}
+		return SessionsRefreshedMsg{Sessions: sessions, Usage: usage}
 	}
 }
 

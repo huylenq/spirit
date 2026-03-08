@@ -22,8 +22,9 @@ type subscriber struct {
 
 // commitDoneEntry tracks a pending commit-and-done operation.
 type commitDoneEntry struct {
-	PaneID string
-	PID    int
+	PaneID    string
+	PID       int
+	SawWorking bool // true once the session has transitioned to Working
 }
 
 // Daemon is the long-lived background process that polls sessions and serves clients.
@@ -42,6 +43,9 @@ type Daemon struct {
 
 	summarizingMu    sync.Mutex
 	summarizingPanes map[string]bool // paneIDs with in-flight summarization
+
+	usageMu    sync.RWMutex
+	usageStats *claude.UsageStats
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -106,6 +110,9 @@ func Run(info DaemonInfo) error {
 	pollStop := make(chan struct{})
 	go d.pollLoop(pollStop)
 
+	// Start usage polling goroutine
+	go d.usageLoop(pollStop)
+
 	// Start idle timeout checker
 	go d.idleWatcher(sigCh)
 
@@ -159,6 +166,41 @@ func (d *Daemon) pollLoop(stop chan struct{}) {
 			d.poll()
 		}
 	}
+}
+
+func (d *Daemon) usageLoop(stop chan struct{}) {
+	// Fetch immediately on startup
+	d.fetchUsage()
+
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			d.fetchUsage()
+		}
+	}
+}
+
+func (d *Daemon) fetchUsage() {
+	stats, err := claude.FetchUsage()
+	if err != nil {
+		log.Printf("usage fetch: %v", err)
+		return
+	}
+	d.usageMu.Lock()
+	d.usageStats = stats
+	d.usageMu.Unlock()
+	d.nudge()
+}
+
+func (d *Daemon) currentUsage() *claude.UsageStats {
+	d.usageMu.RLock()
+	defer d.usageMu.RUnlock()
+	return d.usageStats
 }
 
 // nudge triggers an immediate poll. Non-blocking; coalesces multiple nudges.
@@ -288,10 +330,22 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			delete(d.commitDonePanes, paneID)
 			continue
 		}
-		if s.Status != claude.StatusDone {
-			continue // still working, keep waiting
+		if s.Status == claude.StatusWorking {
+			// Mark that we've seen the session start working
+			if !entry.SawWorking {
+				entry.SawWorking = true
+				d.commitDonePanes[paneID] = entry
+				log.Printf("commit-done: pane %s now working", paneID)
+			}
+			continue
 		}
-		// Session is Done — check if commit was detected
+		if s.Status != claude.StatusDone {
+			continue
+		}
+		// Session is Done — but only resolve if it went through Working first
+		if !entry.SawWorking {
+			continue // command hasn't been picked up yet, keep waiting
+		}
 		if s.LastActionCommit {
 			log.Printf("commit-done: pane %s committed, killing", paneID)
 			if entry.PID > 0 {

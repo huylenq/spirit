@@ -17,6 +17,16 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
+// contentHeight returns the available height for the main content area,
+// accounting for header, footer, and usage bar if present.
+func (m Model) contentHeight() int {
+	h := m.height - 2 // 1 header + 1 footer
+	if m.usageBar.HasData() {
+		h--
+	}
+	return h
+}
+
 // executeChord dispatches a completed chord sequence to its action.
 func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 	switch chord.Keys {
@@ -96,11 +106,20 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
+// enableSmartSelection controls whether the TUI auto-selects the originating pane on launch.
+// There's a perceivable latency when Claude sends its UserPromptSubmit hook, making it
+// unable to instantaneously update the session state from user turn to working. That
+// limitation makes the smart selection feature really annoying.
+const enableSmartSelection = false
+
 // tryInitialSelection sets the cursor to the user's originating pane if it's a
 // Done Claude session, otherwise leaves cursor at 0 (oldest Done session after sort).
 // Only runs once, when both sessions and origPane are available.
 // Returns true if the cursor was moved to origPane (caller should fetch preview).
 func (m *Model) tryInitialSelection() bool {
+	if !enableSmartSelection {
+		return false
+	}
 	if m.initialSelectionDone || len(m.sessions) == 0 {
 		return false
 	}
@@ -141,7 +160,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		listWidth := max(m.width*m.listWidthPct/100, 20)
 		previewWidth := m.width - listWidth
-		contentHeight := m.height - 2 // 1 header + 1 footer
+		contentHeight := m.contentHeight()
 		m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 		m.preview.SetSize(previewWidth, contentHeight)
 		minimapH := contentHeight / 2
@@ -155,6 +174,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.Err
 		return m, nil
 
+	case ui.UsageBarTickMsg:
+		cmd := m.usageBar.Tick()
+		return m, cmd
+
 	case SessionsRefreshedMsg:
 		if msg.Err != nil {
 			m.err = msg.Err
@@ -164,6 +187,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetItems(m.sessions)
 		m.tryInitialSelection()
 		var cmds []tea.Cmd
+		// Update usage bar
+		if msg.Usage != nil {
+			if cmd := m.usageBar.SetUsage(msg.Usage); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 		// Update minimap status flags
 		if m.showMinimap {
 			paneStatuses := make(map[string]int)
@@ -374,11 +403,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.list.ClearFilter()
 			return m, nil
 		case key.Matches(msg, Keys.Enter):
-			val := m.filter.Confirm()
+			m.filter.Confirm()
 			m.state = StateNormal
-			if val == "" {
-				m.list.ClearFilter()
+			// Remember selection, clear filter, re-select (search & jump)
+			var selectedPaneID string
+			if s, ok := m.list.SelectedItem(); ok {
+				selectedPaneID = s.PaneID
 			}
+			m.list.ClearFilter()
+			m.list.SelectByPaneID(selectedPaneID)
 			return m, nil
 		case key.Matches(msg, Keys.MsgNext):
 			m.list.MoveDown()
@@ -713,7 +746,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.ListShrink):
 			m.listWidthPct = max(m.listWidthPct-5, 10)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.height - 2
+			contentHeight := m.contentHeight()
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			savePrefInt("listWidthPct", m.listWidthPct)
@@ -722,7 +755,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.ListGrow):
 			m.listWidthPct = min(m.listWidthPct+5, 60)
 			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.height - 2
+			contentHeight := m.contentHeight()
 			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
 			m.preview.SetSize(m.width-listWidth, contentHeight)
 			savePrefInt("listWidthPct", m.listWidthPct)
