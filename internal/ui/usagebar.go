@@ -141,6 +141,66 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 	return sb.String()
 }
 
+// TopBorderView renders the usage bar as the top border of the TUI frame.
+// Corners ╭/╮ are colored as part of the usage bar gradient.
+// When no data is available, renders a plain border using BorderCharStyle.
+func (m *UsageBarModel) TopBorderView(width int) string {
+	if width < 2 {
+		return ""
+	}
+
+	filledChars := 0
+	if m.hasData {
+		filledChars = width * m.sessionPct / 100
+	}
+
+	var sb strings.Builder
+	for i := 0; i < width; i++ {
+		glyph := "─"
+		if i == 0 {
+			glyph = "╭"
+		} else if i == width-1 {
+			glyph = "╮"
+		}
+
+		if m.hasData && i < filledChars {
+			t := float64(i) / float64(max(filledChars, 1))
+			c := blendHex("#3d2b00", "#8a5a00", t)
+
+			if m.rippleActive {
+				rippleCenter := filledChars - rippleWidth + (m.rippleFrame * (rippleWidth + 3) / rippleFrames)
+				dist := intAbs(i - rippleCenter)
+				if dist < rippleWidth {
+					intensity := 1.0 - float64(dist)/float64(rippleWidth)
+					c = blendHex(c, "#93c5fd", intensity*0.8)
+				}
+			}
+
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render(glyph))
+		} else {
+			sb.WriteString(BorderCharStyle.Render(glyph))
+		}
+	}
+
+	return sb.String()
+}
+
+// LabelView returns the styled usage label (without positioning).
+func (m *UsageBarModel) LabelView() string {
+	if !m.hasData {
+		return ""
+	}
+	label := fmt.Sprintf("session %d%%", m.sessionPct)
+	if m.resets != "" {
+		resets := m.resets
+		if i := strings.Index(resets, " ("); i >= 0 {
+			resets = resets[:i]
+		}
+		label += " · resets " + resets
+	}
+	return labelStyle.Render(label)
+}
+
 // blendHex linearly interpolates between two hex colors.
 func blendHex(from, to string, t float64) string {
 	if t <= 0 {

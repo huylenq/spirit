@@ -62,11 +62,8 @@ fi
 # Auto-install Claude Code hooks (idempotent — skips if already up to date)
 "$BINARY" setup 2>/dev/null || true
 
-# <prefix> C-Space → fullscreen popup
-tmux set -g popup-border-lines rounded
-tmux set -g popup-border-style "fg=#555555"
-
-tmux bind-key C-Space display-popup -E -w 100% -h 100% -e CLAUDE_TUI_FULLSCREEN=1 "$BINARY"
+# <prefix> C-Space → fullscreen popup (borderless — TUI draws its own frame)
+tmux bind-key C-Space display-popup -B -E -w 100% -h 100% -e CLAUDE_TUI_FULLSCREEN=1 "$BINARY"
 
 # Ctrl-Tab (prefix-less, tmux 3.5+) → normal popup
-tmux bind-key -n C-Tab display-popup -E -w 80% -h 70% "$BINARY"
+tmux bind-key -n C-Tab display-popup -B -E -w 80% -h 70% "$BINARY"

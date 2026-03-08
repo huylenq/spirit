@@ -20,18 +20,27 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Error: " + m.err.Error())
 	}
 
-	// Header: always 1 line (usage bar when data available)
-	header := ui.RenderHeader(m.width, &m.usageBar)
+	innerWidth := m.width - 2 // inside left/right border chars
+
+	// Top border: usage bar as the frame's top edge
+	topBorder := m.usageBar.TopBorderView(m.width)
+
+	// Label line: usage stats right-aligned below the top border
+	labelLine := lipgloss.NewStyle().
+		Width(innerWidth).
+		Align(lipgloss.Right).
+		PaddingRight(1).
+		Render(m.usageBar.LabelView())
 
 	// Footer: always 1 line
-	footer := m.renderFooter()
+	footer := m.renderFooter(innerWidth)
 
-	// Content area gets the remaining height
-	contentHeight := m.height - 2 // 1 header + 1 footer
+	// Content area: total height minus top border, label, footer, bottom border
+	contentHeight := m.height - 4
 
 	// List panel
-	listWidth := max(m.width*m.listWidthPct/100, 20)
-	previewWidth := m.width - listWidth
+	listWidth := max(innerWidth*m.listWidthPct/100, 20)
+	previewWidth := innerWidth - listWidth
 
 	listContent := m.list.View()
 	listPanel := ui.ListPanelStyle.
@@ -41,9 +50,12 @@ func (m Model) View() string {
 		Render(listContent)
 
 	// Set inline relay prompt on preview when active
-	if m.state == StatePromptRelay {
+	switch m.state {
+	case StatePromptRelay:
 		m.preview.SetRelayView(m.relay.View())
-	} else {
+	case StateEnqueueRelay:
+		m.preview.SetRelayView(m.enqueueRelay.View())
+	default:
 		m.preview.SetRelayView("")
 	}
 
@@ -76,13 +88,13 @@ func (m Model) View() string {
 	// Debug overlay at bottom-right
 	if m.debugMode {
 		if debugStr := m.renderDebugOverlay(); debugStr != "" {
-			content = ui.OverlayBottomRight(content, debugStr, m.width)
+			content = ui.OverlayBottomRight(content, debugStr, innerWidth)
 		}
 	}
 
 	// Help overlay centered
 	if m.showHelp {
-		content = ui.OverlayCentered(content, m.renderHelpOverlay(), m.width)
+		content = ui.OverlayCentered(content, m.renderHelpOverlay(), innerWidth)
 	}
 
 	if m.flashMsg != "" {
@@ -90,11 +102,19 @@ func (m Model) View() string {
 		if m.flashIsError {
 			style = ui.FlashErrorStyle
 		}
-		footer = style.Width(m.width).Render(m.flashMsg)
+		footer = style.Width(innerWidth).Render(m.flashMsg)
 	} else if m.pendingChord != "" {
-		footer = ui.FooterStyle.Width(m.width).Render(m.renderChordHints())
+		footer = ui.FooterStyle.Width(innerWidth).Render(m.renderChordHints())
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	// Assemble inner content (label + content + footer), add side borders
+	inner := lipgloss.JoinVertical(lipgloss.Left, labelLine, content, footer)
+	bordered := ui.AddSideBorders(inner, innerWidth)
+
+	// Bottom border
+	bottomBorder := ui.BottomBorder(m.width)
+
+	return topBorder + "\n" + bordered + "\n" + bottomBorder
 }
 
 // renderChordHints shows the pending chord prefix and available continuations.
@@ -205,7 +225,7 @@ func (m Model) renderNormalFooterHints() string {
 		return strings.Join(parts, "  ")
 	}
 
-	parts = append(parts, hint("enter", "switch"), hint(">", "reply"))
+	parts = append(parts, hint("enter", "switch"), hint(">", "reply"), hint("<", "enqueue"))
 
 	switch s.Status {
 	case claude.StatusDone:
@@ -249,6 +269,7 @@ func (m Model) renderHelpOverlay() string {
 	col2 := strings.Join([]string{
 		actions,
 		hint(">", "reply to session"),
+		hint("<", "enqueue message"),
 		hint("w", "defer session"),
 		hint("u", "undefer session"),
 		hint("d", "kill + close pane"),
@@ -283,7 +304,7 @@ func (m Model) renderHelpOverlay() string {
 	return ui.HelpOverlayStyle.Render(body)
 }
 
-func (m Model) renderFooter() string {
+func (m Model) renderFooter(width int) string {
 	switch m.state {
 	case StateFiltering:
 		filterView := m.filter.View()
@@ -292,7 +313,7 @@ func (m Model) renderFooter() string {
 			ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" clear")
 		hintWidth := lipgloss.Width(hint)
 		filterWidth := lipgloss.Width(filterView)
-		gap := m.width - filterWidth - hintWidth
+		gap := width - filterWidth - hintWidth
 		if gap < 2 {
 			return filterView
 		}
@@ -300,21 +321,25 @@ func (m Model) renderFooter() string {
 	case StateDeferPrompt:
 		return m.deferPrompt.View()
 	case StatePromptRelay:
-		hint := ui.FooterKeyStyle.Render("enter") + " send  " +
+		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
-		return ui.FooterStyle.Width(m.width).Render(hint)
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateEnqueueRelay:
+		h := ui.FooterKeyStyle.Render("enter") + " enqueue  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateKillConfirm:
 		prompt := ui.FooterDimStyle.Render("Kill ") +
 			ui.FooterDangerStyle.Render(m.killTargetTitle) +
 			ui.FooterDimStyle.Render(" ? ") +
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"
-		return ui.FooterStyle.Width(m.width).Render(prompt)
+		return ui.FooterStyle.Width(width).Render(prompt)
 	default:
 		hints := m.renderNormalFooterHints()
 		if m.renaming {
 			hints += "  " + ui.SummaryStyle.Render("renaming…")
 		}
-		return ui.FooterStyle.Width(m.width).Render(hints)
+		return ui.FooterStyle.Width(width).Render(hints)
 	}
 }

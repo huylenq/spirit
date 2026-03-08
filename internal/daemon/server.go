@@ -3,11 +3,8 @@ package daemon
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
@@ -101,8 +98,11 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCancelCommitDone:
 		return d.handleCancelCommitDone(req.Data)
 
-	case ReqCapture:
-		return d.handleCapture()
+	case ReqEnqueue:
+		return d.handleEnqueue(req.Data)
+
+	case ReqCancelEnqueue:
+		return d.handleCancelEnqueue(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
@@ -404,43 +404,39 @@ func (d *Daemon) handleCancelCommitDone(data json.RawMessage) *Response {
 	return &r
 }
 
-var ansiRe = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
-
-func (d *Daemon) handleCapture() *Response {
-	sessions := d.currentSessions()
-	var buf strings.Builder
-	for i, s := range sessions {
-		if i > 0 {
-			buf.WriteString("\n")
-		}
-		title := s.CustomTitle
-		if title == "" {
-			title = s.Headline
-		}
-		if title == "" {
-			title = s.FirstMessage
-		}
-		if title == "" {
-			title = "New session"
-		}
-		if runes := []rune(title); len(runes) > 80 {
-			title = string(runes[:79]) + "…"
-		}
-		buf.WriteString(fmt.Sprintf("=== %s [%s] ===\n", title, s.Status))
-		if s.Project != "" {
-			buf.WriteString(fmt.Sprintf("  Project: %s\n", s.Project))
-		}
-		if s.GitBranch != "" {
-			buf.WriteString(fmt.Sprintf("  Branch: %s\n", s.GitBranch))
-		}
-		buf.WriteString(fmt.Sprintf("  Pane: %s  Session: %s\n", s.PaneID, s.SessionID))
-		content, err := tmux.CapturePaneContent(s.PaneID)
-		if err == nil && content != "" {
-			buf.WriteString("\n")
-			buf.WriteString(ansiRe.ReplaceAllString(content, ""))
-		}
-		buf.WriteString("\n")
+func (d *Daemon) handleEnqueue(data json.RawMessage) *Response {
+	var req EnqueueData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
 	}
-	r := resultResponse(CaptureData{Text: buf.String()})
+	if err := claude.WriteEnqueueMessage(req.PaneID, req.Message); err != nil {
+		r := errResponse("write enqueue: " + err.Error())
+		return &r
+	}
+	d.enqueueMu.Lock()
+	d.enqueuePanes[req.PaneID] = req.Message
+	d.enqueueMu.Unlock()
+	d.nudge()
+	log.Printf("enqueue: registered pane %s", req.PaneID)
+	r := resultResponse("ok")
 	return &r
 }
+
+func (d *Daemon) handleCancelEnqueue(data json.RawMessage) *Response {
+	var req PaneData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.enqueueMu.Lock()
+	delete(d.enqueuePanes, req.PaneID)
+	d.enqueueMu.Unlock()
+	claude.RemoveEnqueueMessage(req.PaneID)
+	d.nudge()
+	log.Printf("enqueue: cancelled pane %s", req.PaneID)
+	r := resultResponse("ok")
+	return &r
+}
+
+

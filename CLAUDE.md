@@ -22,6 +22,17 @@ Binary output: `bin/cmc`
 - `internal/app/` - Bubble Tea app model (update, view, messages)
 - `hooks/claude-status.sh` - Legacy hook script (kept for compatibility, replaced by `cmc _hook`)
 
+## Troubleshooting TUI rendering
+
+When debugging layout or rendering issues, capture a text screenshot of the TUI:
+
+```sh
+./bin/cmc capture              # auto-detect terminal size (200x50 default)
+./bin/cmc capture 160x40       # render at specific COLSxROWS
+```
+
+This does a headless render using the same `View()` code as the live TUI, with ANSI stripped. Works outside tmux as long as the daemon is running. Use it to inspect exactly what the TUI would display at a given resolution without needing to open the popup.
+
 ## Claude Code hooks
 
 `cmc setup` patches `~/.claude/settings.json` to call `cmc _hook <type>` for each hook event.

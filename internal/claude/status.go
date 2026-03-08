@@ -190,12 +190,37 @@ func ReadPermissionMode(paneID string) string {
 	return mode
 }
 
+func enqueueFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".enqueue")
+}
+
+func ReadEnqueueMessage(paneID string) string {
+	data, err := os.ReadFile(enqueueFilePath(paneID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteEnqueueMessage(paneID, message string) error {
+	dir := statusDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(enqueueFilePath(paneID), []byte(message), 0o644)
+}
+
+func RemoveEnqueueMessage(paneID string) {
+	os.Remove(enqueueFilePath(paneID))
+}
+
 func RemoveStatus(paneID string) {
 	os.Remove(statusFilePath(paneID))
 	os.Remove(deferFilePath(paneID))
 	os.Remove(sessionFilePath(paneID))
 	os.Remove(hookFilePath(paneID))
 	os.Remove(lastMsgFilePath(paneID))
+	os.Remove(enqueueFilePath(paneID))
 }
 
 func ClearDefer(paneID string) {

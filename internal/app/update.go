@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -13,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 	"github.com/huylenq/claude-mission-control/internal/ui"
@@ -26,16 +26,10 @@ func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 			return m, copyToClipboard(s.SessionID)
 		}
 	case "yc":
-		text := stripAnsi(m.View())
+		text := ansi.Strip(m.View())
 		return m, copyToClipboard(text)
 	}
 	return m, nil
-}
-
-var ansiRe = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
-
-func stripAnsi(s string) string {
-	return ansiRe.ReplaceAllString(s, "")
 }
 
 // copyToClipboard copies text to the system clipboard via pbcopy and shows a flash.
@@ -101,9 +95,9 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 		escaped := strings.ReplaceAll(bin, "'", `'\''`)
 		var shellCmd string
 		if currentlyFullscreen {
-			shellCmd = fmt.Sprintf("sleep 0.2 && tmux display-popup -E -w 80%% -h 70%% '%s'", escaped)
+			shellCmd = fmt.Sprintf("sleep 0.2 && tmux display-popup -B -E -w 80%% -h 70%% '%s'", escaped)
 		} else {
-			shellCmd = fmt.Sprintf("sleep 0.2 && tmux display-popup -E -w 100%% -h 100%% -e CLAUDE_TUI_FULLSCREEN=1 '%s'", escaped)
+			shellCmd = fmt.Sprintf("sleep 0.2 && tmux display-popup -B -E -w 100%% -h 100%% -e CLAUDE_TUI_FULLSCREEN=1 '%s'", escaped)
 		}
 		exec.Command("tmux", "run-shell", shellCmd).Start() //nolint:errcheck
 		return tea.QuitMsg{}
@@ -161,16 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		listWidth := max(m.width*m.listWidthPct/100, 20)
-		previewWidth := m.width - listWidth
-		contentHeight := m.height - 2
-		m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
-		m.preview.SetSize(previewWidth, contentHeight)
-		minimapH := contentHeight / 2
-		if minimapH > 14 {
-			minimapH = 14
-		}
-		m.minimap.SetSize(0, minimapH)
+		m.applyLayout()
 		return m, nil
 
 	case DaemonDisconnectedMsg:
@@ -507,6 +492,46 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+	case StateEnqueueRelay:
+		switch {
+		case key.Matches(msg, Keys.Escape):
+			m.state = StateNormal
+			m.enqueueRelay.Deactivate()
+			return m, nil
+		case key.Matches(msg, Keys.Enter):
+			val := m.enqueueRelay.Confirm()
+			m.state = StateNormal
+			s, ok := m.list.SelectedItem()
+			if !ok {
+				return m, nil
+			}
+			if val == "" {
+				// Empty submit on a session with pending enqueue → cancel
+				if s.EnqueuePending != "" {
+					paneID := s.PaneID
+					return m, func() tea.Msg {
+						if err := m.client.CancelEnqueue(paneID); err != nil {
+							return flashErrorMsg("cancel failed: " + err.Error())
+						}
+						return flashInfoMsg("enqueue cancelled")
+					}
+				}
+				return m, nil
+			}
+			paneID := s.PaneID
+			return m, func() tea.Msg {
+				if err := m.client.Enqueue(paneID, val); err != nil {
+					return flashErrorMsg("enqueue failed: " + err.Error())
+				}
+				return flashInfoMsg("message enqueued")
+			}
+		default:
+			ti := m.enqueueRelay.TextInput()
+			newTI, cmd := ti.Update(msg)
+			*ti = newTI
+			return m, cmd
+		}
+
 	default: // StateNormal
 		// When help overlay is open, only ? and esc dismiss it; swallow everything else
 		if m.showHelp {
@@ -636,6 +661,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if _, ok := m.list.SelectedItem(); ok {
 				m.state = StatePromptRelay
 				m.relay.Activate()
+			}
+			return m, nil
+
+		case key.Matches(msg, Keys.Enqueue):
+			if s, ok := m.list.SelectedItem(); ok {
+				m.state = StateEnqueueRelay
+				m.enqueueRelay.SetPrompt("❮ ", ui.EnqueuePromptStyle)
+				if s.EnqueuePending != "" {
+					m.enqueueRelay.ActivateWithValue(s.EnqueuePending)
+				} else {
+					m.enqueueRelay.Activate()
+				}
 			}
 			return m, nil
 
@@ -774,19 +811,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, Keys.ListShrink):
 			m.listWidthPct = max(m.listWidthPct-5, 10)
-			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.height - 2
-			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
-			m.preview.SetSize(m.width-listWidth, contentHeight)
+			m.applyLayout()
 			savePrefInt("listWidthPct", m.listWidthPct)
 			return m, nil
 
 		case key.Matches(msg, Keys.ListGrow):
 			m.listWidthPct = min(m.listWidthPct+5, 60)
-			listWidth := max(m.width*m.listWidthPct/100, 20)
-			contentHeight := m.height - 2
-			m.list.SetSize(listWidth-1, contentHeight) // -1 for ListPanelStyle right border
-			m.preview.SetSize(m.width-listWidth, contentHeight)
+			m.applyLayout()
 			savePrefInt("listWidthPct", m.listWidthPct)
 			return m, nil
 

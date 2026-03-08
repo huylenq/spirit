@@ -25,6 +25,7 @@ const (
 	StateDeferPrompt
 	StateKillConfirm
 	StatePromptRelay
+	StateEnqueueRelay
 )
 
 // originalPane stores the tmux pane that was active when the TUI launched,
@@ -44,6 +45,7 @@ type Model struct {
 	filter         ui.FilterModel
 	deferPrompt    ui.DeferPromptModel
 	relay          ui.RelayModel
+	enqueueRelay   ui.RelayModel
 	minimap        ui.MinimapModel
 	usageBar       ui.UsageBarModel
 	sessions       []claude.ClaudeSession
@@ -86,6 +88,7 @@ func NewModel(client *daemon.Client) Model {
 		filter:            ui.NewFilterModel(),
 		deferPrompt:       ui.NewDeferPromptModel(),
 		relay:             ui.NewRelayModel(),
+		enqueueRelay:      ui.NewRelayModel(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),
@@ -93,6 +96,17 @@ func NewModel(client *daemon.Client) Model {
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
 		binaryPath:        bin,
 	}
+}
+
+// applyLayout recomputes and applies component sizes from m.width, m.height, m.listWidthPct.
+func (m *Model) applyLayout() {
+	innerWidth := m.width - 2 // inside left/right border chars
+	listWidth := max(innerWidth*m.listWidthPct/100, 20)
+	contentHeight := m.height - 4 // top border + label + footer + bottom border
+	m.list.SetSize(listWidth-1, contentHeight)
+	m.preview.SetSize(innerWidth-listWidth, contentHeight)
+	minimapH := min(contentHeight/2, 14)
+	m.minimap.SetSize(0, minimapH)
 }
 
 func (m Model) Init() tea.Cmd {

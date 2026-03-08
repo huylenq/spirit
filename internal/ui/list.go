@@ -459,6 +459,12 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		}
 	}
 
+	// Show enqueued message as a subtitle line
+	if s.EnqueuePending != "" {
+		rawMsg := strings.ReplaceAll(s.EnqueuePending, "\n", " ")
+		line += "\n" + m.renderSubtitleLine(rawMsg, filterLower, IconEnqueue, isSelected, false)
+	}
+
 	// Show last user message as a subtitle line (single line, truncated to list width)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")

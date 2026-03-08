@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/textinput"
+import (
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
+)
 
 type RelayModel struct {
 	input  textinput.Model
@@ -20,6 +23,18 @@ func (m *RelayModel) Activate() {
 	m.active = true
 	m.input.Focus()
 	m.input.SetValue("")
+}
+
+func (m *RelayModel) ActivateWithValue(value string) {
+	m.active = true
+	m.input.Focus()
+	m.input.SetValue(value)
+	m.input.CursorEnd()
+}
+
+func (m *RelayModel) SetPrompt(prompt string, style lipgloss.Style) {
+	m.input.Prompt = prompt
+	m.input.PromptStyle = style
 }
 
 func (m *RelayModel) Deactivate() {

@@ -70,7 +70,7 @@ func printUsage() {
 
 Usage:
   cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
-  cmc capture          Capture a text snapshot of all sessions to stdout
+  cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
   cmc daemon           Start the background daemon
@@ -240,6 +240,25 @@ func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
 }
 
 func runCapture() {
+	cols, rows := 0, 0 // 0 = auto-detect
+	if len(os.Args) > 2 {
+		arg := os.Args[2]
+		if arg == "-h" || arg == "--help" || arg == "help" {
+			fmt.Println(`Usage: cmc capture [COLSxROWS]
+
+Capture a text snapshot of the TUI to stdout.
+
+Examples:
+  cmc capture          Auto-detect terminal size (default 200x50 if not a TTY)
+  cmc capture 160x40   Render at 160 columns by 40 rows`)
+			return
+		}
+		if _, err := fmt.Sscanf(arg, "%dx%d", &cols, &rows); err != nil || cols <= 0 || rows <= 0 {
+			fmt.Fprintf(os.Stderr, "Invalid resolution %q, expected COLSxROWS (e.g. 160x40)\n", arg)
+			os.Exit(1)
+		}
+	}
+
 	client, err := daemon.Connect()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to daemon: %v\n", err)
@@ -247,7 +266,7 @@ func runCapture() {
 	}
 	defer client.Close()
 
-	text, err := client.Capture()
+	text, err := app.RenderCapture(client, cols, rows)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error capturing: %v\n", err)
 		os.Exit(1)

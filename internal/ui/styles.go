@@ -14,6 +14,9 @@ var (
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 
+	// Border frame (custom TUI outline)
+	BorderCharStyle = lipgloss.NewStyle().Foreground(ColorBorder)
+
 	// Header
 	HeaderStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -96,6 +99,11 @@ var (
 	// Relay (prompt relay input)
 	RelayPromptStyle = lipgloss.NewStyle().
 				Foreground(ColorGreen).
+				Bold(true)
+
+	// Enqueue relay prompt
+	EnqueuePromptStyle = lipgloss.NewStyle().
+				Foreground(ColorWorking).
 				Bold(true)
 
 	// Group separator

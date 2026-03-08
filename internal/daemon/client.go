@@ -256,9 +256,13 @@ func (c *Client) CancelCommitDone(paneID string) error {
 	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
 
-// Capture returns a text snapshot of all sessions with their pane content.
-func (c *Client) Capture() (string, error) {
-	var data CaptureData
-	err := c.rpcInto(Request{Type: ReqCapture}, &data)
-	return data.Text, err
+// Enqueue registers a message for delivery when the pane's session becomes Done.
+func (c *Client) Enqueue(paneID, message string) error {
+	return c.rpcInto(Request{Type: ReqEnqueue, Data: marshalData(EnqueueData{PaneID: paneID, Message: message})}, nil)
 }
+
+// CancelEnqueue removes a pending enqueued message for a pane.
+func (c *Client) CancelEnqueue(paneID string) error {
+	return c.rpcInto(Request{Type: ReqCancelEnqueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+}
+

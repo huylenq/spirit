@@ -17,6 +17,7 @@ const (
 	// Subtitle icons
 	IconInput    = "\uf11c"  // keyboard — last user message subtitle
 	IconHeadline = "\uf0eb"  // lightbulb — headline match context
+	IconEnqueue  = "\uf017"  // clock — enqueued message pending delivery
 	// Footer metadata
 	IconID = "\U000F0EFE" // nf-md-identifier — session ID
 )
