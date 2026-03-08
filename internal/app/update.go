@@ -233,7 +233,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SummaryReadyMsg:
 		if msg.Err != nil {
-			m.flashMsg = "Summarize failed: " + msg.Err.Error()
+			m.flashMsg = "Synthesize failed: " + msg.Err.Error()
 			m.flashIsError = true
 			m.flashExpiry = time.Now().Add(5 * time.Second)
 			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
@@ -259,9 +259,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case SummarizeAllReadyMsg:
+	case SynthesizeAllReadyMsg:
 		if msg.Err != nil {
-			m.flashMsg = "Summarize all failed: " + msg.Err.Error()
+			m.flashMsg = "Synthesize all failed: " + msg.Err.Error()
 			m.flashIsError = true
 			m.flashExpiry = time.Now().Add(5 * time.Second)
 			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
@@ -665,14 +665,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.Summarize):
+		case key.Matches(msg, Keys.Synthesize):
 			if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
 				m.list.SetSummaryLoading(s.PaneID, true)
-				return m, m.fetchSummarize(s.PaneID, s.SessionID)
+				return m, m.fetchSynthesize(s.PaneID, s.SessionID)
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.SummarizeAll):
+		case key.Matches(msg, Keys.SynthesizeAll):
 			var latestPaneID string
 			var latestTime time.Time
 			for _, sess := range m.sessions {
@@ -686,7 +686,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.list.SetSummaryLoading(sess.PaneID, true)
 				}
 			}
-			return m, m.fetchSummarizeAll(latestPaneID)
+			return m, m.fetchSynthesizeAll(latestPaneID)
 
 		case key.Matches(msg, Keys.Rename):
 			if s, ok := m.list.SelectedItem(); ok && !m.renaming {

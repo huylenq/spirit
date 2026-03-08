@@ -9,7 +9,7 @@ import (
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.Enter, k.PromptRelay, k.Filter, k.Defer, k.Undefer,
-		k.Refresh, k.GroupMode, k.Summarize, k.SummarizeAll,
+		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -21,7 +21,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Enter, k.Filter, k.Refresh, k.Quit},
 		{k.Defer, k.Undefer, k.GroupMode, k.Minimap},
-		{k.Summarize, k.SummarizeAll, k.Rename, k.Hooks},
+		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Hooks},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
 	}
 }
@@ -40,8 +40,8 @@ type KeyMap struct {
 
 	Minimap      key.Binding
 	GroupMode    key.Binding
-	Summarize    key.Binding
-	SummarizeAll key.Binding
+	Synthesize    key.Binding
+	SynthesizeAll key.Binding
 	Rename       key.Binding
 
 	// Spatial navigation (minimap)
@@ -79,6 +79,9 @@ type KeyMap struct {
 
 	// Debug overlay toggle
 	Debug key.Binding
+
+	// Help overlay toggle
+	Help key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -172,13 +175,13 @@ var Keys = KeyMap{
 		key.WithKeys("g"),
 		key.WithHelp("g", "group"),
 	),
-	Summarize: key.NewBinding(
+	Synthesize: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "summarize"),
+		key.WithHelp("s", "synthesize"),
 	),
-	SummarizeAll: key.NewBinding(
+	SynthesizeAll: key.NewBinding(
 		key.WithKeys("S"),
-		key.WithHelp("S", "summarize all"),
+		key.WithHelp("S", "synthesize all"),
 	),
 	Rename: key.NewBinding(
 		key.WithKeys("R"),
@@ -247,5 +250,9 @@ var Keys = KeyMap{
 	),
 	Debug: key.NewBinding(
 		key.WithKeys("D"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "help"),
 	),
 }

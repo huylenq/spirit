@@ -100,7 +100,11 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 
 	label := fmt.Sprintf("session %d%%", m.sessionPct)
 	if m.resets != "" {
-		label += " · resets " + m.resets
+		resets := m.resets
+		if i := strings.Index(resets, " ("); i >= 0 {
+			resets = resets[:i]
+		}
+		label += " · resets " + resets
 	}
 	labelW := len(label) + 1 // +1 for space before label
 

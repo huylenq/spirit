@@ -196,17 +196,17 @@ func (c *Client) Summary(sessionID string) (*claude.SessionSummary, error) {
 	return data.Summary, err
 }
 
-// Summarize triggers haiku summarization. Daemon handles /rename side-effect.
-func (c *Client) Summarize(paneID, sessionID string) (*claude.SessionSummary, bool, error) {
-	var data SummarizeResultData
-	err := c.rpcInto(Request{Type: ReqSummarize, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, &data)
+// Synthesize triggers haiku synthesis. Daemon handles /rename side-effect.
+func (c *Client) Synthesize(paneID, sessionID string) (*claude.SessionSummary, bool, error) {
+	var data SynthesizeResultData
+	err := c.rpcInto(Request{Type: ReqSynthesize, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, &data)
 	return data.Summary, data.FromCache, err
 }
 
-// SummarizeAll triggers summarization for all sessions except the most recently active.
-func (c *Client) SummarizeAll(skipPaneID string) ([]SummarizeResultData, error) {
-	var data SummarizeAllResultData
-	err := c.rpcInto(Request{Type: ReqSummarizeAll, Data: marshalData(SkipPaneData{SkipPaneID: skipPaneID})}, &data)
+// SynthesizeAll triggers synthesis for all sessions except the most recently active.
+func (c *Client) SynthesizeAll(skipPaneID string) ([]SynthesizeResultData, error) {
+	var data SynthesizeAllResultData
+	err := c.rpcInto(Request{Type: ReqSynthesizeAll, Data: marshalData(SkipPaneData{SkipPaneID: skipPaneID})}, &data)
 	return data.Results, err
 }
 

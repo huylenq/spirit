@@ -9,7 +9,7 @@ A TUI for monitoring and switching between Claude Code sessions across tmux pane
 - **Spatial minimap** — visual overview of your tmux window layout with pane status
 - **Vim navigation** — `j`/`k` to browse, `Enter` to switch, `/` to filter
 - **Defer mode** — snooze a session with a countdown timer
-- **AI summaries** — summarize sessions via Claude Haiku
+- **AI summaries** — synthesize sessions via Claude Haiku
 - **Diff stats** — see file change counts per session
 - **Daemon architecture** — background process polls once, multiple TUI clients connect instantly
 
@@ -63,8 +63,8 @@ The tmux plugin (`cmc.tmux`) binds:
 | `/` | Filter sessions |
 | `d` | Defer session (set timer) |
 | `u` | Undefer session |
-| `s` | Summarize session (AI) |
-| `S` | Summarize all sessions |
+| `s` | Synthesize session (AI) |
+| `S` | Synthesize all sessions |
 | `m` | Toggle minimap |
 | `g` | Toggle group by project |
 | `h` | Toggle hook event debug view |

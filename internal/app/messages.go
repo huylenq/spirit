@@ -53,16 +53,16 @@ type SummaryReadyMsg struct {
 	UserRequested bool // true when triggered by 's'/'S' key, false for passive loads
 }
 
-// SummarizeAllResult holds one result from batch summarization.
-type SummarizeAllResult struct {
+// SynthesizeAllResult holds one result from batch synthesis.
+type SynthesizeAllResult struct {
 	PaneID    string
 	Summary   *claude.SessionSummary
 	FromCache bool
 }
 
-// SummarizeAllReadyMsg is sent when batch summarization completes.
-type SummarizeAllReadyMsg struct {
-	Results []SummarizeAllResult
+// SynthesizeAllReadyMsg is sent when batch synthesis completes.
+type SynthesizeAllReadyMsg struct {
+	Results []SynthesizeAllResult
 	Err     error
 }
 

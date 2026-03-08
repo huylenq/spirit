@@ -68,11 +68,11 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqSummary:
 		return d.handleSummary(req.Data)
 
-	case ReqSummarize:
-		return d.handleSummarize(req.Data)
+	case ReqSynthesize:
+		return d.handleSynthesize(req.Data)
 
-	case ReqSummarizeAll:
-		return d.handleSummarizeAll(req.Data)
+	case ReqSynthesizeAll:
+		return d.handleSynthesizeAll(req.Data)
 
 	case ReqHookEvents:
 		return d.handleHookEvents(req.Data)
@@ -186,32 +186,32 @@ func (d *Daemon) handleSummary(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleSummarize(data json.RawMessage) *Response {
+func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
 	var req PaneSessionData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	d.summarizingMu.Lock()
-	d.summarizingPanes[req.PaneID] = true
-	d.summarizingMu.Unlock()
+	d.synthesizingMu.Lock()
+	d.synthesizingPanes[req.PaneID] = true
+	d.synthesizingMu.Unlock()
 
 	summary, fromCache, err := claude.Summarize(req.SessionID)
 
-	d.summarizingMu.Lock()
-	delete(d.summarizingPanes, req.PaneID)
-	d.summarizingMu.Unlock()
+	d.synthesizingMu.Lock()
+	delete(d.synthesizingPanes, req.PaneID)
+	d.synthesizingMu.Unlock()
 	d.nudge()
 
 	if err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
-	// Send /rename to pane when fresh summarization produces a headline
+	// Send /rename to pane when fresh synthesis produces a headline
 	if !fromCache && summary != nil && summary.Headline != "" {
 		tmux.SendKeys(req.PaneID, "/rename "+summary.Headline, "Enter")
 	}
-	r := resultResponse(SummarizeResultData{
+	r := resultResponse(SynthesizeResultData{
 		PaneID:    req.PaneID,
 		Summary:   summary,
 		FromCache: fromCache,
@@ -219,7 +219,7 @@ func (d *Daemon) handleSummarize(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleSummarizeAll(data json.RawMessage) *Response {
+func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 	var req SkipPaneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
@@ -240,16 +240,16 @@ func (d *Daemon) handleSummarizeAll(data json.RawMessage) *Response {
 		}
 	}
 
-	// Mark all target panes as summarizing
-	d.summarizingMu.Lock()
+	// Mark all target panes as synthesizing
+	d.synthesizingMu.Lock()
 	for _, s := range sessions {
 		if s.PaneID != skipPaneID && s.SessionID != "" {
-			d.summarizingPanes[s.PaneID] = true
+			d.synthesizingPanes[s.PaneID] = true
 		}
 	}
-	d.summarizingMu.Unlock()
+	d.synthesizingMu.Unlock()
 
-	var results []SummarizeResultData
+	var results []SynthesizeResultData
 	var done []string
 	for _, s := range sessions {
 		if s.PaneID == skipPaneID || s.SessionID == "" {
@@ -258,26 +258,26 @@ func (d *Daemon) handleSummarizeAll(data json.RawMessage) *Response {
 		summary, fromCache, err := claude.Summarize(s.SessionID)
 		done = append(done, s.PaneID)
 		if err != nil {
-			log.Printf("summarize %s: %v", s.SessionID, err)
+			log.Printf("synthesize %s: %v", s.SessionID, err)
 			continue
 		}
 		if !fromCache && summary != nil && summary.Headline != "" {
 			tmux.SendKeys(s.PaneID, "/rename "+summary.Headline, "Enter")
 		}
-		results = append(results, SummarizeResultData{
+		results = append(results, SynthesizeResultData{
 			PaneID:    s.PaneID,
 			Summary:   summary,
 			FromCache: fromCache,
 		})
 	}
-	d.summarizingMu.Lock()
+	d.synthesizingMu.Lock()
 	for _, paneID := range done {
-		delete(d.summarizingPanes, paneID)
+		delete(d.synthesizingPanes, paneID)
 	}
-	d.summarizingMu.Unlock()
+	d.synthesizingMu.Unlock()
 	d.nudge()
 
-	r := resultResponse(SummarizeAllResultData{Results: results})
+	r := resultResponse(SynthesizeAllResultData{Results: results})
 	return &r
 }
 

@@ -72,6 +72,7 @@ type Model struct {
 	killTargetPID        int    // PID of the claude process to kill
 	killTargetTitle      string // display title for kill confirmation
 	debugMode            bool   // toggle debug overlay (D key)
+	showHelp             bool   // toggle help overlay (? key)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -204,27 +205,27 @@ func (m Model) fetchCachedSummary(paneID, sessionID string) tea.Cmd {
 	}
 }
 
-func (m Model) fetchSummarize(paneID, sessionID string) tea.Cmd {
+func (m Model) fetchSynthesize(paneID, sessionID string) tea.Cmd {
 	if sessionID == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		summary, fromCache, err := m.client.Summarize(paneID, sessionID)
+		summary, fromCache, err := m.client.Synthesize(paneID, sessionID)
 		return SummaryReadyMsg{PaneID: paneID, Summary: summary, Err: err, FromCache: fromCache, UserRequested: true}
 	}
 }
 
-func (m Model) fetchSummarizeAll(skipPaneID string) tea.Cmd {
+func (m Model) fetchSynthesizeAll(skipPaneID string) tea.Cmd {
 	return func() tea.Msg {
-		results, err := m.client.SummarizeAll(skipPaneID)
+		results, err := m.client.SynthesizeAll(skipPaneID)
 		if err != nil {
-			return SummarizeAllReadyMsg{Err: err}
+			return SynthesizeAllReadyMsg{Err: err}
 		}
-		appResults := make([]SummarizeAllResult, len(results))
+		appResults := make([]SynthesizeAllResult, len(results))
 		for i, r := range results {
-			appResults[i] = SummarizeAllResult{PaneID: r.PaneID, Summary: r.Summary, FromCache: r.FromCache}
+			appResults[i] = SynthesizeAllResult{PaneID: r.PaneID, Summary: r.Summary, FromCache: r.FromCache}
 		}
-		return SummarizeAllReadyMsg{Results: appResults}
+		return SynthesizeAllReadyMsg{Results: appResults}
 	}
 }
 

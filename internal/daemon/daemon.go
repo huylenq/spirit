@@ -42,8 +42,8 @@ type Daemon struct {
 	commitDoneMu    sync.Mutex
 	commitDonePanes map[string]commitDoneEntry // paneID → entry
 
-	summarizingMu    sync.Mutex
-	summarizingPanes map[string]bool // paneIDs with in-flight summarization
+	synthesizingMu    sync.Mutex
+	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
 
 	usageMu    sync.RWMutex
 	usageStats *claude.UsageStats
@@ -63,7 +63,7 @@ func Run(info DaemonInfo) error {
 	d := &Daemon{
 		subscribers:      make(map[*subscriber]struct{}),
 		commitDonePanes:  make(map[string]commitDoneEntry),
-		summarizingPanes: make(map[string]bool),
+		synthesizingPanes: make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
 		pidPath:     info.PIDPath,
@@ -289,17 +289,17 @@ func (d *Daemon) poll() {
 
 	// Annotate sessions with daemon-side pending states
 	d.commitDoneMu.Lock()
-	d.summarizingMu.Lock()
+	d.synthesizingMu.Lock()
 	for i := range sessions {
 		paneID := sessions[i].PaneID
 		if _, pending := d.commitDonePanes[paneID]; pending {
 			sessions[i].CommitDonePending = true
 		}
-		if d.summarizingPanes[paneID] {
-			sessions[i].SummarizePending = true
+		if d.synthesizingPanes[paneID] {
+			sessions[i].SynthesizePending = true
 		}
 	}
-	d.summarizingMu.Unlock()
+	d.synthesizingMu.Unlock()
 	d.commitDoneMu.Unlock()
 
 	d.mu.Lock()
@@ -462,7 +462,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].PermissionMode != b[i].PermissionMode ||
 			a[i].LastActionCommit != b[i].LastActionCommit ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||
-			a[i].SummarizePending != b[i].SummarizePending {
+			a[i].SynthesizePending != b[i].SynthesizePending {
 			return false
 		}
 	}

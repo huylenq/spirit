@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// SessionSummary holds the structured summary of a coding session.
+// SessionSummary holds the structured synthesis of a coding session.
 type SessionSummary struct {
 	Objective  string `json:"objective"`
 	Status     string `json:"status"`
@@ -21,8 +21,8 @@ func summaryFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".summary")
 }
 
-// ReadCachedSummary returns a previously cached summary if it exists.
-// The summary persists even when the transcript gets new messages —
+// ReadCachedSummary returns a previously cached synthesis if it exists.
+// The synthesis persists even when the transcript gets new messages —
 // pressing 's' again regenerates it.
 func ReadCachedSummary(sessionID string) *SessionSummary {
 	summaryPath := summaryFilePath(sessionID)
@@ -37,7 +37,7 @@ func ReadCachedSummary(sessionID string) *SessionSummary {
 	return &s
 }
 
-// SummaryCacheInfo returns debug info about the summary cache for a session.
+// SummaryCacheInfo returns debug info about the synthesis cache for a session.
 func SummaryCacheInfo(sessionID string) (summaryMod, transcriptMod string, isFresh bool) {
 	summaryPath := summaryFilePath(sessionID)
 	transcriptPath, _ := findTranscriptPath(sessionID)
@@ -55,12 +55,11 @@ func SummaryCacheInfo(sessionID string) (summaryMod, transcriptMod string, isFre
 	return
 }
 
-// Summarize generates a structured summary of a session via claude --model sonnet.
-// Results are cached to disk as JSON; returns cached summary if transcript hasn't changed.
-// Summarize generates a structured summary of a session via claude --model haiku.
-// Returns (summary, fromCache, error). fromCache is true when the cached summary is still fresh.
+// Synthesize generates a structured synthesis of a session via claude --model haiku.
+// Results are cached to disk as JSON; returns cached synthesis if transcript hasn't changed.
+// Returns (summary, fromCache, error). fromCache is true when the cached synthesis is still fresh.
 func Summarize(sessionID string) (*SessionSummary, bool, error) {
-	// Return cached only if summary is still fresh (newer than transcript)
+	// Return cached only if synthesis is still fresh (newer than transcript)
 	if cached := ReadCachedSummary(sessionID); cached != nil {
 		transcriptPath, _ := findTranscriptPath(sessionID)
 		summaryPath := summaryFilePath(sessionID)

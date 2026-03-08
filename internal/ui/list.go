@@ -30,7 +30,7 @@ type ListModel struct {
 	spinnerView          string
 	commitDoneFrame      int
 	diffStats            map[string]map[string]claude.FileDiffStat // sessionID -> file stats
-	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight summarization
+	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight synthesization
 	groupByProject       bool
 }
 
@@ -83,10 +83,10 @@ func (m *ListModel) SetSpinnerView(s string) {
 
 func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 	m.items = items
-	// Sync summary loading state from daemon-pushed SummarizePending flags
+	// Sync summary loading state from daemon-pushed SynthesizePending flags
 	m.summaryLoadingPanes = make(map[string]bool)
 	for _, s := range items {
-		if s.SummarizePending {
+		if s.SynthesizePending {
 			m.summaryLoadingPanes[s.PaneID] = true
 		}
 	}
@@ -453,9 +453,9 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 
 	if m.summaryLoadingPanes[s.PaneID] {
 		if isSelected {
-			line += "\n" + selSubtitle(SelectedBgStyle.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" summarizing…")
+			line += "\n" + selSubtitle(SelectedBgStyle.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
 		} else {
-			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" summarizing…")
+			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" synthesizing…")
 		}
 	}
 

@@ -30,8 +30,8 @@ const (
 	ReqTranscript   = "transcript"
 	ReqDiffStats    = "diffstats"
 	ReqSummary      = "summary"
-	ReqSummarize    = "summarize"
-	ReqSummarizeAll = "summarize_all"
+	ReqSynthesize    = "synthesize"
+	ReqSynthesizeAll = "synthesize_all"
 	ReqHookEvents   = "hookevents"
 	ReqPaneGeometry = "panegeometry"
 	ReqDefer        = "defer"
@@ -126,14 +126,14 @@ type RenameResultData struct {
 	Name string `json:"name"`
 }
 
-type SummarizeResultData struct {
+type SynthesizeResultData struct {
 	PaneID    string                 `json:"paneID"`
 	Summary   *claude.SessionSummary `json:"summary"`
 	FromCache bool                   `json:"fromCache"`
 }
 
-type SummarizeAllResultData struct {
-	Results []SummarizeResultData `json:"results"`
+type SynthesizeAllResultData struct {
+	Results []SynthesizeResultData `json:"results"`
 }
 
 // --- Helpers ---
