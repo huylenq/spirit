@@ -97,6 +97,40 @@ type toolUseBlock struct {
 	Input json.RawMessage `json:"input"`
 }
 
+// ReadRawTranscript reads the JSONL transcript for a session and returns it
+// as a pretty-printed JSON array string (for the raw transcript viewer).
+func ReadRawTranscript(sessionID string) (string, error) {
+	path, err := findTranscriptPath(sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	var entries []json.RawMessage
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Validate it's valid JSON before including
+		var raw json.RawMessage
+		if json.Unmarshal([]byte(line), &raw) == nil {
+			entries = append(entries, raw)
+		}
+	}
+
+	out, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // --- Text extraction helpers ---
 
 func extractAssistantText(line []byte) string {

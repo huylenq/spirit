@@ -210,6 +210,13 @@ func (c *Client) SynthesizeAll(skipPaneID string) ([]SynthesizeResultData, error
 	return data.Results, err
 }
 
+// RawTranscript fetches the full JSONL transcript as formatted JSON.
+func (c *Client) RawTranscript(sessionID string) (string, error) {
+	var data RawTranscriptData
+	err := c.rpcInto(Request{Type: ReqRawTranscript, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
+	return data.JSON, err
+}
+
 // HookEvents fetches debug hook events for a pane.
 func (c *Client) HookEvents(paneID string) ([]claude.HookEvent, error) {
 	var data HookEventsData

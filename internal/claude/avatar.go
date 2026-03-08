@@ -106,7 +106,10 @@ func pickIdx(n int, used map[int]bool, entries map[string]Avatar, field func(Ava
 	}
 	counts := make([]int, n)
 	for _, a := range entries {
-		counts[field(a)]++
+		idx := field(a)
+		if idx >= 0 && idx < n {
+			counts[idx]++
+		}
 	}
 	minCount := counts[0]
 	for _, c := range counts {

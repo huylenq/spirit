@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
-// commitSuccessRe matches Claude's commit success output like "Commit 0141d9c created successfully."
-var commitSuccessRe = regexp.MustCompile(`(?i)\bcommit\s+[0-9a-f]{7,}.*\bcreated\b`)
+// commitSuccessRe matches Claude's commit success output:
+//   - "Commit 0141d9c created successfully."
+//   - "Committed 0141d9c"
+var commitSuccessRe = regexp.MustCompile(`(?i)(?:\bcommit\s+[0-9a-f]{7,}.*\bcreated\b|\bcommitted\s+[0-9a-f]{7,})`)
 
 // --- Last action commit cache (mtime-based) ---
 

@@ -119,8 +119,9 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 
 // tryInitialSelection auto-selects a pane on launch when selectActive is true
 // (ctrl-space / CMC_SELECT_ACTIVE=1). Fallback chain:
-//  1. Exact match: origPane is a Claude session → skip it, select next YOUR TURN
-//     session (wrapping). If no other YOUR TURN session, select origPane itself.
+//  1. Exact match: origPane is a Claude session → select it. If origPane is
+//     YOUR TURN, skip it and rotate to the next YOUR TURN session (wrapping).
+//     Falls back to origPane if no other YOUR TURN session exists.
 //  2. Same tmux session: first Claude session in the same tmux session (in sort order)
 //  3. Default: cursor stays at 0 (first in sort order across all sessions)
 //
@@ -140,7 +141,9 @@ func (m *Model) tryInitialSelection() bool {
 
 	items := m.list.Items()
 
-	// Try 1: origPane is a Claude session → skip it, rotate to next YOUR TURN
+	// Try 1: origPane is a Claude session → select it.
+	// If origPane is YOUR TURN, skip it and rotate to the next YOUR TURN
+	// session (wrapping). Falls back to origPane if no other YOUR TURN exists.
 	origIdx := -1
 	for i, s := range items {
 		if s.PaneID == m.origPane.PaneID {
@@ -149,14 +152,18 @@ func (m *Model) tryInitialSelection() bool {
 		}
 	}
 	if origIdx >= 0 {
-		n := len(items)
-		for offset := 1; offset < n; offset++ {
-			idx := (origIdx + offset) % n
-			if items[idx].Status == claude.StatusDone {
-				return m.list.SelectByPaneID(items[idx].PaneID)
+		origItem := items[origIdx]
+		if origItem.Status == claude.StatusDone {
+			// Already YOUR TURN — skip to next YOUR TURN session
+			n := len(items)
+			for offset := 1; offset < n; offset++ {
+				idx := (origIdx + offset) % n
+				if items[idx].Status == claude.StatusDone {
+					return m.list.SelectByPaneID(items[idx].PaneID)
+				}
 			}
 		}
-		// No other YOUR TURN session; select origPane as fallback
+		// Not YOUR TURN, or no other YOUR TURN — select origPane itself
 		return m.list.SelectByPaneID(m.origPane.PaneID)
 	}
 

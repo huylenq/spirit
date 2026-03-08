@@ -43,7 +43,8 @@ const (
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 	ReqQueue            = "queue"
-	ReqCancelQueue      = "cancel_queue")
+	ReqCancelQueue      = "cancel_queue"
+	ReqRawTranscript    = "raw_transcript")
 
 // Response type constants.
 const (
@@ -140,6 +141,10 @@ type SummaryData struct {
 
 type HookEventsData struct {
 	Events []claude.HookEvent `json:"events"`
+}
+
+type RawTranscriptData struct {
+	JSON string `json:"json"`
 }
 
 type PaneGeometryData struct {

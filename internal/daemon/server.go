@@ -78,6 +78,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqHookEvents:
 		return d.handleHookEvents(req.Data)
 
+	case ReqRawTranscript:
+		return d.handleRawTranscript(req.Data)
+
 	case ReqPaneGeometry:
 		return d.handlePaneGeometry(req.Data)
 
@@ -305,6 +308,21 @@ func (d *Daemon) handleHookEvents(data json.RawMessage) *Response {
 	return &r
 }
 
+func (d *Daemon) handleRawTranscript(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	raw, err := claude.ReadRawTranscript(req.SessionID)
+	if err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	r := resultResponse(RawTranscriptData{JSON: raw})
+	return &r
+}
+
 func (d *Daemon) handlePaneGeometry(data json.RawMessage) *Response {
 	var req SessionNameData
 	if err := json.Unmarshal(data, &req); err != nil {
@@ -320,16 +338,24 @@ func (d *Daemon) handlePaneGeometry(data json.RawMessage) *Response {
 	return &r
 }
 
+// removeExistingBookmark removes any existing Later bookmark for a pane,
+// using the in-memory session data to avoid a disk scan.
+func (d *Daemon) removeExistingBookmark(paneID string) {
+	for _, s := range d.currentSessions() {
+		if s.PaneID == paneID && s.LaterBookmarkID != "" {
+			claude.RemoveLaterBookmark(s.LaterBookmarkID)
+			return
+		}
+	}
+}
+
 func (d *Daemon) handleLater(data json.RawMessage) *Response {
 	var req LaterData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	// Remove any existing bookmark for this pane to prevent duplicates
-	if existing := claude.FindBookmarkIDByPane(req.PaneID); existing != "" {
-		claude.RemoveLaterBookmark(existing)
-	}
+	d.removeExistingBookmark(req.PaneID)
 	bm := d.buildBookmarkFromSession(req.PaneID)
 	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())
@@ -351,6 +377,7 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
+	d.removeExistingBookmark(req.PaneID)
 	bm := d.buildBookmarkFromSession(req.PaneID)
 	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())
