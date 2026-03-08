@@ -16,6 +16,12 @@ const (
 	rippleWidth    = 5 // characters wide for the bright wave
 )
 
+// Pre-computed styles for bar rendering (avoids per-character allocation).
+var (
+	unfilledStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#303030"})
+	labelStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+)
+
 // UsageBarModel renders a thin progress bar showing account-level session usage.
 type UsageBarModel struct {
 	sessionPct int    // 0-100
@@ -122,12 +128,12 @@ func (m *UsageBarModel) InlineView(availWidth int) string {
 
 			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("─"))
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d0d0d0", Dark: "#303030"}).Render("─"))
+			sb.WriteString(unfilledStyle.Render("─"))
 		}
 	}
 
 	sb.WriteString(" ")
-	sb.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(label))
+	sb.WriteString(labelStyle.Render(label))
 	return sb.String()
 }
 

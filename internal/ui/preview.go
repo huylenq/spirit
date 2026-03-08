@@ -429,15 +429,7 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 
 	var lines []string
 
-	titleLeft := TranscriptTitleStyle.Render(" " + IconInput + "  Your Messages")
-	titleLine := titleLeft
-	if m.summary != nil && m.summary.InputWords > 0 {
-		wordStat := PreviewMetaStyle.Render(fmt.Sprintf("%dw ", m.summary.InputWords))
-		gap := innerWidth - lipgloss.Width(titleLeft) - lipgloss.Width(wordStat)
-		if gap > 0 {
-			titleLine = titleLeft + strings.Repeat(" ", gap) + wordStat
-		}
-	}
+	titleLine := TranscriptTitleStyle.Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {

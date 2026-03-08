@@ -194,7 +194,27 @@ func (d *Daemon) fetchUsage() {
 	d.usageMu.Lock()
 	d.usageStats = stats
 	d.usageMu.Unlock()
-	d.nudge()
+
+	// Bump version and notify subscribers so they receive the new usage data,
+	// even if sessions haven't changed.
+	d.mu.Lock()
+	d.version++
+	sessions := d.sessions
+	d.mu.Unlock()
+
+	d.subMu.Lock()
+	for sub := range d.subscribers {
+		select {
+		case sub.ch <- sessions:
+		default:
+			select {
+			case <-sub.ch:
+			default:
+			}
+			sub.ch <- sessions
+		}
+	}
+	d.subMu.Unlock()
 }
 
 func (d *Daemon) currentUsage() *claude.UsageStats {

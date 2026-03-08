@@ -1,6 +1,5 @@
 package ui
 
-import ()
 
 func RenderHeader(width int, usageBar *UsageBarModel) string {
 	if usageBar != nil && usageBar.HasData() {
