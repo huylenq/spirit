@@ -80,6 +80,11 @@ func (m Model) View() string {
 		}
 	}
 
+	// Help overlay centered
+	if m.showHelp {
+		content = ui.OverlayCentered(content, m.renderHelpOverlay(), m.width)
+	}
+
 	if m.flashMsg != "" {
 		style := ui.FlashInfoStyle
 		if m.flashIsError {
@@ -209,7 +214,7 @@ func (m Model) renderFooter() string {
 			ui.FooterKeyStyle.Render("[n]") + "o"
 		return ui.FooterStyle.Width(m.width).Render(prompt)
 	default:
-		hints := m.help.View(Keys)
+		hints := m.renderNormalFooterHints()
 		if m.renaming {
 			hints += "  " + ui.SummaryStyle.Render("renaming…")
 		}

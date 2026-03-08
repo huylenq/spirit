@@ -148,4 +148,19 @@ var (
 	FlashInfoStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
 			Padding(0, 1)
+
+	// Help overlay
+	HelpOverlayStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorAccent).
+				Padding(1, 2)
+
+	HelpTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorAccent)
+
+	HelpGroupStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorMuted).
+			Underline(true)
 )
