@@ -55,7 +55,7 @@ func (m PaletteModel) Active() bool {
 	return m.active
 }
 
-// Filter re-evaluates the item list based on current input text.
+// Filter re-evaluates the item list based on current input text using fuzzy matching.
 func (m *PaletteModel) Filter() {
 	query := strings.ToLower(m.input.Value())
 	if query == "" {
@@ -63,7 +63,7 @@ func (m *PaletteModel) Filter() {
 	} else {
 		m.filtered = nil
 		for _, item := range m.items {
-			if strings.Contains(strings.ToLower(item.Name), query) {
+			if fuzzyMatch(strings.ToLower(item.Name), query) {
 				m.filtered = append(m.filtered, item)
 			}
 		}
@@ -71,6 +71,17 @@ func (m *PaletteModel) Filter() {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
+}
+
+// fuzzyMatch returns true if all characters in pattern appear in text in order.
+func fuzzyMatch(text, pattern string) bool {
+	pi := 0
+	for i := 0; i < len(text) && pi < len(pattern); i++ {
+		if text[i] == pattern[pi] {
+			pi++
+		}
+	}
+	return pi == len(pattern)
 }
 
 func (m *PaletteModel) MoveUp() {
