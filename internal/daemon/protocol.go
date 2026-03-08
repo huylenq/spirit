@@ -40,8 +40,8 @@ const (
 	ReqCommitOnly       = "commit_only"
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
-	ReqEnqueue          = "enqueue"
-	ReqCancelEnqueue    = "cancel_enqueue"
+	ReqQueue            = "queue"
+	ReqCancelQueue      = "cancel_queue"
 )
 
 // Response type constants.
@@ -96,7 +96,7 @@ type CommitDoneData struct {
 	PID    int    `json:"pid"`
 }
 
-type EnqueueData struct {
+type QueueData struct {
 	PaneID  string `json:"paneID"`
 	Message string `json:"message"`
 }

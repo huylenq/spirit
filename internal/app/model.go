@@ -25,7 +25,7 @@ const (
 	StateDeferPrompt
 	StateKillConfirm
 	StatePromptRelay
-	StateEnqueueRelay
+	StateQueueRelay
 )
 
 // originalPane stores the tmux pane that was active when the TUI launched,
@@ -45,7 +45,7 @@ type Model struct {
 	filter         ui.FilterModel
 	deferPrompt    ui.DeferPromptModel
 	relay          ui.RelayModel
-	enqueueRelay   ui.RelayModel
+	queueRelay     ui.RelayModel
 	minimap        ui.MinimapModel
 	usageBar       ui.UsageBarModel
 	sessions       []claude.ClaudeSession
@@ -88,7 +88,7 @@ func NewModel(client *daemon.Client) Model {
 		filter:            ui.NewFilterModel(),
 		deferPrompt:       ui.NewDeferPromptModel(),
 		relay:             ui.NewRelayModel(),
-		enqueueRelay:      ui.NewRelayModel(),
+		queueRelay:        ui.NewRelayModel(),
 		minimap:           ui.NewMinimapModel(),
 		showMinimap:       loadPrefBool("minimap"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),

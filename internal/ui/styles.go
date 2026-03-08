@@ -101,10 +101,10 @@ var (
 				Foreground(ColorGreen).
 				Bold(true)
 
-	// Enqueue relay prompt
-	EnqueuePromptStyle = lipgloss.NewStyle().
-				Foreground(ColorWorking).
-				Bold(true)
+	// Queue relay prompt
+	QueuePromptStyle = lipgloss.NewStyle().
+			Foreground(ColorWorking).
+			Bold(true)
 
 	// Group separator
 	SeparatorStyle = lipgloss.NewStyle().

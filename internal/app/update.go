@@ -492,41 +492,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-	case StateEnqueueRelay:
+	case StateQueueRelay:
 		switch {
 		case key.Matches(msg, Keys.Escape):
 			m.state = StateNormal
-			m.enqueueRelay.Deactivate()
+			m.queueRelay.Deactivate()
 			return m, nil
 		case key.Matches(msg, Keys.Enter):
-			val := m.enqueueRelay.Confirm()
+			val := m.queueRelay.Confirm()
 			m.state = StateNormal
 			s, ok := m.list.SelectedItem()
 			if !ok {
 				return m, nil
 			}
 			if val == "" {
-				// Empty submit on a session with pending enqueue → cancel
-				if s.EnqueuePending != "" {
+				// Empty submit on a session with pending queue → cancel
+				if s.QueuePending != "" {
 					paneID := s.PaneID
 					return m, func() tea.Msg {
-						if err := m.client.CancelEnqueue(paneID); err != nil {
+						if err := m.client.CancelQueue(paneID); err != nil {
 							return flashErrorMsg("cancel failed: " + err.Error())
 						}
-						return flashInfoMsg("enqueue cancelled")
+						return flashInfoMsg("queue cancelled")
 					}
 				}
 				return m, nil
 			}
 			paneID := s.PaneID
 			return m, func() tea.Msg {
-				if err := m.client.Enqueue(paneID, val); err != nil {
-					return flashErrorMsg("enqueue failed: " + err.Error())
+				if err := m.client.Queue(paneID, val); err != nil {
+					return flashErrorMsg("queue failed: " + err.Error())
 				}
-				return flashInfoMsg("message enqueued")
+				return flashInfoMsg("message queued")
 			}
 		default:
-			ti := m.enqueueRelay.TextInput()
+			ti := m.queueRelay.TextInput()
 			newTI, cmd := ti.Update(msg)
 			*ti = newTI
 			return m, cmd
@@ -664,14 +664,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.Enqueue):
+		case key.Matches(msg, Keys.Queue):
 			if s, ok := m.list.SelectedItem(); ok {
-				m.state = StateEnqueueRelay
-				m.enqueueRelay.SetPrompt("❮ ", ui.EnqueuePromptStyle)
-				if s.EnqueuePending != "" {
-					m.enqueueRelay.ActivateWithValue(s.EnqueuePending)
+				m.state = StateQueueRelay
+				m.queueRelay.SetPrompt("❮ ", ui.QueuePromptStyle)
+				if s.QueuePending != "" {
+					m.queueRelay.ActivateWithValue(s.QueuePending)
 				} else {
-					m.enqueueRelay.Activate()
+					m.queueRelay.Activate()
 				}
 			}
 			return m, nil

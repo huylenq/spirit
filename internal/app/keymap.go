@@ -8,7 +8,7 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.Enter, k.PromptRelay, k.Enqueue, k.Filter, k.Defer, k.Undefer,
+		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Filter, k.Defer, k.Undefer,
 		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
@@ -68,8 +68,8 @@ type KeyMap struct {
 	// Prompt relay (send message to Claude session)
 	PromptRelay key.Binding
 
-	// Enqueue message for delivery when session becomes Done
-	Enqueue key.Binding
+	// Queue message for delivery when session becomes Done
+	Queue key.Binding
 
 	// Kill session + close pane
 	Kill key.Binding
@@ -238,11 +238,11 @@ var Keys = KeyMap{
 	),
 	PromptRelay: key.NewBinding(
 		key.WithKeys(">"),
-		key.WithHelp(">", "reply"),
+		key.WithHelp(">", "send"),
 	),
-	Enqueue: key.NewBinding(
+	Queue: key.NewBinding(
 		key.WithKeys("<"),
-		key.WithHelp("<", "enqueue"),
+		key.WithHelp("<", "queue"),
 	),
 	Kill: key.NewBinding(
 		key.WithKeys("d"),

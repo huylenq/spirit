@@ -98,11 +98,11 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCancelCommitDone:
 		return d.handleCancelCommitDone(req.Data)
 
-	case ReqEnqueue:
-		return d.handleEnqueue(req.Data)
+	case ReqQueue:
+		return d.handleQueue(req.Data)
 
-	case ReqCancelEnqueue:
-		return d.handleCancelEnqueue(req.Data)
+	case ReqCancelQueue:
+		return d.handleCancelQueue(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
@@ -404,37 +404,37 @@ func (d *Daemon) handleCancelCommitDone(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleEnqueue(data json.RawMessage) *Response {
-	var req EnqueueData
+func (d *Daemon) handleQueue(data json.RawMessage) *Response {
+	var req QueueData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	if err := claude.WriteEnqueueMessage(req.PaneID, req.Message); err != nil {
-		r := errResponse("write enqueue: " + err.Error())
+	if err := claude.WriteQueueMessage(req.PaneID, req.Message); err != nil {
+		r := errResponse("write queue: " + err.Error())
 		return &r
 	}
-	d.enqueueMu.Lock()
-	d.enqueuePanes[req.PaneID] = req.Message
-	d.enqueueMu.Unlock()
+	d.queueMu.Lock()
+	d.queuePanes[req.PaneID] = req.Message
+	d.queueMu.Unlock()
 	d.nudge()
-	log.Printf("enqueue: registered pane %s", req.PaneID)
+	log.Printf("queue: registered pane %s", req.PaneID)
 	r := resultResponse("ok")
 	return &r
 }
 
-func (d *Daemon) handleCancelEnqueue(data json.RawMessage) *Response {
+func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
 	var req PaneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	d.enqueueMu.Lock()
-	delete(d.enqueuePanes, req.PaneID)
-	d.enqueueMu.Unlock()
-	claude.RemoveEnqueueMessage(req.PaneID)
+	d.queueMu.Lock()
+	delete(d.queuePanes, req.PaneID)
+	d.queueMu.Unlock()
+	claude.RemoveQueueMessage(req.PaneID)
 	d.nudge()
-	log.Printf("enqueue: cancelled pane %s", req.PaneID)
+	log.Printf("queue: cancelled pane %s", req.PaneID)
 	r := resultResponse("ok")
 	return &r
 }

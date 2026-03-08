@@ -44,8 +44,8 @@ type Daemon struct {
 	commitDoneMu    sync.Mutex
 	commitDonePanes map[string]commitDoneEntry // paneID → entry
 
-	enqueueMu    sync.Mutex
-	enqueuePanes map[string]string // paneID → message
+	queueMu    sync.Mutex
+	queuePanes map[string]string // paneID → message
 
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
@@ -68,7 +68,7 @@ func Run(info DaemonInfo) error {
 	d := &Daemon{
 		subscribers:      make(map[*subscriber]struct{}),
 		commitDonePanes:  make(map[string]commitDoneEntry),
-		enqueuePanes:     make(map[string]string),
+		queuePanes:       make(map[string]string),
 		synthesizingPanes: make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
@@ -113,8 +113,8 @@ func Run(info DaemonInfo) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
-	// Recover enqueued messages from disk
-	d.recoverEnqueue()
+	// Recover queued messages from disk
+	d.recoverQueue()
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})
@@ -296,27 +296,27 @@ func (d *Daemon) poll() {
 	// Resolve pending commit-and-done operations
 	d.resolveCommitDone(sessions)
 
-	// Resolve pending enqueued messages
-	d.resolveEnqueue(sessions)
+	// Resolve pending queued messages
+	d.resolveQueue(sessions)
 
 	// Annotate sessions with daemon-side pending states
 	d.commitDoneMu.Lock()
-	d.enqueueMu.Lock()
+	d.queueMu.Lock()
 	d.synthesizingMu.Lock()
 	for i := range sessions {
 		paneID := sessions[i].PaneID
 		if _, pending := d.commitDonePanes[paneID]; pending {
 			sessions[i].CommitDonePending = true
 		}
-		if msg, pending := d.enqueuePanes[paneID]; pending {
-			sessions[i].EnqueuePending = msg
+		if msg, pending := d.queuePanes[paneID]; pending {
+			sessions[i].QueuePending = msg
 		}
 		if d.synthesizingPanes[paneID] {
 			sessions[i].SynthesizePending = true
 		}
 	}
 	d.synthesizingMu.Unlock()
-	d.enqueueMu.Unlock()
+	d.queueMu.Unlock()
 	d.commitDoneMu.Unlock()
 
 	d.mu.Lock()
@@ -405,35 +405,35 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 	}
 }
 
-// recoverEnqueue scans *.enqueue files on startup to rebuild the in-memory map.
-func (d *Daemon) recoverEnqueue() {
+// recoverQueue scans *.queue files on startup to rebuild the in-memory map.
+func (d *Daemon) recoverQueue() {
 	dir := claude.StatusDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	d.enqueueMu.Lock()
-	defer d.enqueueMu.Unlock()
+	d.queueMu.Lock()
+	defer d.queueMu.Unlock()
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".enqueue") {
+		if !strings.HasSuffix(name, ".queue") {
 			continue
 		}
-		paneID := strings.TrimSuffix(name, ".enqueue")
-		msg := claude.ReadEnqueueMessage(paneID)
+		paneID := strings.TrimSuffix(name, ".queue")
+		msg := claude.ReadQueueMessage(paneID)
 		if msg != "" {
-			d.enqueuePanes[paneID] = msg
-			log.Printf("enqueue: recovered pane %s", paneID)
+			d.queuePanes[paneID] = msg
+			log.Printf("queue: recovered pane %s", paneID)
 		}
 	}
 }
 
-// resolveEnqueue delivers enqueued messages to sessions that have become Done.
-func (d *Daemon) resolveEnqueue(sessions []claude.ClaudeSession) {
-	d.enqueueMu.Lock()
-	defer d.enqueueMu.Unlock()
+// resolveQueue delivers queued messages to sessions that have become Done.
+func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
+	d.queueMu.Lock()
+	defer d.queueMu.Unlock()
 
-	if len(d.enqueuePanes) == 0 {
+	if len(d.queuePanes) == 0 {
 		return
 	}
 
@@ -442,12 +442,12 @@ func (d *Daemon) resolveEnqueue(sessions []claude.ClaudeSession) {
 		sessionByPane[sessions[i].PaneID] = &sessions[i]
 	}
 
-	for paneID, msg := range d.enqueuePanes {
+	for paneID, msg := range d.queuePanes {
 		s, exists := sessionByPane[paneID]
 		if !exists {
-			log.Printf("enqueue: pane %s disappeared, removing", paneID)
-			delete(d.enqueuePanes, paneID)
-			claude.RemoveEnqueueMessage(paneID)
+			log.Printf("queue: pane %s disappeared, removing", paneID)
+			delete(d.queuePanes, paneID)
+			claude.RemoveQueueMessage(paneID)
 			continue
 		}
 		if s.Status != claude.StatusDone {
@@ -455,12 +455,12 @@ func (d *Daemon) resolveEnqueue(sessions []claude.ClaudeSession) {
 		}
 		// Session is Done — deliver the message
 		if err := tmux.SendKeysLiteral(paneID, msg); err != nil {
-			log.Printf("enqueue: send to pane %s failed: %v (will retry)", paneID, err)
+			log.Printf("queue: send to pane %s failed: %v (will retry)", paneID, err)
 			continue
 		}
-		log.Printf("enqueue: delivered to pane %s", paneID)
-		delete(d.enqueuePanes, paneID)
-		claude.RemoveEnqueueMessage(paneID)
+		log.Printf("queue: delivered to pane %s", paneID)
+		delete(d.queuePanes, paneID)
+		claude.RemoveQueueMessage(paneID)
 	}
 }
 
@@ -544,7 +544,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].LastActionCommit != b[i].LastActionCommit ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||
 			a[i].SynthesizePending != b[i].SynthesizePending ||
-			a[i].EnqueuePending != b[i].EnqueuePending {
+			a[i].QueuePending != b[i].QueuePending {
 			return false
 		}
 	}

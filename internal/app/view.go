@@ -53,8 +53,8 @@ func (m Model) View() string {
 	switch m.state {
 	case StatePromptRelay:
 		m.preview.SetRelayView(m.relay.View())
-	case StateEnqueueRelay:
-		m.preview.SetRelayView(m.enqueueRelay.View())
+	case StateQueueRelay:
+		m.preview.SetRelayView(m.queueRelay.View())
 	default:
 		m.preview.SetRelayView("")
 	}
@@ -225,7 +225,7 @@ func (m Model) renderNormalFooterHints() string {
 		return strings.Join(parts, "  ")
 	}
 
-	parts = append(parts, hint("enter", "switch"), hint(">", "reply"), hint("<", "enqueue"))
+	parts = append(parts, hint("enter", "switch"), hint(">", "send"), hint("<", "queue"))
 
 	switch s.Status {
 	case claude.StatusDone:
@@ -268,8 +268,8 @@ func (m Model) renderHelpOverlay() string {
 
 	col2 := strings.Join([]string{
 		actions,
-		hint(">", "reply to session"),
-		hint("<", "enqueue message"),
+		hint(">", "send to session"),
+		hint("<", "queue message"),
 		hint("w", "defer session"),
 		hint("u", "undefer session"),
 		hint("d", "kill + close pane"),
@@ -324,8 +324,8 @@ func (m Model) renderFooter(width int) string {
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
-	case StateEnqueueRelay:
-		h := ui.FooterKeyStyle.Render("enter") + " enqueue  " +
+	case StateQueueRelay:
+		h := ui.FooterKeyStyle.Render("enter") + " queue  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateKillConfirm:

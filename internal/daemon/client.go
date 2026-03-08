@@ -256,13 +256,13 @@ func (c *Client) CancelCommitDone(paneID string) error {
 	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
 
-// Enqueue registers a message for delivery when the pane's session becomes Done.
-func (c *Client) Enqueue(paneID, message string) error {
-	return c.rpcInto(Request{Type: ReqEnqueue, Data: marshalData(EnqueueData{PaneID: paneID, Message: message})}, nil)
+// Queue registers a message for delivery when the pane's session becomes Done.
+func (c *Client) Queue(paneID, message string) error {
+	return c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, Message: message})}, nil)
 }
 
-// CancelEnqueue removes a pending enqueued message for a pane.
-func (c *Client) CancelEnqueue(paneID string) error {
-	return c.rpcInto(Request{Type: ReqCancelEnqueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+// CancelQueue removes a pending queued message for a pane.
+func (c *Client) CancelQueue(paneID string) error {
+	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
 }
 

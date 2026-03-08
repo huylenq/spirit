@@ -85,5 +85,5 @@ type ClaudeSession struct {
 	LastActionCommit bool   // last tool call was git commit
 	CommitDonePending  bool // daemon is waiting for commit-and-done to resolve
 	SynthesizePending  bool // daemon has in-flight synthesis for this pane
-	EnqueuePending     string // daemon-annotated: message queued for delivery when Done
+	QueuePending       string // daemon-annotated: message queued for delivery when Done
 }
