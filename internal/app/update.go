@@ -68,7 +68,7 @@ func openTranscriptInEditor(tmuxSession, sessionID string) tea.Cmd {
 		if err := exec.Command("tmux", "new-window", "-t", tmuxSession, cmd).Run(); err != nil {
 			return flashErrorMsg("open editor: " + err.Error())
 		}
-		return flashInfoMsg("opened in " + editor)
+		return tea.QuitMsg{}
 	}
 }
 
