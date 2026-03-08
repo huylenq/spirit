@@ -51,6 +51,7 @@ type Model struct {
 	sessions       []claude.ClaudeSession
 	state          AppState
 	showHooks         bool
+	hideTranscript    bool
 	showMinimap       bool
 	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
 	binaryPath        string // cached os.Executable() result

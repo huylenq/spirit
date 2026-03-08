@@ -10,7 +10,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Filter, k.Defer, k.Undefer,
 		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
-		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
+		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -21,7 +21,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Enter, k.Filter, k.Refresh, k.Quit},
 		{k.Defer, k.Undefer, k.GroupMode, k.Minimap},
-		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Hooks},
+		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Transcript},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
 	}
 }
@@ -34,8 +34,8 @@ type KeyMap struct {
 	Defer   key.Binding
 	Undefer key.Binding
 	Refresh key.Binding
-	Hooks   key.Binding
-	Quit    key.Binding
+	Transcript key.Binding
+	Quit       key.Binding
 	Escape  key.Binding
 
 	Minimap      key.Binding
@@ -90,17 +90,30 @@ type KeyMap struct {
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
 // e.g. chords "ys", "yp" → single entry "y copy…"
 func chordBindings() []key.Binding {
-	seen := make(map[string]bool)
-	var out []key.Binding
+	type group struct {
+		helps []string
+	}
+	groups := make(map[string]*group)
+	var order []string
 	for _, c := range Chords {
 		starter := c.Keys[:1]
-		if seen[starter] {
-			continue
+		if g, ok := groups[starter]; ok {
+			g.helps = append(g.helps, c.Help)
+		} else {
+			groups[starter] = &group{helps: []string{c.Help}}
+			order = append(order, starter)
 		}
-		seen[starter] = true
+	}
+	var out []key.Binding
+	for _, starter := range order {
+		g := groups[starter]
+		label := g.helps[0]
+		if len(g.helps) > 1 {
+			label += "…"
+		}
 		out = append(out, key.NewBinding(
 			key.WithKeys(starter),
-			key.WithHelp(starter, "copy…"),
+			key.WithHelp(starter, label),
 		))
 	}
 	return out
@@ -116,6 +129,7 @@ type Chord struct {
 var Chords = []Chord{
 	{Keys: "ys", Help: "copy session id"},
 	{Keys: "yc", Help: "capture view"},
+	{Keys: "ih", Help: "hooks"},
 }
 
 // ChordsWithPrefix returns chords whose key sequence starts with prefix.
@@ -167,9 +181,9 @@ var Keys = KeyMap{
 		key.WithKeys("r"),
 		key.WithHelp("r", "refresh"),
 	),
-	Hooks: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "hooks"),
+	Transcript: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "transcript"),
 	),
 	Minimap: key.NewBinding(
 		key.WithKeys("m"),

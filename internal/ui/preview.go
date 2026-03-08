@@ -32,8 +32,9 @@ type PreviewModel struct {
 	diffFiles       []diffFileStat // cached sorted file entries
 	summary         *claude.SessionSummary
 	relayView       string // when set, rendered inline after the ❯ prompt line
-	hookEvents     []claude.HookEvent
-	showHooks      bool
+	hookEvents      []claude.HookEvent
+	showHooks       bool
+	hideTranscript  bool
 	hookCursor     int
 	hookExpanded   bool
 	hookScroll     int
@@ -131,6 +132,10 @@ func (m *PreviewModel) SetDiffStats(stats map[string]claude.FileDiffStat) {
 
 func (m *PreviewModel) SetSummary(s *claude.SessionSummary) {
 	m.summary = s
+}
+
+func (m *PreviewModel) SetHideTranscript(hide bool) {
+	m.hideTranscript = hide
 }
 
 func (m *PreviewModel) SetShowHooks(show bool) {
@@ -375,7 +380,7 @@ func (m PreviewModel) View() string {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
 	var contentBox string
-	if len(m.userMessages) > 0 || m.summary != nil {
+	if !m.hideTranscript && (len(m.userMessages) > 0 || m.summary != nil) {
 		transcriptWidth := contentWidth * 40 / 100
 		if transcriptWidth < 20 {
 			transcriptWidth = 20

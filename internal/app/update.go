@@ -28,6 +28,15 @@ func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 	case "yc":
 		text := ansi.Strip(m.View())
 		return m, copyToClipboard(text)
+	case "ih":
+		m.showHooks = !m.showHooks
+		m.preview.SetShowHooks(m.showHooks)
+		if m.showHooks {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, m.fetchHooks(s.PaneID)
+			}
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -696,14 +705,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, Keys.Hooks):
-			m.showHooks = !m.showHooks
-			m.preview.SetShowHooks(m.showHooks)
-			if m.showHooks {
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, m.fetchHooks(s.PaneID)
-				}
-			}
+		case key.Matches(msg, Keys.Transcript):
+			m.hideTranscript = !m.hideTranscript
+			m.preview.SetHideTranscript(m.hideTranscript)
 			return m, nil
 
 		case key.Matches(msg, Keys.GroupMode):

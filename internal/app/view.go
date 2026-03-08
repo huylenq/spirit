@@ -289,7 +289,7 @@ func (m Model) renderHelpOverlay() string {
 		toggles,
 		hint("m", "minimap"),
 		hint("g", "group by project"),
-		hint("h", "hook events"),
+		hint("t", "toggle transcript"),
 		hint("z", "fullscreen toggle"),
 	}
 	col3Parts = append(col3Parts, chordHints...)
