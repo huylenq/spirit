@@ -10,7 +10,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.Enter, k.PromptRelay, k.Filter, k.Defer, k.Undefer,
 		k.Refresh, k.GroupMode, k.Summarize, k.SummarizeAll,
-		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.CommitAndDone,
+		k.Rename, k.Hooks, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -70,6 +70,9 @@ type KeyMap struct {
 
 	// Kill session + close pane
 	Kill key.Binding
+
+	// Commit only (send /commit, wait, no kill)
+	Commit key.Binding
 
 	// Commit and done (send /commit, wait, verify, kill)
 	CommitAndDone key.Binding
@@ -233,6 +236,10 @@ var Keys = KeyMap{
 	Kill: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "kill+close"),
+	),
+	Commit: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "commit"),
 	),
 	CommitAndDone: key.NewBinding(
 		key.WithKeys("C"),

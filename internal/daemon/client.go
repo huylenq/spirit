@@ -241,6 +241,11 @@ func (c *Client) RenameWindow(sessionName string, windowIndex int) (string, erro
 	return data.Name, err
 }
 
+// CommitOnly sends /commit-commands:commit to the pane (no auto-kill on completion).
+func (c *Client) CommitOnly(paneID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqCommitOnly, Data: marshalData(CommitDoneData{PaneID: paneID, PID: pid})}, nil)
+}
+
 // CommitAndDone sends /commit-commands:commit to the pane and registers it for auto-kill on commit.
 func (c *Client) CommitAndDone(paneID string, pid int) error {
 	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, PID: pid})}, nil)

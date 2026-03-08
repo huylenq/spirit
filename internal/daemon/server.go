@@ -359,7 +359,7 @@ func (d *Daemon) handleRenameWindow(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleCommitDone(data json.RawMessage) *Response {
+func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	var req CommitDoneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
@@ -370,12 +370,16 @@ func (d *Daemon) handleCommitDone(data json.RawMessage) *Response {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
-	// Register the pending commit-done and nudge so subscribers see CommitDonePending immediately
+	// Register the pending commit and nudge so subscribers see CommitDonePending immediately
 	d.commitDoneMu.Lock()
-	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID}
+	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone}
 	d.commitDoneMu.Unlock()
 	d.nudge()
-	log.Printf("commit-done: registered pane %s", req.PaneID)
+	tag := "commit"
+	if killOnDone {
+		tag = "commit-done"
+	}
+	log.Printf("%s: registered pane %s", tag, req.PaneID)
 	r := resultResponse("ok")
 	return &r
 }

@@ -12,7 +12,7 @@ type DeferPromptModel struct {
 
 func NewDeferPromptModel() DeferPromptModel {
 	ti := textinput.New()
-	ti.Placeholder = "minutes (e.g. 15)"
+	ti.Placeholder = "minutes"
 	ti.Prompt = "Defer for: "
 	ti.PromptStyle = FilterPromptStyle
 	ti.CharLimit = 8
@@ -22,7 +22,7 @@ func NewDeferPromptModel() DeferPromptModel {
 func (m *DeferPromptModel) Activate() {
 	m.active = true
 	m.input.Focus()
-	m.input.SetValue("")
+	m.input.SetValue("10")
 }
 
 func (m *DeferPromptModel) Deactivate() {

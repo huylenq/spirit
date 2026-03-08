@@ -704,6 +704,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, Keys.Commit):
+			if s, ok := m.list.SelectedItem(); ok {
+				if s.Status != claude.StatusDone {
+					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+				}
+				if s.CommitDonePending {
+					return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
+				}
+				paneID, pid := s.PaneID, s.PID
+				return m, func() tea.Msg {
+					if err := m.client.CommitOnly(paneID, pid); err != nil {
+						return flashErrorMsg("commit failed: " + err.Error())
+					}
+					return flashInfoMsg("commit started")
+				}
+			}
+			return m, nil
+
 		case key.Matches(msg, Keys.CommitAndDone):
 			if s, ok := m.list.SelectedItem(); ok {
 				if s.Status != claude.StatusDone {

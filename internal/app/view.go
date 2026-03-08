@@ -213,9 +213,6 @@ func (m Model) renderFooter() string {
 		if m.renaming {
 			hints += "  " + ui.SummaryStyle.Render("renaming…")
 		}
-		if n := m.list.SummaryLoadingCount(); n > 0 {
-			hints += "  " + ui.SummaryStyle.Render(fmt.Sprintf("summarizing %d…", n))
-		}
 		return ui.FooterStyle.Width(m.width).Render(hints)
 	}
 }
