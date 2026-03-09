@@ -355,6 +355,15 @@ func (m *PreviewModel) ScrollPageDown() { m.scrollDown(m.fullPage()) }
 // ScrollPageUp scrolls a full page up (ctrl+b).
 func (m *PreviewModel) ScrollPageUp() { m.scrollUp(m.fullPage()) }
 
+// ScrollLines scrolls the preview by n lines (positive = down, negative = up).
+func (m *PreviewModel) ScrollLines(n int) {
+	if n > 0 {
+		m.scrollDown(n)
+	} else if n < 0 {
+		m.scrollUp(-n)
+	}
+}
+
 // hookListLines returns the number of rows available for the event list inside the overlay.
 func (m *PreviewModel) hookListLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)

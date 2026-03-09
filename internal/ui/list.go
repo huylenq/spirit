@@ -654,3 +654,105 @@ func formatAge(t time.Time) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
+
+// PaneIDAtLine maps a terminal line index (relative to list content start) to
+// the PaneID of the session rendered at that line. Returns "" for headers,
+// separators, or out-of-bounds lines. Mirrors View()'s group/filter/item logic.
+func (m ListModel) PaneIDAtLine(line int) string {
+	if line < 0 || len(m.allSorted) == 0 {
+		return ""
+	}
+
+	query := strings.ToLower(m.narrow)
+	currentLine := 0
+	currentProject := ""
+	currentStatus := claude.Status(-1)
+	anyLinesEmitted := false
+
+	for _, s := range m.allSorted {
+		// Group headers — must mirror View()'s logic exactly
+		if m.groupByProject {
+			if s.Project != currentProject {
+				currentProject = s.Project
+				if anyLinesEmitted {
+					currentLine++ // separator
+				}
+				anyLinesEmitted = true
+				currentLine++ // group header
+			}
+		} else {
+			if s.Status != currentStatus {
+				currentStatus = s.Status
+				currentProject = ""
+				if anyLinesEmitted {
+					currentLine++ // separator
+				}
+				anyLinesEmitted = true
+				currentLine++ // status group header
+			}
+			if s.Project != currentProject {
+				currentProject = s.Project
+				currentLine++ // project sub-header
+			}
+		}
+
+		// Skip non-matching items (same as View)
+		if m.matchSet != nil && !m.matchSet[s.PaneID] {
+			continue
+		}
+
+		lineCount := m.itemLineCount(s, query)
+		if line >= currentLine && line < currentLine+lineCount {
+			return s.PaneID
+		}
+		currentLine += lineCount
+	}
+
+	return ""
+}
+
+// itemLineCount returns the number of terminal lines a rendered item occupies.
+// Must stay in sync with renderItem's subtitle appendages.
+func (m ListModel) itemLineCount(s claude.ClaudeSession, query string) int {
+	count := 1 // main line
+
+	if m.summaryLoadingPanes[s.PaneID] {
+		count++
+	}
+
+	if s.QueuePending != "" {
+		count++
+	}
+
+	if s.LastUserMessage != "" {
+		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
+		// subtitleMsgWidth returns identical width for selected/unselected
+		msgWidth := m.subtitleMsgWidth(IconQuote, false)
+		if msgWidth > 0 {
+			_, rest := wordWrapFirst(rawMsg, msgWidth)
+			if rest != "" {
+				count += 2
+			} else {
+				count++
+			}
+		} else {
+			count++
+		}
+	}
+
+	hasQuery := query != ""
+	if hasQuery {
+		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
+			count++
+		}
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
+			count++
+		}
+	}
+
+	if renderBadges(s) != "" {
+		count++
+	}
+
+	return count
+}
