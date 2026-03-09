@@ -203,13 +203,13 @@ func (m *ListModel) applyNarrow() {
 }
 
 func sortByProject(sessions []claude.ClaudeSession) {
-	// Primary: project name alphabetically; secondary: status order; tertiary: newest created first
+	// Primary: project name alphabetically; secondary: session order; tertiary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
 			if a.Project > b.Project ||
-				(a.Project == b.Project && statusOrder(a.Status) > statusOrder(b.Status)) ||
-				(a.Project == b.Project && statusOrder(a.Status) == statusOrder(b.Status) && a.CreatedAt.Before(b.CreatedAt)) {
+				(a.Project == b.Project && sessionOrder(a) > sessionOrder(b)) ||
+				(a.Project == b.Project && sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -219,12 +219,12 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: status order (Done, Working, Later); secondary: newest created first
+	// Primary: session order (UserTurn, AgentTurn, Later); secondary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
-			if statusOrder(a.Status) > statusOrder(b.Status) ||
-				(statusOrder(a.Status) == statusOrder(b.Status) && a.CreatedAt.Before(b.CreatedAt)) {
+			if sessionOrder(a) > sessionOrder(b) ||
+				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -233,16 +233,25 @@ func sortByStatus(sessions []claude.ClaudeSession) {
 	}
 }
 
-func statusOrder(s claude.Status) int {
-	switch s {
-	case claude.StatusDone:
-		return 0
-	case claude.StatusWorking:
-		return 1
-	case claude.StatusLater:
-		return 2
+// Session group ordering constants.
+const (
+	OrderUserTurn  = 0
+	OrderAgentTurn = 1
+	OrderLater     = 2
+	OrderOther     = 3
+)
+
+func sessionOrder(s claude.ClaudeSession) int {
+	if s.LaterBookmarkID != "" {
+		return OrderLater
+	}
+	switch s.Status {
+	case claude.StatusUserTurn:
+		return OrderUserTurn
+	case claude.StatusAgentTurn:
+		return OrderAgentTurn
 	default:
-		return 3
+		return OrderOther
 	}
 }
 
@@ -297,7 +306,7 @@ func (m ListModel) View() string {
 
 	var lines []string
 	currentProject := ""
-	currentStatus := claude.Status(-1)
+	currentOrder := -1
 
 	for _, s := range m.allSorted {
 		// Group headers — always rendered for spatial stability during narrowing
@@ -310,13 +319,14 @@ func (m ListModel) View() string {
 				lines = append(lines, renderGroupHeader(s.Project))
 			}
 		} else {
-			if s.Status != currentStatus {
-				currentStatus = s.Status
+			order := sessionOrder(s)
+			if order != currentOrder {
+				currentOrder = order
 				currentProject = "" // reset project tracking for new status group
 				if len(lines) > 0 {
 					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 				}
-				lines = append(lines, renderStatusGroupHeader(s.Status))
+				lines = append(lines, renderStatusGroupHeader(order))
 			}
 			if s.Project != currentProject {
 				currentProject = s.Project
@@ -349,13 +359,13 @@ func renderProjectSubHeader(project string) string {
 	return ProjectSubHeaderStyle.Render(IconFolder + " " + project)
 }
 
-func renderStatusGroupHeader(status claude.Status) string {
-	switch status {
-	case claude.StatusDone:
+func renderStatusGroupHeader(order int) string {
+	switch order {
+	case 0:
 		return GroupHeaderDoneStyle.Render(IconFlag + " YOUR TURN")
-	case claude.StatusWorking:
+	case 1:
 		return GroupHeaderWorkingStyle.Render(IconBolt + " CLAUDING")
-	case claude.StatusLater:
+	case 2:
 		return GroupHeaderLaterStyle.Render(IconBookmark + " LATER")
 	default:
 		return ""
@@ -367,9 +377,9 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	// Display name priority: custom title → headline → first message → (new session)
 	var displayName string
 	if s.CustomTitle != "" {
-		displayName = s.CustomTitle
+		displayName = strings.ReplaceAll(s.CustomTitle, "\n", " ")
 	} else if s.Headline != "" {
-		displayName = s.Headline
+		displayName = strings.ReplaceAll(s.Headline, "\n", " ")
 	} else if s.FirstMessage != "" {
 		displayName = strings.ReplaceAll(s.FirstMessage, "\n", " ")
 	} else {
@@ -628,19 +638,20 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 		return bg(StatWaitingStyle).Render(IconWaiting)
 	}
 	switch s.Status {
-	case claude.StatusDone:
-		return bg(ItemDetailStyle).Render(formatAge(s.LastChanged))
-	case claude.StatusWorking:
+	case claude.StatusUserTurn:
+		age := formatAge(s.LastChanged)
+		if s.LaterBookmarkID != "" && s.IsPhantom {
+			return bg(StatLaterStyle).Render(IconBookmark + " " + age)
+		}
+		return bg(ItemDetailStyle).Render(age)
+	case claude.StatusAgentTurn:
+		if s.LaterBookmarkID != "" {
+			return bg(StatLaterStyle).Render(IconBookmark + " " + m.spinnerView)
+		}
 		if s.PermissionMode == "plan" {
 			return bg(StatPlanStyle).Render(m.spinnerView)
 		}
 		return bg(StatWorkingStyle).Render(m.spinnerView)
-	case claude.StatusLater:
-		age := formatAge(s.LastChanged)
-		if s.IsPhantom {
-			return bg(StatLaterStyle).Render(IconBookmark + " " + age)
-		}
-		return bg(StatLaterStyle).Render(age)
 	default:
 		return ""
 	}
