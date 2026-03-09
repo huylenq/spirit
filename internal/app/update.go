@@ -167,7 +167,12 @@ func (m *Model) tryInitialSelection() bool {
 					return m.list.SelectByPaneID(items[idx].PaneID)
 				}
 			}
-			// No other YOUR TURN — fall back to origPane
+			// No other YOUR TURN — fall back to first WORKING session
+			for _, s := range items {
+				if s.Status == claude.StatusAgentTurn {
+					return m.list.SelectByPaneID(s.PaneID)
+				}
+			}
 			return m.list.SelectByPaneID(m.origPane.PaneID)
 		}
 	} else {
@@ -285,6 +290,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetHookEvents(msg.Events)
 		}
+		return m, nil
+
+	case GlobalEffectsReadyMsg:
+		m.globalEffects = msg.Effects
 		return m, nil
 
 	case DiffHunksReadyMsg:
@@ -935,8 +944,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.Debug):
-			m.debugMode = !m.debugMode
-			return m, nil
+			return m.execDebug()
 
 		case key.Matches(msg, Keys.Help):
 			m.showHelp = true
