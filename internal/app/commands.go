@@ -90,7 +90,12 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execTranscript() },
 		},
 		{
-			Name: "Toggle hooks", Hotkey: "i h",
+			Name: "Toggle diffs", Hotkey: "g d",
+			Enabled: hasSessionID,
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
+		},
+		{
+			Name: "Toggle hooks", Hotkey: "g h",
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
 		},
 		{

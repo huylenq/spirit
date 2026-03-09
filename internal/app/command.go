@@ -37,10 +37,6 @@ func canCommit(m *Model) bool {
 // --- Exec methods (extracted from handleKey case blocks) ---
 
 func (m Model) execSwitchPane() (Model, tea.Cmd) {
-	if m.showHooks {
-		m.preview.ToggleExpand()
-		return m, nil
-	}
 	s, ok := m.list.SelectedItem()
 	if !ok {
 		return m, nil
@@ -279,12 +275,46 @@ func (m Model) execCaptureView() (Model, tea.Cmd) {
 	return m, copyToClipboard(text)
 }
 
+func (m Model) execToggleDiffs() (Model, tea.Cmd) {
+	m.showDiffs = !m.showDiffs
+	m.showHooks = false
+	m.showRawTranscript = false
+	m.preview.SetShowDiffs(m.showDiffs)
+	m.preview.SetShowHooks(false)
+	m.preview.SetShowRawTranscript(false)
+	if m.showDiffs {
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, m.fetchDiffHunks(s.PaneID, s.SessionID)
+		}
+	}
+	return m, nil
+}
+
 func (m Model) execToggleHooks() (Model, tea.Cmd) {
 	m.showHooks = !m.showHooks
+	m.showRawTranscript = false
+	m.showDiffs = false
 	m.preview.SetShowHooks(m.showHooks)
+	m.preview.SetShowRawTranscript(false)
+	m.preview.SetShowDiffs(false)
 	if m.showHooks {
 		if s, ok := m.list.SelectedItem(); ok {
 			return m, m.fetchHooks(s.PaneID)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) execToggleRawTranscript() (Model, tea.Cmd) {
+	m.showRawTranscript = !m.showRawTranscript
+	m.showHooks = false
+	m.showDiffs = false
+	m.preview.SetShowRawTranscript(m.showRawTranscript)
+	m.preview.SetShowHooks(false)
+	m.preview.SetShowDiffs(false)
+	if m.showRawTranscript {
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, m.fetchRawTranscript(s.PaneID, s.SessionID)
 		}
 	}
 	return m, nil

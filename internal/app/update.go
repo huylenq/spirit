@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 	"github.com/huylenq/claude-mission-control/internal/ui"
@@ -25,38 +24,7 @@ const (
 
 // executeChord dispatches a completed chord sequence to its action.
 func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
-	switch chord.Keys {
-	case "ys":
-		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
-			return m, copyToClipboard(s.SessionID)
-		}
-	case "yc":
-		text := ansi.Strip(m.View())
-		return m, copyToClipboard(text)
-	case "ih":
-		m.showHooks = !m.showHooks
-		m.showRawTranscript = false
-		m.preview.SetShowHooks(m.showHooks)
-		m.preview.SetShowRawTranscript(false)
-		if m.showHooks {
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, m.fetchHooks(s.PaneID)
-			}
-		}
-		return m, nil
-	case "it":
-		m.showRawTranscript = !m.showRawTranscript
-		m.showHooks = false
-		m.preview.SetShowRawTranscript(m.showRawTranscript)
-		m.preview.SetShowHooks(false)
-		if m.showRawTranscript {
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, m.fetchRawTranscript(s.PaneID, s.SessionID)
-			}
-		}
-		return m, nil
-	}
-	return m, nil
+	return chord.Execute(&m)
 }
 
 // openTranscriptInEditor opens the transcript JSONL in $EDITOR in a new tmux window.
@@ -319,9 +287,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case DiffHunksReadyMsg:
+		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.preview.SetDiffHunks(msg.Hunks)
+		}
+		return m, nil
+
 	case RawTranscriptReadyMsg:
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetRawTranscript(msg.JSON)
+			m.preview.SetTranscriptEntries(msg.Entries)
 		}
 		return m, nil
 
@@ -709,11 +683,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.palette.Activate(items)
 			return m, nil
 
-		case key.Matches(msg, Keys.Escape) && (m.showHooks || m.showRawTranscript):
+		case key.Matches(msg, Keys.Escape) && (m.showHooks || m.showRawTranscript || m.showDiffs):
 			m.showHooks = false
 			m.showRawTranscript = false
+			m.showDiffs = false
 			m.preview.SetShowHooks(false)
 			m.preview.SetShowRawTranscript(false)
+			m.preview.SetShowDiffs(false)
+			return m, nil
+
+		case m.showHooks && msg.String() == "f":
+			m.preview.CycleHookFilter()
 			return m, nil
 
 		case m.showRawTranscript && msg.String() == "e":
@@ -773,9 +753,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case (m.showRawTranscript || m.showHooks) && msg.String() == " ":
+			m.preview.ToggleExpand()
+			return m, nil
+
 		case key.Matches(msg, Keys.Enter):
-			if m.showHooks {
-				m.preview.ToggleExpand()
+			if m.showDiffs {
+				m.preview.ToggleDiffExpand()
 				return m, nil
 			}
 			// Minimap: Enter on non-Claude pane → switch to it directly
@@ -997,16 +981,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.MsgNext):
-			if m.showHooks || m.showRawTranscript {
-				m.preview.ScrollDown()
+			if m.showHooks || m.showRawTranscript || m.showDiffs {
+				m.preview.ScrollLines(1)
 			} else {
 				m.preview.NavigateMsg(1)
 			}
 			return m, nil
 
 		case key.Matches(msg, Keys.MsgPrev):
-			if m.showHooks || m.showRawTranscript {
-				m.preview.ScrollUp()
+			if m.showHooks || m.showRawTranscript || m.showDiffs {
+				m.preview.ScrollLines(-1)
 			} else {
 				m.preview.NavigateMsg(-1)
 			}

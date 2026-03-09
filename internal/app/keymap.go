@@ -1,9 +1,11 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -128,16 +130,36 @@ func chordBindings() []key.Binding {
 
 // Chord defines a multi-key sequence binding.
 type Chord struct {
-	Keys string // full key sequence, e.g. "ys"
-	Help string // description shown in footer
+	Keys    string                          // full key sequence, e.g. "ys"
+	Help    string                          // description shown in footer
+	Execute func(m *Model) (Model, tea.Cmd) // action to run when chord completes
 }
 
 // Chords is the global list of chord bindings.
+// Execute fields are populated in init() to avoid an initialization cycle
+// (Chords → exec methods → View → ChordsWithPrefix → Chords).
 var Chords = []Chord{
 	{Keys: "ys", Help: "copy session id"},
 	{Keys: "yc", Help: "capture view"},
-	{Keys: "ih", Help: "hooks"},
-	{Keys: "it", Help: "transcript json"},
+	{Keys: "gd", Help: "diffs"},
+	{Keys: "gh", Help: "hooks"},
+	{Keys: "gt", Help: "transcript json"},
+}
+
+func init() {
+	executors := map[string]func(m *Model) (Model, tea.Cmd){
+		"ys": func(m *Model) (Model, tea.Cmd) { return m.execCopySessionID() },
+		"yc": func(m *Model) (Model, tea.Cmd) { return m.execCaptureView() },
+		"gd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
+		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
+		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
+	}
+	for i := range Chords {
+		Chords[i].Execute = executors[Chords[i].Keys]
+		if Chords[i].Execute == nil {
+			panic(fmt.Sprintf("chord %q has no executor wired in init()", Chords[i].Keys))
+		}
+	}
 }
 
 // ChordsWithPrefix returns chords whose key sequence starts with prefix.
@@ -198,8 +220,8 @@ var Keys = KeyMap{
 		key.WithHelp("m", "minimap"),
 	),
 	GroupMode: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("g", "group"),
+		key.WithKeys("G"),
+		key.WithHelp("G", "group"),
 	),
 	Synthesize: key.NewBinding(
 		key.WithKeys("s"),
