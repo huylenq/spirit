@@ -243,7 +243,9 @@ func (d *Daemon) nudge() {
 
 // patchSession applies a targeted status update from a hook, bypassing full discovery.
 // Returns true if a matching session was found and updated.
-func (d *Daemon) patchSession(paneID string, status claude.Status, lastUserMessage string) bool {
+func (d *Daemon) patchSession(nudge NudgeData) bool {
+	paneID := nudge.PaneID
+	status := claude.ParseStatus(nudge.Status)
 	now := time.Now()
 
 	d.mu.Lock()
@@ -252,11 +254,29 @@ func (d *Daemon) patchSession(paneID string, status claude.Status, lastUserMessa
 		if d.sessions[i].PaneID == paneID {
 			d.sessions[i].Status = status
 			d.sessions[i].LastChanged = now
-			if lastUserMessage != "" {
-				d.sessions[i].LastUserMessage = lastUserMessage
+			if nudge.LastUserMessage != "" {
+				d.sessions[i].LastUserMessage = nudge.LastUserMessage
 			}
 			if status == claude.StatusWorking {
 				d.sessions[i].PermissionMode = claude.ReadPermissionMode(paneID)
+				// Clear transient states when session resumes working
+				d.sessions[i].StopReason = ""
+				d.sessions[i].IsWaiting = false
+			}
+			if nudge.StopReason != "" {
+				d.sessions[i].StopReason = nudge.StopReason
+			}
+			if nudge.IsWaiting != nil {
+				d.sessions[i].IsWaiting = *nudge.IsWaiting
+			}
+			if nudge.IsGitCommit != nil && *nudge.IsGitCommit {
+				d.sessions[i].LastActionCommit = true
+			}
+			if nudge.IsFileEdit != nil && *nudge.IsFileEdit {
+				d.sessions[i].LastActionCommit = false
+			}
+			if nudge.Compacted {
+				d.sessions[i].CompactCount++
 			}
 			found = true
 			break
@@ -545,6 +565,9 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].LastUserMessage != b[i].LastUserMessage ||
 			a[i].PermissionMode != b[i].PermissionMode ||
 			a[i].LastActionCommit != b[i].LastActionCommit ||
+			a[i].StopReason != b[i].StopReason ||
+			a[i].IsWaiting != b[i].IsWaiting ||
+			a[i].CompactCount != b[i].CompactCount ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||
 			a[i].SynthesizePending != b[i].SynthesizePending ||
 			a[i].QueuePending != b[i].QueuePending {

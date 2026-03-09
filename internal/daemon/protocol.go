@@ -107,6 +107,11 @@ type NudgeData struct {
 	PaneID          string `json:"paneID"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
+	StopReason      string `json:"stopReason,omitempty"`
+	IsWaiting       *bool  `json:"isWaiting,omitempty"`
+	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
+	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
+	Compacted       bool   `json:"compacted,omitempty"`
 }
 
 type CommitDoneData struct {

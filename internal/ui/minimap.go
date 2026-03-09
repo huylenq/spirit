@@ -31,13 +31,24 @@ const (
 
 type minimapPane struct {
 	PaneID      string
+	SessionName string
 	WindowIndex int
 	WindowName  string
+	PaneIndex   int
 	// Absolute pixel coords within the window
 	Left, Top, Width, Height int
 	WindowWidth, WindowHeight int
 	Status                    int // PaneStatus* constant
 	IsSelected                bool
+}
+
+// MinimapPaneInfo carries the info needed to switch to a minimap pane.
+type MinimapPaneInfo struct {
+	PaneID      string
+	SessionName string
+	WindowIndex int
+	PaneIndex   int
+	IsClaude    bool
 }
 
 type windowGroup struct {
@@ -120,8 +131,10 @@ func (m *MinimapModel) SetData(geom []tmux.PaneGeometry, paneStatuses map[string
 	for i, g := range geom {
 		m.panes[i] = minimapPane{
 			PaneID:       g.PaneID,
+			SessionName:  g.SessionName,
 			WindowIndex:  g.WindowIndex,
 			WindowName:   g.WindowName,
+			PaneIndex:    g.PaneIndex,
 			Left:         g.Left,
 			Top:          g.Top,
 			Width:        g.Width,
@@ -371,8 +384,50 @@ func (m *MinimapModel) NavigateSpatial(dir SpatialDir) (string, bool) {
 	return best.PaneID, best.Status != PaneStatusNone
 }
 
+// ViewSize returns the rendered minimap dimensions without calling View().
+// Returns (0, 0) if the minimap would render empty.
+func (m MinimapModel) ViewSize() (width, height int) {
+	if len(m.panes) == 0 || m.height < 5 {
+		return 0, 0
+	}
+	windows, _, innerW, gridH := m.computeLayout()
+	if len(windows) == 0 || innerW < 8 || gridH < 1 {
+		return 0, 0
+	}
+	// border (2) + session label (1) + window tab labels (1) + gridH rows
+	return innerW + 2, gridH + 4
+}
+
+// PaneAtGridCoord hit-tests a grid coordinate against computeGridRects.
+// Returns (paneID, isClaude) if a pane owns that cell, or ("", false) otherwise.
+func (m MinimapModel) PaneAtGridCoord(gridX, gridY int) (string, bool) {
+	rects := m.computeGridRects()
+	for _, r := range rects {
+		if gridX >= r.X1 && gridX < r.X2 && gridY >= r.Y1 && gridY < r.Y2 {
+			return r.PaneID, r.Status != PaneStatusNone
+		}
+	}
+	return "", false
+}
+
 func (m MinimapModel) SelectedPaneID() string {
 	return m.selectedPaneID
+}
+
+// SelectedPaneInfo returns full switch info for the currently selected pane.
+func (m MinimapModel) SelectedPaneInfo() (MinimapPaneInfo, bool) {
+	for _, p := range m.panes {
+		if p.PaneID == m.selectedPaneID {
+			return MinimapPaneInfo{
+				PaneID:      p.PaneID,
+				SessionName: p.SessionName,
+				WindowIndex: p.WindowIndex,
+				PaneIndex:   p.PaneIndex,
+				IsClaude:    p.Status != PaneStatusNone,
+			}, true
+		}
+	}
+	return MinimapPaneInfo{}, false
 }
 
 // DebugInfo returns a debug string showing grid rects used for navigation.

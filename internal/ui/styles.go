@@ -13,6 +13,8 @@ var (
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
+	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
+	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
@@ -27,6 +29,8 @@ var (
 	StatDoneStyle     = lipgloss.NewStyle().Foreground(ColorDone)
 	StatLaterStyle    = lipgloss.NewStyle().Foreground(ColorLater)
 	StatPlanStyle     = lipgloss.NewStyle().Foreground(ColorPlan)
+	StatWaitingStyle  = lipgloss.NewStyle().Foreground(ColorWaiting).Bold(true)
+	StatPostToolStyle = lipgloss.NewStyle().Foreground(ColorPostTool)
 	CommitDoneStyle   = DiffAddedStyle
 
 	// List panel
@@ -118,6 +122,12 @@ var (
 
 	TranscriptMsgStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
+	TranscriptBulletStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"}).
+				Padding(0, 1)
+	TranscriptCursorStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent).
+				Padding(0, 1)
 
 	SummaryStyle = lipgloss.NewStyle().
 			Italic(true).

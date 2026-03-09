@@ -14,8 +14,19 @@ import (
 
 // hookInput is the JSON payload Claude Code sends to hooks on stdin.
 type hookInput struct {
-	SessionID string `json:"session_id"`
-	Prompt    string `json:"prompt"`
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
+	CWD            string          `json:"cwd"`
+	PermissionMode string          `json:"permission_mode"`
+	HookEventName  string          `json:"hook_event_name"`
+	Prompt         string          `json:"prompt,omitempty"`            // UserPromptSubmit
+	ToolName       string          `json:"tool_name,omitempty"`         // PostToolUse
+	ToolInput      json.RawMessage `json:"tool_input,omitempty"`        // PostToolUse
+	ToolResult     string          `json:"tool_result,omitempty"`       // PostToolUse (NOT persisted)
+	Message        string          `json:"message,omitempty"`           // Notification
+	Title          string          `json:"title,omitempty"`             // Notification
+	NotifType      string          `json:"notification_type,omitempty"` // Notification
+	StopReason     string          `json:"reason,omitempty"`            // Stop
 }
 
 // HandleHook processes a Claude Code hook event. This replaces claude-status.sh.
@@ -64,23 +75,78 @@ func HandleHook(hookType string) {
 	}
 
 	// Write status and optional data, then nudge daemon with the change
-	var newStatus string
-	var lastMsg string
+	nd := nudgeData{PaneID: paneID}
 	switch hookType {
-	case "UserPromptSubmit", "PreToolUse":
-		newStatus = "working"
+	case "UserPromptSubmit":
+		nd.Status = "working"
 		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
-		if hookType == "UserPromptSubmit" && input.Prompt != "" {
+		if input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
-			lastMsg = input.Prompt
+			nd.LastUserMessage = input.Prompt
 		}
+		// Clear transient states — user has responded, session is active again
+		RemoveWaiting(paneID)
+		os.Remove(stopReasonFilePath(paneID))
+		nd.IsWaiting = boolPtr(false)
+
+	case "PreToolUse":
+		nd.Status = "working"
+		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
+		// Clear transient states — tool use means Claude is proceeding
+		RemoveWaiting(paneID)
+		os.Remove(stopReasonFilePath(paneID))
+		nd.IsWaiting = boolPtr(false)
+
+	case "PostToolUse":
+		// Detect git commit via Bash tool
+		if input.ToolName == "Bash" {
+			cmd := extractBashCommand(input.ToolInput)
+			if isGitCommitCommand(cmd) {
+				WriteLastAction(paneID, "commit")
+				nd.IsGitCommit = boolPtr(true)
+			}
+		}
+		// Edit/Write clears committed state
+		if input.ToolName == "Edit" || input.ToolName == "Write" {
+			WriteLastAction(paneID, "edit")
+			nd.IsFileEdit = boolPtr(true)
+		}
+
 	case "Stop":
-		newStatus = "stopped"
+		nd.Status = "stopped"
 		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
+		if input.StopReason != "" {
+			WriteStopReason(paneID, input.StopReason)
+			nd.StopReason = input.StopReason
+		}
+
+	case "Notification":
+		if input.NotifType == "permission_prompt" || input.NotifType == "elicitation_dialog" {
+			WriteWaiting(paneID, input.NotifType)
+			nd.IsWaiting = boolPtr(true)
+		}
+
+	case "SessionStart":
+		nd.Status = "working"
+		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
+		os.Remove(stopReasonFilePath(paneID))
+
+	case "SessionEnd":
+		nd.Status = "stopped"
+		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
+		RemoveWaiting(paneID) // session is over, not waiting
+
+	case "PreCompact":
+		count := ReadCompactCount(paneID)
+		count++
+		WriteCompactCount(paneID, count)
+		nd.Compacted = true
 	}
 
-	if newStatus != "" {
-		nudgeDaemon(paneID, newStatus, lastMsg)
+	// Nudge daemon if we have something to report
+	if nd.Status != "" || nd.StopReason != "" || nd.IsWaiting != nil ||
+		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted {
+		nudgeDaemon(nd)
 	}
 }
 
@@ -155,11 +221,18 @@ type nudgeData struct {
 	PaneID          string `json:"paneID"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
+	StopReason      string `json:"stopReason,omitempty"`
+	IsWaiting       *bool  `json:"isWaiting,omitempty"`
+	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
+	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
+	Compacted       bool   `json:"compacted,omitempty"`
 }
+
+func boolPtr(v bool) *bool { return &v }
 
 // nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon with the
 // status change data so it can patch the session in-place without re-polling.
-func nudgeDaemon(paneID, status, lastUserMessage string) {
+func nudgeDaemon(nd nudgeData) {
 	sock := filepath.Join(StatusDir(), "daemon.sock")
 	conn, err := net.DialTimeout("unix", sock, 50*time.Millisecond)
 	if err != nil {
@@ -170,8 +243,17 @@ func nudgeDaemon(paneID, status, lastUserMessage string) {
 
 	json.NewEncoder(conn).Encode(nudgeRequest{
 		Type: "nudge",
-		Data: nudgeData{PaneID: paneID, Status: status, LastUserMessage: lastUserMessage},
+		Data: nd,
 	})
+}
+
+// extractBashCommand extracts the "command" field from PostToolUse tool_input JSON.
+func extractBashCommand(toolInput json.RawMessage) string {
+	var inp struct {
+		Command string `json:"command"`
+	}
+	json.Unmarshal(toolInput, &inp)
+	return inp.Command
 }
 
 func trimHookFile(path string) {

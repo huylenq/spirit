@@ -51,19 +51,6 @@ func findClaudeInTree(tree map[int][]processInfo, parentPID int) int {
 	return 0
 }
 
-func hasNonShellChildInTree(tree map[int][]processInfo, parentPID int) bool {
-	for _, child := range tree[parentPID] {
-		comm := strings.TrimLeft(child.Comm, "-")
-		switch comm {
-		case "zsh", "bash", "fish", "sh", "dash":
-			continue
-		default:
-			return true
-		}
-	}
-	return false
-}
-
 var (
 	gitBranchCache   = make(map[string]gitBranchCacheEntry)
 	gitBranchCacheMu sync.Mutex
@@ -126,13 +113,11 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			if err != nil {
 				continue
 			}
+			// Crash recovery: if process is gone but status says working, mark done.
+			// SessionEnd hook normally handles this, but crashes skip the hook.
 			if status == StatusWorking {
 				WriteStatus(p.PaneID, StatusDone)
 				status = StatusDone
-			}
-			if hasNonShellChildInTree(procTree, p.PanePID) {
-				RemoveStatus(p.PaneID)
-				continue
 			}
 			if status == StatusLater {
 				s := buildSession(p, 0, status, bookmarkByPane)
@@ -213,8 +198,19 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		}
 		s.CustomTitle = ReadCustomTitle(s.SessionID)
 		s.FirstMessage = ReadFirstUserMessage(s.SessionID)
-		s.LastActionCommit = ReadLastActionCommit(s.SessionID)
+
+		// Prefer hook-derived last action when present (faster than transcript scan)
+		if action := ReadLastAction(p.PaneID); action != "" {
+			s.LastActionCommit = action == "commit"
+		} else {
+			s.LastActionCommit = ReadLastActionCommit(s.SessionID)
+		}
 	}
+
+	// Hook-derived fields from status files
+	s.StopReason = ReadStopReason(p.PaneID)
+	s.IsWaiting = ReadWaiting(p.PaneID)
+	s.CompactCount = ReadCompactCount(p.PaneID)
 
 	if status == StatusLater {
 		s.LaterBookmarkID = bookmarkByPane[p.PaneID]

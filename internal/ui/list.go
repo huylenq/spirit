@@ -32,6 +32,7 @@ type ListModel struct {
 	diffStats            map[string]map[string]claude.FileDiffStat // sessionID -> file stats
 	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight synthesization
 	groupByProject       bool
+	deselected           bool // when true, SelectedItem() returns false (minimap on non-Claude pane)
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
@@ -127,16 +128,27 @@ func (m *ListModel) ClearNarrow() {
 }
 
 func (m ListModel) SelectedItem() (claude.ClaudeSession, bool) {
-	if len(m.filtered) == 0 {
+	if len(m.filtered) == 0 || m.deselected {
 		return claude.ClaudeSession{}, false
 	}
 	return m.filtered[m.cursor], true
+}
+
+// Deselect marks the list as having no active selection (minimap on non-Claude pane).
+func (m *ListModel) Deselect() {
+	m.deselected = true
+}
+
+// Reselect restores the list selection after Deselect.
+func (m *ListModel) Reselect() {
+	m.deselected = false
 }
 
 func (m *ListModel) SelectByPaneID(paneID string) bool {
 	for i, s := range m.filtered {
 		if s.PaneID == paneID {
 			m.cursor = i
+			m.deselected = false
 			return true
 		}
 	}
@@ -144,12 +156,14 @@ func (m *ListModel) SelectByPaneID(paneID string) bool {
 }
 
 func (m *ListModel) MoveUp() {
+	m.deselected = false
 	if m.cursor > 0 {
 		m.cursor--
 	}
 }
 
 func (m *ListModel) MoveDown() {
+	m.deselected = false
 	if m.cursor < len(m.filtered)-1 {
 		m.cursor++
 	}
@@ -315,7 +329,7 @@ func (m ListModel) View() string {
 			continue
 		}
 
-		isSelected := s.PaneID == selectedPaneID
+		isSelected := s.PaneID == selectedPaneID && !m.deselected
 		lines = append(lines, m.renderItem(isSelected, s, dw, query))
 	}
 
@@ -470,11 +484,11 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		line += "\n" + m.renderSubtitleLine(rawMsg, query, IconQueue, isSelected, false)
 	}
 
-	// Show last user message as a subtitle line (single line, truncated to list width)
+	// Show last user message as subtitle (up to two lines, word-wrapped)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
-		line += "\n" + m.renderSubtitleLine(rawMsg, query, IconQuote, isSelected, doHL)
+		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, doHL)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the search
@@ -502,17 +516,33 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	return line
 }
 
+// subtitleMsgWidth returns the available text width for a subtitle line with the given icon.
+func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
+	if isSelected {
+		prefix := "   " + icon + " "
+		w := m.width - 5 - lipgloss.Width(prefix)
+		if w < 1 {
+			return 1
+		}
+		return w
+	}
+	prefix := "      " + icon + " "
+	w := m.width - 2 - lipgloss.Width(prefix)
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
 func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHighlight bool) string {
+	msgWidth := m.subtitleMsgWidth(icon, isSelected)
+	truncated := ansi.Truncate(text, msgWidth, "…")
+
 	if isSelected {
 		prefix := "   " + icon + " "
 		prefixWidth := lipgloss.Width(prefix)
-		msgWidth := m.width - 5 - prefixWidth
-		if msgWidth < 1 {
-			msgWidth = 1
-		}
-		truncated := ansi.Truncate(text, msgWidth, "…")
 		baseStyle := ItemDetailStyle.Background(ColorSelectionBg)
 		bgStyle := lipgloss.NewStyle().Background(ColorSelectionBg)
 
@@ -533,16 +563,32 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHi
 
 	// Unselected
 	prefix := "      " + icon + " "
-	prefixWidth := lipgloss.Width(prefix)
-	msgWidth := m.width - 2 - prefixWidth
-	if msgWidth < 1 {
-		msgWidth = 1
-	}
-	truncated := ansi.Truncate(text, msgWidth, "…")
 	if doHighlight && query != "" {
 		return ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 	}
 	return ItemDetailStyle.Render(prefix + truncated)
+}
+
+// renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
+// at word boundaries. The first line gets the icon; the second is indented with
+// spaces matching the icon's width.
+func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, doHighlight bool) string {
+	msgWidth := m.subtitleMsgWidth(icon, isSelected)
+	if msgWidth < 1 {
+		return m.renderSubtitleLine(text, query, icon, isSelected, doHighlight)
+	}
+
+	// Word-wrap at word boundary to split into two lines
+	line1, rest := wordWrapFirst(text, msgWidth)
+	if rest == "" {
+		return m.renderSubtitleLine(text, query, icon, isSelected, doHighlight)
+	}
+
+	// Render first line, second line with blank icon of same width
+	first := m.renderSubtitleLine(line1, query, icon, isSelected, doHighlight)
+	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
+	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, doHighlight)
+	return first + "\n" + second
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
@@ -551,6 +597,12 @@ func renderBadges(s claude.ClaudeSession) string {
 	var badges []string
 	if s.LastActionCommit && s.Status == claude.StatusDone {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
+	}
+	if s.StopReason != "" && s.Status == claude.StatusDone {
+		badges = append(badges, StatDoneStyle.Render(s.StopReason))
+	}
+	if s.CompactCount > 0 {
+		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s%d", IconCompact, s.CompactCount)))
 	}
 	if len(badges) == 0 {
 		return ""
@@ -562,6 +614,10 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected) }
 	if s.CommitDonePending {
 		return bg(CommitDoneStyle).Render(commitDoneFrames[m.commitDoneFrame])
+	}
+	// Waiting state: static icon (no spinner) — ball is in YOUR court
+	if s.IsWaiting {
+		return bg(StatWaitingStyle).Render(IconWaiting)
 	}
 	switch s.Status {
 	case claude.StatusDone:

@@ -61,6 +61,7 @@ func main() {
 	p := tea.NewProgram(
 		app.NewModel(client),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 
 	if _, err := p.Run(); err != nil {
@@ -159,18 +160,32 @@ func runSetup() {
 		}
 	}
 
-	hookTypes := []string{"PreToolUse", "UserPromptSubmit", "Stop", "Notification"}
+	type hookRegistration struct {
+		HookType string
+		Matcher  string // empty = catch-all
+	}
+	regs := []hookRegistration{
+		{"PreToolUse", ""},
+		{"PostToolUse", "Bash|Edit|Write"},
+		{"UserPromptSubmit", ""},
+		{"Stop", ""},
+		{"Notification", ""},
+		{"SessionStart", ""},
+		{"SessionEnd", ""},
+		{"PreCompact", ""},
+	}
+
 	hooksMap, _ := settings["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
 
 	changed := false
-	for _, ht := range hookTypes {
-		cmd := exe + " _hook " + ht + " " + hookMarker
-		newGroups, modified := upsertHookCmd(hooksMap[ht], cmd)
+	for _, reg := range regs {
+		cmd := exe + " _hook " + reg.HookType + " " + hookMarker
+		newGroups, modified := upsertHookCmd(hooksMap[reg.HookType], cmd, reg.Matcher)
 		if modified {
-			hooksMap[ht] = newGroups
+			hooksMap[reg.HookType] = newGroups
 			changed = true
 		}
 	}
@@ -203,7 +218,7 @@ func runSetup() {
 // upsertHookCmd inserts or updates a cmc hook command in a hook type's group list.
 // Identifies existing cmc hooks by hookMarker. Preserves non-cmc hooks untouched.
 // Returns the (possibly new) groups slice and whether anything changed.
-func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
+func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 	groups, _ := existing.([]any)
 
 	// Search existing groups for a cmc hook to update
@@ -223,11 +238,13 @@ func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
 			}
 			cmd, _ := hm["command"].(string)
 			if strings.Contains(cmd, hookMarker) {
-				if cmd == newCmd {
+				existingMatcher, _ := gm["matcher"].(string)
+				if cmd == newCmd && existingMatcher == matcher {
 					return groups, false // already up to date
 				}
 				hm["command"] = newCmd
 				hooks[i] = hm
+				gm["matcher"] = matcher
 				return groups, true
 			}
 		}
@@ -235,7 +252,7 @@ func upsertHookCmd(existing any, newCmd string) ([]any, bool) {
 
 	// No existing cmc hook — append a new group
 	newGroup := map[string]any{
-		"matcher": "",
+		"matcher": matcher,
 		"hooks": []any{
 			map[string]any{
 				"type":    "command",

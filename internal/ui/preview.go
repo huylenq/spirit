@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
@@ -79,6 +81,15 @@ func (m *PreviewModel) SetSize(w, h int) {
 			m.viewport.SetContent(truncateLines(m.content, m.viewport.Width))
 		}
 	}
+}
+
+// ClearSession resets the preview to the empty "Select a session" state.
+func (m *PreviewModel) ClearSession() {
+	m.session = nil
+	m.content = ""
+	m.userMessages = nil
+	m.diffFiles = nil
+	m.summary = nil
 }
 
 func (m *PreviewModel) SetSession(s *claude.ClaudeSession, content string) {
@@ -510,18 +521,30 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {
-		indicator := "  "
+		var styledIndicator string
 		if i == m.msgCursor {
-			indicator = "▶ "
+			styledIndicator = TranscriptCursorStyle.Render("▶ ")
+		} else {
+			styledIndicator = TranscriptBulletStyle.Render(IconBullet + " ")
 		}
-		// Truncate to single line: innerWidth minus the 2-char indicator column
+		// Allow up to 2 lines per message: innerWidth minus the 2-char indicator column
 		msgWidth := innerWidth - 2
 		if msgWidth < 1 {
 			msgWidth = 1
 		}
-		truncated := ansi.Truncate(strings.ReplaceAll(msg, "\n", " "), msgWidth, "…")
-		entry := PreviewMetaStyle.Render(indicator) + TranscriptMsgStyle.Render(truncated)
-		lines = append(lines, entry)
+		flat := strings.ReplaceAll(msg, "\n", " ")
+		if ansi.StringWidth(flat) <= msgWidth {
+			lines = append(lines, styledIndicator+TranscriptMsgStyle.Render(flat))
+		} else {
+			// Two-line display: word-wrap at msgWidth, truncate second line
+			line1, rest := wordWrapFirst(flat, msgWidth)
+			line2 := ansi.Truncate(rest, msgWidth, "…")
+			indent := TranscriptBulletStyle.Render("  ")
+			lines = append(lines,
+				styledIndicator+TranscriptMsgStyle.Render(line1),
+				indent+TranscriptMsgStyle.Render(line2),
+			)
+		}
 	}
 
 	content := strings.Join(lines, "\n")
@@ -698,9 +721,61 @@ func hookTypeStyled(hookType string) string {
 	switch hookType {
 	case "PreToolUse":
 		return StatWorkingStyle.Render(hookType)
+	case "PostToolUse":
+		return StatPostToolStyle.Render(hookType)
+	case "UserPromptSubmit":
+		return DiffAddedStyle.Render(hookType)
 	case "Stop":
 		return StatDoneStyle.Render(hookType)
+	case "Notification":
+		return StatWaitingStyle.Render(hookType)
+	case "SessionStart":
+		return DiffAddedStyle.Render(hookType)
+	case "SessionEnd":
+		return StatDoneStyle.Render(hookType)
+	case "PreCompact":
+		return StatLaterStyle.Render(hookType)
 	default:
 		return PreviewMetaStyle.Render(hookType)
 	}
+}
+
+// runeWidth returns the display width of a rune without allocating a string.
+// CJK wide characters are 2 cells; everything else is 1.
+func runeWidth(r rune) int {
+	if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hangul, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hiragana, r) {
+		return 2
+	}
+	return 1
+}
+
+// wordWrapFirst splits s into a first line that fits within width (breaking at
+// word boundaries) and the remaining text. If no word boundary is found within
+// width, it falls back to a hard truncation.
+func wordWrapFirst(s string, width int) (string, string) {
+	if ansi.StringWidth(s) <= width {
+		return s, ""
+	}
+	// Walk runes, track last space position
+	w := 0
+	lastSpace := -1
+	lastSpaceByte := 0
+	byteOff := 0
+	for _, r := range s {
+		rw := runeWidth(r)
+		if w+rw > width {
+			break
+		}
+		if r == ' ' {
+			lastSpace = w
+			lastSpaceByte = byteOff
+		}
+		w += rw
+		byteOff += utf8.RuneLen(r)
+	}
+	if lastSpace > 0 {
+		return s[:lastSpaceByte], strings.TrimSpace(s[lastSpaceByte:])
+	}
+	// No space found — hard break
+	return ansi.Truncate(s, width, ""), strings.TrimSpace(s[byteOff:])
 }

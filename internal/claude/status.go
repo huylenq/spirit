@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -184,12 +185,82 @@ func RemoveQueueMessage(paneID string) {
 	os.Remove(queueFilePath(paneID))
 }
 
+func stopReasonFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".stopreason")
+}
+
+func waitingFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".waiting")
+}
+
+func compactCountFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".compactcount")
+}
+
+func lastActionFilePath(paneID string) string {
+	return filepath.Join(statusDir(), paneID+".lastaction")
+}
+
+func ReadStopReason(paneID string) string {
+	data, err := os.ReadFile(stopReasonFilePath(paneID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteStopReason(paneID, reason string) {
+	os.WriteFile(stopReasonFilePath(paneID), []byte(reason), 0o644)
+}
+
+func ReadWaiting(paneID string) bool {
+	_, err := os.Stat(waitingFilePath(paneID))
+	return err == nil
+}
+
+func WriteWaiting(paneID, notifType string) {
+	os.WriteFile(waitingFilePath(paneID), []byte(notifType), 0o644)
+}
+
+func RemoveWaiting(paneID string) {
+	os.Remove(waitingFilePath(paneID))
+}
+
+func ReadCompactCount(paneID string) int {
+	data, err := os.ReadFile(compactCountFilePath(paneID))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	return n
+}
+
+func WriteCompactCount(paneID string, n int) {
+	os.WriteFile(compactCountFilePath(paneID), []byte(strconv.Itoa(n)), 0o644)
+}
+
+func ReadLastAction(paneID string) string {
+	data, err := os.ReadFile(lastActionFilePath(paneID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteLastAction(paneID, action string) {
+	os.WriteFile(lastActionFilePath(paneID), []byte(action), 0o644)
+}
+
 func RemoveStatus(paneID string) {
 	os.Remove(statusFilePath(paneID))
 	os.Remove(sessionFilePath(paneID))
 	os.Remove(hookFilePath(paneID))
 	os.Remove(lastMsgFilePath(paneID))
 	os.Remove(queueFilePath(paneID))
+	os.Remove(stopReasonFilePath(paneID))
+	os.Remove(waitingFilePath(paneID))
+	os.Remove(compactCountFilePath(paneID))
+	os.Remove(lastActionFilePath(paneID))
 }
 
 func CleanStale(activePaneIDs, laterPaneIDs map[string]bool) error {

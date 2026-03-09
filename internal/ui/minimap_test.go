@@ -34,13 +34,13 @@ import (
 
 func makeTestGeometry() []tmux.PaneGeometry {
 	return []tmux.PaneGeometry{
-		{PaneID: "%55", WindowIndex: 2, WindowName: "code", Left: 0, Top: 0, Width: 178, Height: 37, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%32", WindowIndex: 2, WindowName: "code", Left: 179, Top: 0, Width: 139, Height: 37, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%58", WindowIndex: 2, WindowName: "code", Left: 0, Top: 38, Width: 89, Height: 35, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%60", WindowIndex: 2, WindowName: "code", Left: 90, Top: 38, Width: 88, Height: 18, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%61", WindowIndex: 2, WindowName: "code", Left: 90, Top: 57, Width: 88, Height: 16, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%57", WindowIndex: 2, WindowName: "code", Left: 179, Top: 38, Width: 139, Height: 35, WindowWidth: 318, WindowHeight: 74},
-		{PaneID: "%48", WindowIndex: 3, WindowName: "viz", Left: 0, Top: 0, Width: 318, Height: 73, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%55", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 0, Left: 0, Top: 0, Width: 178, Height: 37, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%32", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 1, Left: 179, Top: 0, Width: 139, Height: 37, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%58", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 2, Left: 0, Top: 38, Width: 89, Height: 35, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%60", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 3, Left: 90, Top: 38, Width: 88, Height: 18, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%61", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 4, Left: 90, Top: 57, Width: 88, Height: 16, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%57", SessionName: "main", WindowIndex: 2, WindowName: "code", PaneIndex: 5, Left: 179, Top: 38, Width: 139, Height: 35, WindowWidth: 318, WindowHeight: 74},
+		{PaneID: "%48", SessionName: "main", WindowIndex: 3, WindowName: "viz", PaneIndex: 0, Left: 0, Top: 0, Width: 318, Height: 73, WindowWidth: 318, WindowHeight: 74},
 	}
 }
 
@@ -673,6 +673,102 @@ func TestNavigateAndReturn(t *testing.T) {
 			t.Errorf("From %s→%s→%s, expected return to %s (dir %d→%d)",
 				tc.start, mid, back, tc.start, tc.forward, tc.back)
 		}
+	}
+}
+
+// TestPaneAtGridCoord verifies hit-testing against computed grid rects.
+func TestPaneAtGridCoord(t *testing.T) {
+	m := makeTestMinimap()
+	rects := m.computeGridRects()
+	if len(rects) == 0 {
+		t.Fatal("no grid rects")
+	}
+
+	// Points inside known rects should return the correct pane
+	for _, r := range rects {
+		midX := (r.X1 + r.X2) / 2
+		midY := (r.Y1 + r.Y2) / 2
+		paneID, _ := m.PaneAtGridCoord(midX, midY)
+		if paneID != r.PaneID {
+			t.Errorf("center of %s (%d,%d): got %q, want %q", r.PaneID, midX, midY, paneID, r.PaneID)
+		}
+	}
+
+	// Points outside all rects should return empty
+	outsidePoints := [][2]int{{-1, 0}, {0, -1}, {-1, -1}, {9999, 9999}}
+	for _, pt := range outsidePoints {
+		paneID, _ := m.PaneAtGridCoord(pt[0], pt[1])
+		if paneID != "" {
+			t.Errorf("outside point (%d,%d): got %q, want empty", pt[0], pt[1], paneID)
+		}
+	}
+
+	// Verify isClaude flag matches status
+	for _, r := range rects {
+		midX := (r.X1 + r.X2) / 2
+		midY := (r.Y1 + r.Y2) / 2
+		_, isClaude := m.PaneAtGridCoord(midX, midY)
+		wantClaude := r.Status != PaneStatusNone
+		if isClaude != wantClaude {
+			t.Errorf("pane %s isClaude=%v, want %v (status=%d)", r.PaneID, isClaude, wantClaude, r.Status)
+		}
+	}
+}
+
+func TestSelectedPaneInfo(t *testing.T) {
+	m := makeTestMinimap()
+
+	// Claude pane (has status)
+	info, ok := m.SelectedPaneInfo()
+	if !ok {
+		t.Fatal("SelectedPaneInfo returned false for selected pane %55")
+	}
+	if info.PaneID != "%55" {
+		t.Errorf("PaneID = %q, want %%55", info.PaneID)
+	}
+	if info.SessionName != "main" {
+		t.Errorf("SessionName = %q, want main", info.SessionName)
+	}
+	if info.WindowIndex != 2 {
+		t.Errorf("WindowIndex = %d, want 2", info.WindowIndex)
+	}
+	if info.PaneIndex != 0 {
+		t.Errorf("PaneIndex = %d, want 0", info.PaneIndex)
+	}
+	if !info.IsClaude {
+		t.Error("IsClaude = false, want true for %55 (has PaneStatusDone)")
+	}
+
+	// Make a minimap with a non-Claude pane selected
+	geom := makeTestGeometry()
+	statuses := map[string]int{
+		"%55": PaneStatusDone,
+		// %32 deliberately NOT in statuses → PaneStatusNone
+	}
+	m2 := NewMinimapModel()
+	m2.SetData(geom, statuses, "%32", "main")
+	m2.SetSize(50, 14)
+
+	info2, ok2 := m2.SelectedPaneInfo()
+	if !ok2 {
+		t.Fatal("SelectedPaneInfo returned false for selected pane %32")
+	}
+	if info2.PaneID != "%32" {
+		t.Errorf("PaneID = %q, want %%32", info2.PaneID)
+	}
+	if info2.PaneIndex != 1 {
+		t.Errorf("PaneIndex = %d, want 1", info2.PaneIndex)
+	}
+	if info2.IsClaude {
+		t.Error("IsClaude = true, want false for %32 (PaneStatusNone)")
+	}
+
+	// Non-existent selection
+	m3 := NewMinimapModel()
+	m3.SetData(geom, statuses, "%99", "main")
+	_, ok3 := m3.SelectedPaneInfo()
+	if ok3 {
+		t.Error("SelectedPaneInfo should return false for non-existent pane %99")
 	}
 }
 

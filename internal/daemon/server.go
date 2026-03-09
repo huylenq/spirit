@@ -159,8 +159,7 @@ func (d *Daemon) handleNudge(data json.RawMessage) *Response {
 		// Bare nudge without data — fall back to full poll
 		d.nudge()
 	} else {
-		status := claude.ParseStatus(req.Status)
-		if !d.patchSession(req.PaneID, status, req.LastUserMessage) {
+		if !d.patchSession(req) {
 			// Pane not in session list yet — need full discovery
 			d.nudge()
 		}

@@ -462,6 +462,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.minimap.SetSpinnerView(frame)
 		return m, cmd
 
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+			return m, nil
+		}
+		if m.state != StateNormal || !m.showMinimap {
+			return m, nil
+		}
+		_, mmH := m.minimap.ViewSize()
+		if mmH == 0 {
+			return m, nil
+		}
+		// Compute minimap's terminal-space bounding box
+		contentHeight := m.height - 3
+		mmTermCol := 0
+		if !m.inFullscreenPopup {
+			contentHeight -= 1
+			mmTermCol = 1 // left side border
+		}
+		mmTermRow := 2 + contentHeight - mmH
+		// Translate terminal coords to grid coords
+		// Skip: minimap left border (1), top border + session label + window labels (3)
+		gridX := msg.X - mmTermCol - 1
+		gridY := msg.Y - mmTermRow - 3
+		paneID, isClaude := m.minimap.PaneAtGridCoord(gridX, gridY)
+		if paneID == "" {
+			return m, nil
+		}
+		now := time.Now()
+		// Double-click on same pane → switch to it (like Enter)
+		if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < 400*time.Millisecond {
+			m.lastClickPaneID = ""
+			m.lastClickTime = time.Time{}
+			if s, ok := m.list.SelectedItem(); ok && s.PaneID == paneID {
+				if s.LaterBookmarkID != "" {
+					m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
+				}
+				tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
+				return m, tea.Quit
+			}
+			// Non-Claude pane double-click → switch via minimap info
+			if info, ok := m.minimap.SelectedPaneInfo(); ok && info.PaneID == paneID {
+				tmux.SwitchToPane(info.SessionName, info.WindowIndex, info.PaneIndex, info.PaneID)
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+		// Single click → select
+		m.lastClickPaneID = paneID
+		m.lastClickTime = now
+		if paneID == m.minimap.SelectedPaneID() {
+			return m, nil
+		}
+		m.minimap.UpdateSelected(paneID)
+		if isClaude && m.list.SelectByPaneID(paneID) {
+			if s, ok := m.list.SelectedItem(); ok {
+				cmds := []tea.Cmd{
+					capturePreview(s.PaneID),
+					m.fetchTranscript(s.PaneID, s.SessionID),
+					m.fetchDiffStats(s.PaneID, s.SessionID),
+					m.fetchCachedSummary(s.PaneID, s.SessionID),
+					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
+				}
+				cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
+				return m, tea.Batch(cmds...)
+			}
+		} else if !isClaude {
+			m.list.Deselect()
+			m.preview.ClearSession()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -734,6 +805,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
 					return m, tea.Batch(cmds...)
 				}
+			} else if !isClaude {
+				m.list.Deselect()
+				m.preview.ClearSession()
 			}
 			return m, nil
 
@@ -785,6 +859,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.showHooks {
 				m.preview.ToggleExpand()
 				return m, nil
+			}
+			// Minimap: Enter on non-Claude pane → switch to it directly
+			if m.showMinimap {
+				if info, ok := m.minimap.SelectedPaneInfo(); ok && !info.IsClaude {
+					tmux.SwitchToPane(info.SessionName, info.WindowIndex, info.PaneIndex, info.PaneID)
+					return m, tea.Quit
+				}
 			}
 			if s, ok := m.list.SelectedItem(); ok {
 				if s.IsPhantom {
@@ -853,6 +934,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.showMinimap {
 				if s, ok := m.list.SelectedItem(); ok {
 					return m, m.fetchMinimapData(s.TmuxSession)
+				}
+			} else {
+				// Toggling off: restore list selection in case we were on a non-Claude pane
+				m.list.Reselect()
+				if s, ok := m.list.SelectedItem(); ok {
+					return m, tea.Batch(
+						capturePreview(s.PaneID),
+						m.fetchTranscript(s.PaneID, s.SessionID),
+						m.fetchCachedSummary(s.PaneID, s.SessionID),
+					)
 				}
 			}
 			return m, nil
