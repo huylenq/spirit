@@ -146,6 +146,16 @@ var (
 	// Diff stats
 	DiffAddedStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 
+	// Diff hunks overlay
+	DiffOverlayStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorGreen).
+				Padding(0, 1)
+
+	DiffTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorGreen)
+
 	// Empty state
 	EmptyStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).

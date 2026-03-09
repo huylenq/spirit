@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	dmp "github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // diffFileStat is a pre-sorted, per-file diff entry cached on SetDiffStats.
@@ -37,16 +38,40 @@ type PreviewModel struct {
 	hookEvents      []claude.HookEvent
 	showHooks       bool
 	hideTranscript  bool
-	hookCursor     int
-	hookExpanded   bool
-	hookScroll     int
-	rawTranscript       string // full pretty-printed JSON
-	rawTranscriptLines  []string // pre-split lines for rendering
-	showRawTranscript   bool
-	rawTranscriptScroll int
+	hookCursor       int
+	hookExpanded     map[int]bool   // per-entry expansion (keyed by filtered index)
+	hookExpandedJSON map[int]string // lazy pretty-print cache
+	hookScroll       int
+	hookFilter       int // 0=all, 1=handled only, 2=unhandled only
+	hookFiltered     []claude.HookEvent // cached filtered+reversed slice
+	transcriptEntries      []claude.TranscriptEntry
+	transcriptCursor       int            // selected entry index
+	transcriptScroll       int            // first visible entry index
+	transcriptExpanded     map[int]bool   // which entries are expanded
+	transcriptExpandedJSON map[int]string // lazy pretty-print cache
+	transcriptMaxTypeW     int            // cached max width of Type column
+	transcriptMaxCTypeW    int            // cached max width of ContentType column
+	showRawTranscript      bool
+	showDiffs       bool
+	diffHunks       []claude.FileDiffHunk
+	diffHunkFiles   []diffHunkFile
+	diffFileCursor  int
+	diffExpanded    map[int]bool
+	diffScroll      int
 	width           int
 	height          int
 	ready           bool
+}
+
+// diffHunkFile groups hunks by file for the diff overlay.
+type diffHunkFile struct {
+	path      string
+	name      string // basename
+	added     int
+	removed   int
+	footprint int
+	isNewFile bool // all hunks are Write (no Edit)
+	hunks     []claude.FileDiffHunk
 }
 
 func NewPreviewModel() PreviewModel {
@@ -157,17 +182,64 @@ func (m *PreviewModel) SetShowHooks(show bool) {
 	m.showHooks = show
 	m.hookScroll = 0
 	m.hookCursor = 0
-	m.hookExpanded = false
-	if !show {
+	m.hookFilter = 0
+	m.hookFiltered = nil
+	if show {
+		m.hookExpanded = make(map[int]bool)
+		m.hookExpandedJSON = make(map[int]string)
+	} else {
 		m.hookEvents = nil
+		m.hookExpanded = nil
+		m.hookExpandedJSON = nil
 	}
 }
 
+// CycleHookFilter cycles through hook filter modes: all → handled → unhandled → all.
+func (m *PreviewModel) CycleHookFilter() {
+	m.hookFilter = (m.hookFilter + 1) % 3
+	m.hookCursor = 0
+	m.hookScroll = 0
+	m.hookExpanded = make(map[int]bool)
+	m.hookExpandedJSON = make(map[int]string)
+	m.rebuildHookFiltered()
+}
+
+// rebuildHookFiltered rebuilds the cached filtered+reversed hook event list.
+func (m *PreviewModel) rebuildHookFiltered() {
+	filtered := make([]claude.HookEvent, 0, len(m.hookEvents))
+	for i := len(m.hookEvents) - 1; i >= 0; i-- {
+		ev := m.hookEvents[i]
+		handled := hookIsHandled(ev)
+		switch m.hookFilter {
+		case 1: // handled only
+			if !handled {
+				continue
+			}
+		case 2: // unhandled only
+			if handled {
+				continue
+			}
+		}
+		filtered = append(filtered, ev)
+	}
+	m.hookFiltered = filtered
+}
+
 func (m *PreviewModel) ToggleExpand() {
+	if m.showRawTranscript {
+		if m.transcriptExpanded == nil {
+			m.transcriptExpanded = make(map[int]bool)
+		}
+		m.transcriptExpanded[m.transcriptCursor] = !m.transcriptExpanded[m.transcriptCursor]
+		return
+	}
 	if !m.showHooks {
 		return
 	}
-	m.hookExpanded = !m.hookExpanded
+	if m.hookExpanded == nil {
+		m.hookExpanded = make(map[int]bool)
+	}
+	m.hookExpanded[m.hookCursor] = !m.hookExpanded[m.hookCursor]
 }
 
 func (m *PreviewModel) SetRelayView(v string) {
@@ -176,24 +248,114 @@ func (m *PreviewModel) SetRelayView(v string) {
 
 func (m *PreviewModel) SetHookEvents(events []claude.HookEvent) {
 	m.hookEvents = events
+	m.hookExpanded = make(map[int]bool)       // reset — filtered indices shift
+	m.hookExpandedJSON = make(map[int]string) // invalidate cache
+	m.rebuildHookFiltered()
 }
 
-func (m *PreviewModel) SetRawTranscript(s string) {
-	m.rawTranscript = s
-	if s == "" {
-		m.rawTranscriptLines = nil
-	} else {
-		m.rawTranscriptLines = strings.Split(s, "\n")
+func (m *PreviewModel) SetTranscriptEntries(entries []claude.TranscriptEntry) {
+	m.transcriptEntries = entries
+	m.transcriptExpandedJSON = make(map[int]string)
+	// Precompute column widths (minimum = header label width)
+	m.transcriptMaxTypeW = len("TYPE")
+	m.transcriptMaxCTypeW = len("CONTENT")
+	for _, e := range entries {
+		if len(e.Type) > m.transcriptMaxTypeW {
+			m.transcriptMaxTypeW = len(e.Type)
+		}
+		if len(e.ContentType) > m.transcriptMaxCTypeW {
+			m.transcriptMaxCTypeW = len(e.ContentType)
+		}
 	}
+	// Don't reset cursor/scroll/expanded — preserve navigation state on refresh
 }
 
 func (m *PreviewModel) SetShowRawTranscript(show bool) {
 	m.showRawTranscript = show
-	m.rawTranscriptScroll = 0
 	if !show {
-		m.rawTranscript = ""
-		m.rawTranscriptLines = nil
+		m.transcriptEntries = nil
+		m.transcriptCursor = 0
+		m.transcriptScroll = 0
+		m.transcriptExpanded = nil
+		m.transcriptExpandedJSON = nil
+	} else {
+		m.transcriptExpanded = make(map[int]bool)
+		m.transcriptExpandedJSON = make(map[int]string)
 	}
+}
+
+// SetShowDiffs toggles the diff hunks overlay.
+func (m *PreviewModel) SetShowDiffs(show bool) {
+	m.showDiffs = show
+	m.diffFileCursor = 0
+	m.diffScroll = 0
+	m.diffExpanded = nil
+	if !show {
+		m.diffHunks = nil
+		m.diffHunkFiles = nil
+	}
+}
+
+// SetDiffHunks sets the diff hunks and groups them by file.
+func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk) {
+	m.diffHunks = hunks
+
+	// Group by file path
+	fileMap := make(map[string]*diffHunkFile)
+	var order []string
+	for _, h := range hunks {
+		f, exists := fileMap[h.FilePath]
+		if !exists {
+			parts := strings.Split(h.FilePath, "/")
+			f = &diffHunkFile{
+				path:      h.FilePath,
+				name:      parts[len(parts)-1],
+				isNewFile: true, // assume new until we see an Edit
+			}
+			fileMap[h.FilePath] = f
+			order = append(order, h.FilePath)
+		}
+		f.hunks = append(f.hunks, h)
+		added := strings.Count(h.NewString, "\n")
+		removed := strings.Count(h.OldString, "\n")
+		f.added += added
+		f.removed += removed
+		f.footprint += added + removed
+		if !h.IsWrite {
+			f.isNewFile = false
+		}
+	}
+
+	files := make([]diffHunkFile, 0, len(fileMap))
+	for _, p := range order {
+		files = append(files, *fileMap[p])
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].footprint != files[j].footprint {
+			return files[i].footprint > files[j].footprint
+		}
+		return files[i].name < files[j].name
+	})
+	m.diffHunkFiles = files
+
+	// Auto-expand first file
+	m.diffExpanded = make(map[int]bool)
+	if len(files) > 0 {
+		m.diffExpanded[0] = true
+	}
+	m.diffFileCursor = 0
+	m.diffScroll = 0
+}
+
+// ToggleDiffExpand toggles expansion of the file at the current cursor.
+func (m *PreviewModel) ToggleDiffExpand() {
+	if !m.showDiffs || len(m.diffHunkFiles) == 0 {
+		return
+	}
+	if m.diffExpanded == nil {
+		m.diffExpanded = make(map[int]bool)
+	}
+	m.diffExpanded[m.diffFileCursor] = !m.diffExpanded[m.diffFileCursor]
 }
 
 // recomputeOffsets rebuilds msgOffsets from the current content and userMessages.
@@ -283,34 +445,61 @@ func truncateLines(content string, maxWidth int) string {
 }
 
 func (m *PreviewModel) scrollDown(n int) {
-	if m.showRawTranscript {
-		visLines := m.rawTranscriptVisLines()
-		maxScroll := len(m.rawTranscriptLines) - visLines
-		if maxScroll < 0 {
-			maxScroll = 0
+	if m.showDiffs {
+		total := len(m.diffHunkFiles)
+		for range n {
+			if m.diffFileCursor < total-1 {
+				m.diffFileCursor++
+			}
 		}
-		m.rawTranscriptScroll = min(m.rawTranscriptScroll+n, maxScroll)
+		visLines := m.diffVisLines()
+		if m.diffFileCursor >= m.diffScroll+visLines {
+			m.diffScroll = m.diffFileCursor - visLines + 1
+		}
+		return
+	}
+	if m.showRawTranscript {
+		total := len(m.transcriptEntries)
+		for range n {
+			if m.transcriptCursor < total-1 {
+				m.transcriptCursor++
+			}
+		}
+		m.ensureTranscriptCursorVisible()
 		return
 	}
 	if m.showHooks {
-		total := len(m.hookEvents)
+		total := len(m.hookFiltered)
 		for range n {
 			if m.hookCursor < total-1 {
 				m.hookCursor++
 			}
 		}
-		visLines := m.hookListLines()
-		if m.hookCursor >= m.hookScroll+visLines {
-			m.hookScroll = m.hookCursor - visLines + 1
-		}
+		m.ensureHookCursorVisible()
 		return
 	}
 	m.viewport.LineDown(n)
 }
 
 func (m *PreviewModel) scrollUp(n int) {
+	if m.showDiffs {
+		for range n {
+			if m.diffFileCursor > 0 {
+				m.diffFileCursor--
+			}
+		}
+		if m.diffFileCursor < m.diffScroll {
+			m.diffScroll = m.diffFileCursor
+		}
+		return
+	}
 	if m.showRawTranscript {
-		m.rawTranscriptScroll = max(m.rawTranscriptScroll-n, 0)
+		for range n {
+			if m.transcriptCursor > 0 {
+				m.transcriptCursor--
+			}
+		}
+		m.ensureTranscriptCursorVisible()
 		return
 	}
 	if m.showHooks {
@@ -325,6 +514,37 @@ func (m *PreviewModel) scrollUp(n int) {
 		return
 	}
 	m.viewport.LineUp(n)
+}
+
+// ensureTranscriptCursorVisible adjusts transcriptScroll so the cursor is in view,
+// accounting for expanded entries consuming extra lines.
+func (m *PreviewModel) ensureTranscriptCursorVisible() {
+	avail := m.transcriptVisLines()
+	if avail < 1 {
+		return
+	}
+	// If cursor is above scroll, just scroll up to cursor
+	if m.transcriptCursor < m.transcriptScroll {
+		m.transcriptScroll = m.transcriptCursor
+		return
+	}
+	// Count visual lines from scroll to cursor (inclusive)
+	usedLines := 0
+	for i := m.transcriptScroll; i <= m.transcriptCursor && i < len(m.transcriptEntries); i++ {
+		usedLines++ // summary line
+		if m.transcriptExpanded[i] {
+			usedLines += m.expandedLineCount(i)
+		}
+	}
+	// If cursor line extends past visible area, scroll forward
+	for usedLines > avail && m.transcriptScroll < m.transcriptCursor {
+		// Remove lines consumed by the top entry
+		usedLines-- // summary line
+		if m.transcriptExpanded[m.transcriptScroll] {
+			usedLines -= m.expandedLineCount(m.transcriptScroll)
+		}
+		m.transcriptScroll++
+	}
 }
 
 func (m *PreviewModel) halfPage() int {
@@ -364,14 +584,89 @@ func (m *PreviewModel) ScrollLines(n int) {
 	}
 }
 
-// hookListLines returns the number of rows available for the event list inside the overlay.
-func (m *PreviewModel) hookListLines() int {
+// hookIsHandled returns true if the hook event had a meaningful effect (not passthrough, not legacy).
+func hookIsHandled(ev claude.HookEvent) bool {
+	return ev.Effect != "" && ev.Effect != "-"
+}
+
+// hookVisLines returns the number of visible lines for the hook event overlay.
+func (m *PreviewModel) hookVisLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
 	if avail < 1 {
 		avail = 1
 	}
-	if m.hookExpanded {
-		return avail / 2
+	return avail
+}
+
+// ensureHookCursorVisible adjusts hookScroll so the cursor is in view,
+// accounting for expanded entries consuming extra lines.
+func (m *PreviewModel) ensureHookCursorVisible() {
+	avail := m.hookVisLines()
+	if avail < 1 {
+		return
+	}
+	if m.hookCursor < m.hookScroll {
+		m.hookScroll = m.hookCursor
+		return
+	}
+	usedLines := 0
+	for i := m.hookScroll; i <= m.hookCursor && i < len(m.hookFiltered); i++ {
+		usedLines++
+		if m.hookExpanded[i] {
+			usedLines += m.hookExpandedLineCount(i)
+		}
+	}
+	for usedLines > avail && m.hookScroll < m.hookCursor {
+		usedLines--
+		if m.hookExpanded[m.hookScroll] {
+			usedLines -= m.hookExpandedLineCount(m.hookScroll)
+		}
+		m.hookScroll++
+	}
+}
+
+// hookExpandedLineCount returns the number of extra lines an expanded hook entry consumes.
+func (m *PreviewModel) hookExpandedLineCount(idx int) int {
+	s := m.getHookExpandedJSON(idx)
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+// getHookExpandedJSON returns the pretty-printed payload JSON for a hook entry, caching lazily.
+func (m *PreviewModel) getHookExpandedJSON(idx int) string {
+	if idx < 0 || idx >= len(m.hookFiltered) {
+		return ""
+	}
+	if cached, ok := m.hookExpandedJSON[idx]; ok {
+		return cached
+	}
+	raw := m.hookFiltered[idx].Payload
+	if raw == "" {
+		m.hookExpandedJSON[idx] = ""
+		return ""
+	}
+	var v interface{}
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		m.hookExpandedJSON[idx] = raw
+		return raw
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		m.hookExpandedJSON[idx] = raw
+		return raw
+	}
+	result := string(b)
+	m.hookExpandedJSON[idx] = result
+	return result
+}
+
+// diffVisLines returns the number of file rows visible in the diff overlay.
+func (m *PreviewModel) diffVisLines() int {
+	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
+	if avail < 1 {
+		avail = 1
 	}
 	return avail
 }
@@ -498,6 +793,11 @@ func (m PreviewModel) View() string {
 		contentBox = m.renderRawTranscriptOverlay(contentWidth, m.viewport.Height)
 	}
 
+	// Diff hunks overlay on top of content
+	if m.showDiffs {
+		contentBox = m.renderDiffOverlay(contentWidth, m.viewport.Height)
+	}
+
 	// Footer metadata
 	var metaParts []string
 	if s.SessionID != "" {
@@ -564,72 +864,72 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 }
 
 func (m PreviewModel) renderHookOverlay(width, height int) string {
-	titleLine := DebugTitleStyle.Render(" Hook Events")
+	// Title with filter indicator
+	filterLabel := ""
+	switch m.hookFilter {
+	case 1:
+		filterLabel = "  " + DiffAddedStyle.Render("[handled]")
+	case 2:
+		filterLabel = "  " + PreviewMetaStyle.Render("[unhandled]")
+	}
+	titleLine := DebugTitleStyle.Render(" Hook Events") + filterLabel
 
 	var lines []string
 	lines = append(lines, titleLine)
 	lines = append(lines, "")
 
-	if len(m.hookEvents) == 0 {
+	total := len(m.hookFiltered)
+	if total == 0 {
 		lines = append(lines, PreviewMetaStyle.Render("No hook events recorded"))
 	} else {
-		// Reverse events so newest is on top
-		total := len(m.hookEvents)
-		reversed := make([]claude.HookEvent, total)
-		for i, ev := range m.hookEvents {
-			reversed[total-1-i] = ev
-		}
+		visLines := m.hookVisLines()
+		innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
+		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
 
-		listLines := m.hookListLines()
+		rendered := 0
+		for i := m.hookScroll; i < total && rendered < visLines; i++ {
+			ev := m.hookFiltered[i]
 
-		// Clamp cursor and scroll
-		cursor := m.hookCursor
-		if cursor >= total {
-			cursor = total - 1
-		}
-		scroll := m.hookScroll
-		if scroll > total {
-			scroll = total
-		}
-		end := scroll + listLines
-		if end > total {
-			end = total
-		}
-
-		for i, ev := range reversed[scroll:end] {
-			evIdx := scroll + i
 			cursorMark := "  "
-			if evIdx == cursor {
+			if i == m.hookCursor {
 				cursorMark = "> "
 			}
 			timestamp := PreviewMetaStyle.Render(ev.Time)
 			hookType := hookTypeStyled(ev.HookType)
-			lines = append(lines, fmt.Sprintf("%s%s  %s", cursorMark, timestamp, hookType))
+
+			// Effect annotation
+			var effectStr string
+			switch {
+			case hookIsHandled(ev):
+				effectStr = "  " + ItemDetailStyle.Render("→ ") + DiffAddedStyle.Render(ev.Effect)
+			case ev.Effect == "-":
+				effectStr = "  " + ItemDetailStyle.Render("(passthrough)")
+			default:
+				effectStr = "  " + ItemDetailStyle.Render("(no data)")
+			}
+
+			line := fmt.Sprintf("%s%s  %s%s", cursorMark, timestamp, hookType, effectStr)
+			lines = append(lines, clipStyle.Render(line))
+			rendered++
+
+			// Expanded JSON below summary (inline, scrolls with the list)
+			if m.hookExpanded[i] {
+				expanded := m.getHookExpandedJSON(i)
+				for _, jsonLine := range strings.Split(expanded, "\n") {
+					if rendered >= visLines {
+						break
+					}
+					highlighted := highlightJSON(jsonLine)
+					lines = append(lines, clipStyle.Render("  │ "+highlighted))
+					rendered++
+				}
+			}
 		}
 
-		// Payload section when expanded
-		if m.hookExpanded && cursor < total {
-			payload := reversed[cursor].Payload
-			avail := height - 4                   // border(2) + title(1) + blank(1)
-			payloadLines := avail - listLines - 1 // 1 for separator
-			if payloadLines < 1 {
-				payloadLines = 1
-			}
-			innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
-
-			sep := PreviewMetaStyle.Render(strings.Repeat("─", innerWidth))
-			lines = append(lines, sep)
-
-			formatted := formatJSON(payload)
-			shown := 0
-			clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
-			for _, pl := range strings.Split(formatted, "\n") {
-				if shown >= payloadLines {
-					break
-				}
-				lines = append(lines, clipStyle.Render(pl))
-				shown++
-			}
+		// Scroll indicator
+		if total > 1 {
+			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d events ──", min(m.hookCursor+1, total), total))
+			lines = append(lines, indicator)
 		}
 	}
 
@@ -640,8 +940,8 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 		Render(content)
 }
 
-// rawTranscriptVisLines returns the number of visible lines for the raw transcript overlay.
-func (m *PreviewModel) rawTranscriptVisLines() int {
+// transcriptVisLines returns the number of visible lines for the transcript entry overlay.
+func (m *PreviewModel) transcriptVisLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
 	if avail < 1 {
 		avail = 1
@@ -649,39 +949,122 @@ func (m *PreviewModel) rawTranscriptVisLines() int {
 	return avail
 }
 
+// expandedLineCount returns the number of extra lines an expanded entry consumes.
+func (m *PreviewModel) expandedLineCount(idx int) int {
+	json := m.getExpandedJSON(idx)
+	if json == "" {
+		return 0
+	}
+	return strings.Count(json, "\n") + 1
+}
+
+// getExpandedJSON returns the pretty-printed JSON for an entry, caching lazily.
+func (m *PreviewModel) getExpandedJSON(idx int) string {
+	if idx < 0 || idx >= len(m.transcriptEntries) {
+		return ""
+	}
+	if cached, ok := m.transcriptExpandedJSON[idx]; ok {
+		return cached
+	}
+	raw := m.transcriptEntries[idx].RawJSON
+	var v interface{}
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		m.transcriptExpandedJSON[idx] = raw
+		return raw
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		m.transcriptExpandedJSON[idx] = raw
+		return raw
+	}
+	result := string(b)
+	m.transcriptExpandedJSON[idx] = result
+	return result
+}
+
 func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
-	titleLine := TranscriptTitleStyle.Render(" Transcript JSON")
+	total := len(m.transcriptEntries)
+	titleLine := TranscriptTitleStyle.Render(fmt.Sprintf(" Transcript (%d entries)", total))
 
 	var lines []string
 	lines = append(lines, titleLine)
 	lines = append(lines, "")
 
-	if len(m.rawTranscriptLines) == 0 {
+	if total == 0 {
 		lines = append(lines, PreviewMetaStyle.Render("No transcript data"))
 	} else {
-		visLines := m.rawTranscriptVisLines()
-		innerWidth := width - 6 // border(2) + padding(2) + gutter(2)
-		lineNumWidth := len(fmt.Sprintf("%d", len(m.rawTranscriptLines)))
-		gutterStyle := PreviewMetaStyle
+		visLines := m.transcriptVisLines() - 1 // -1 for sticky header
+		if visLines < 1 {
+			visLines = 1
+		}
+		innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
+		headerStyle := lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
 
-		scroll := m.rawTranscriptScroll
-		end := scroll + visLines
-		if end > len(m.rawTranscriptLines) {
-			end = len(m.rawTranscriptLines)
-		}
+		// Use cached column widths (computed in SetTranscriptEntries)
+		maxTypeW := m.transcriptMaxTypeW
+		maxContentTypeW := m.transcriptMaxCTypeW
+		tsW := 8 // HH:MM:SS
 
-		for i := scroll; i < end; i++ {
-			lineNum := gutterStyle.Render(fmt.Sprintf("%*d ", lineNumWidth, i+1))
-			line := clipStyle.Render(m.rawTranscriptLines[i])
-			lines = append(lines, lineNum+line)
+		// Sticky header
+		header := "  " +
+			headerStyle.Render(fmt.Sprintf("%-*s", tsW, "TIME")) + "  " +
+			headerStyle.Render(fmt.Sprintf("%-*s", maxTypeW, "TYPE")) + "  " +
+			headerStyle.Render(fmt.Sprintf("%-*s", maxContentTypeW, "CONTENT")) + "  " +
+			headerStyle.Render("SUMMARY")
+		lines = append(lines, clipStyle.Render(header))
+
+		rendered := 0
+		for i := m.transcriptScroll; i < total && rendered < visLines; i++ {
+			entry := m.transcriptEntries[i]
+
+			// Cursor mark
+			cursorMark := "  "
+			if i == m.transcriptCursor {
+				cursorMark = "> "
+			}
+
+			// Col 1: Timestamp (fixed 8 chars)
+			ts := entry.Timestamp
+			if ts == "" {
+				ts = "        "
+			}
+
+			// Col 2: ContentType (padded to maxContentTypeW)
+			ct := entry.ContentType
+			ctPadded := ct + strings.Repeat(" ", maxContentTypeW-len(ct))
+
+			// Col 3: Summary
+			var summaryStr string
+			if entry.Summary != "" {
+				summaryStr = "  " + styleEntrySummary(entry)
+			}
+
+			line := cursorMark +
+				ItemDetailStyle.Render(ts) + "  " +
+				styleEntryType(entry.Type, maxTypeW) + "  " +
+				ItemDetailStyle.Render(ctPadded) +
+				summaryStr
+			lines = append(lines, clipStyle.Render(line))
+			rendered++
+
+			// Expanded JSON below summary
+			if m.transcriptExpanded[i] {
+				expanded := m.getExpandedJSON(i)
+				for _, jsonLine := range strings.Split(expanded, "\n") {
+					if rendered >= visLines {
+						break
+					}
+					highlighted := highlightJSON(jsonLine)
+					lines = append(lines, clipStyle.Render("  │ "+highlighted))
+					rendered++
+				}
+			}
 		}
 
 		// Scroll indicator
-		total := len(m.rawTranscriptLines)
-		if total > visLines {
-			pct := (scroll * 100) / (total - visLines)
-			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d lines (%d%%) ──", min(end, total), total, pct))
+		if total > 1 {
+			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d entries ──", min(m.transcriptCursor+1, total), total))
 			lines = append(lines, indicator)
 		}
 	}
@@ -693,19 +1076,342 @@ func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
 		Render(content)
 }
 
-func formatJSON(raw string) string {
-	if raw == "" {
-		return "(no payload)"
+// styleEntryType renders the type label with type-appropriate coloring, padded to minWidth.
+func styleEntryType(typ string, minWidth int) string {
+	padded := typ + strings.Repeat(" ", max(0, minWidth-len(typ)))
+	switch typ {
+	case "user":
+		return DiffAddedStyle.Render(padded)
+	case "assistant":
+		return StatPostToolStyle.Render(padded)
+	case "system":
+		return StatWorkingStyle.Render(padded)
+	default:
+		return ItemDetailStyle.Render(padded)
 	}
-	var v interface{}
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
-		return raw
+}
+
+// styleEntrySummary renders the summary text with muted styling.
+func styleEntrySummary(entry claude.TranscriptEntry) string {
+	return ItemDetailStyle.Render(entry.Summary)
+}
+
+// highlightJSON applies simple syntax highlighting to a JSON line.
+func highlightJSON(line string) string {
+	var result strings.Builder
+	i := 0
+	runes := []rune(line)
+	n := len(runes)
+
+	for i < n {
+		ch := runes[i]
+		switch {
+		case ch == '"':
+			// Find end of string
+			end := i + 1
+			for end < n && runes[end] != '"' {
+				if runes[end] == '\\' {
+					end++ // skip escaped char
+				}
+				end++
+			}
+			if end < n {
+				end++ // include closing quote
+			}
+			str := string(runes[i:end])
+			// Check if this is a key (followed by ':')
+			afterStr := end
+			for afterStr < n && runes[afterStr] == ' ' {
+				afterStr++
+			}
+			if afterStr < n && runes[afterStr] == ':' {
+				result.WriteString(TitleStyle.Render(str))
+			} else {
+				result.WriteString(DiffAddedStyle.Render(str))
+			}
+			i = end
+		case ch >= '0' && ch <= '9', ch == '-':
+			// Number
+			end := i + 1
+			for end < n && (runes[end] >= '0' && runes[end] <= '9' || runes[end] == '.' || runes[end] == 'e' || runes[end] == 'E' || runes[end] == '+' || runes[end] == '-') {
+				end++
+			}
+			result.WriteString(StatWorkingStyle.Render(string(runes[i:end])))
+			i = end
+		case ch == 't' || ch == 'f' || ch == 'n':
+			// true, false, null
+			word := ""
+			if i+4 <= n && string(runes[i:i+4]) == "true" {
+				word = "true"
+			} else if i+5 <= n && string(runes[i:i+5]) == "false" {
+				word = "false"
+			} else if i+4 <= n && string(runes[i:i+4]) == "null" {
+				word = "null"
+			}
+			if word != "" {
+				result.WriteString(StatWorkingStyle.Render(word))
+				i += len(word)
+			} else {
+				result.WriteRune(ch)
+				i++
+			}
+		case ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == ':' || ch == ',':
+			result.WriteString(PreviewMetaStyle.Render(string(ch)))
+			i++
+		default:
+			result.WriteRune(ch)
+			i++
+		}
 	}
-	b, err := json.MarshalIndent(v, "  ", "  ")
-	if err != nil {
-		return raw
+	return result.String()
+}
+
+// maxHunkDisplayLines caps how many output lines a single hunk can produce.
+const maxHunkDisplayLines = 30
+
+// renderInlineDiff computes a line-level diff first (using DiffLinesToChars to
+// treat lines as atomic units), then for paired modified lines does a char-level
+// pass to highlight word/segment changes on the same output line.
+// maxWidth is the available visual width for truncation.
+func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
+	differ := dmp.New()
+
+	// Phase 1: line-level diff using DiffLinesToChars (maps each unique line to
+	// a single rune so DiffMain diffs lines, not characters).
+	chars1, chars2, lineArray := differ.DiffLinesToChars(oldStr, newStr)
+	lineDiffs := differ.DiffMain(chars1, chars2, false)
+	lineDiffs = differ.DiffCharsToLines(lineDiffs, lineArray)
+	lineDiffs = differ.DiffCleanupSemantic(lineDiffs)
+
+	// Phase 2: collect delete/insert runs, pair them for inline rendering
+	type linePair struct {
+		old string // empty = pure insert
+		new string // empty = pure delete
 	}
-	return "  " + string(b)
+	var pairs []linePair
+	var delBuf, insBuf []string
+
+	flushPairs := func() {
+		n := max(len(delBuf), len(insBuf))
+		for i := range n {
+			var p linePair
+			if i < len(delBuf) {
+				p.old = delBuf[i]
+			}
+			if i < len(insBuf) {
+				p.new = insBuf[i]
+			}
+			pairs = append(pairs, p)
+		}
+		delBuf = nil
+		insBuf = nil
+	}
+
+	for _, d := range lineDiffs {
+		// DiffCharsToLines restores full lines including trailing \n
+		text := strings.TrimRight(d.Text, "\n")
+		for _, l := range strings.Split(text, "\n") {
+			switch d.Type {
+			case dmp.DiffEqual:
+				flushPairs()
+				pairs = append(pairs, linePair{old: l, new: l})
+			case dmp.DiffDelete:
+				delBuf = append(delBuf, l)
+			case dmp.DiffInsert:
+				insBuf = append(insBuf, l)
+			}
+		}
+	}
+	flushPairs()
+
+	// Phase 3: render changed pairs only (skip equal lines, show ··· for context gaps)
+	var result []string
+	lastWasContext := false
+	for _, p := range pairs {
+		switch {
+		case p.old == p.new:
+			// Equal line — skip but mark context gap
+			if !lastWasContext && len(result) > 0 {
+				result = append(result, PreviewMetaStyle.Render("  ···"))
+				lastWasContext = true
+			}
+			continue
+		case p.old == "":
+			if strings.TrimSpace(p.new) == "" {
+				continue // skip blank inserts
+			}
+			result = append(result, ansi.Truncate(DiffAddedStyle.Render("+ "+p.new), maxWidth, "…"))
+		case p.new == "":
+			if strings.TrimSpace(p.old) == "" {
+				continue // skip blank deletes
+			}
+			result = append(result, ansi.Truncate(StatWorkingStyle.Render("- "+p.old), maxWidth, "…"))
+		default:
+			if strings.TrimSpace(p.old) == "" && strings.TrimSpace(p.new) == "" {
+				continue
+			}
+			charDiffs := differ.DiffMain(p.old, p.new, false)
+			charDiffs = differ.DiffCleanupSemantic(charDiffs)
+			// Similarity: ratio of equal chars to total
+			var eqC, totC int
+			for _, cd := range charDiffs {
+				n := utf8.RuneCountInString(cd.Text)
+				totC += n
+				if cd.Type == dmp.DiffEqual {
+					eqC += n
+				}
+			}
+			sim := 0.0
+			if totC > 0 {
+				sim = float64(eqC) / float64(totC)
+			}
+			if sim < 0.05 {
+				if strings.TrimSpace(p.old) != "" {
+					result = append(result, ansi.Truncate(StatWorkingStyle.Render("- "+p.old), maxWidth, "…"))
+				}
+				if strings.TrimSpace(p.new) != "" {
+					result = append(result, ansi.Truncate(DiffAddedStyle.Render("+ "+p.new), maxWidth, "…"))
+				}
+			} else {
+				var buf strings.Builder
+				buf.WriteString("~ ")
+				for _, cd := range charDiffs {
+					switch cd.Type {
+					case dmp.DiffEqual:
+						buf.WriteString(PreviewMetaStyle.Render(cd.Text))
+					case dmp.DiffDelete:
+						buf.WriteString(StatWorkingStyle.Render(cd.Text))
+					case dmp.DiffInsert:
+						buf.WriteString(DiffAddedStyle.Render(cd.Text))
+					}
+				}
+				result = append(result, ansi.Truncate(buf.String(), maxWidth, "…"))
+			}
+		}
+		lastWasContext = false
+
+		if len(result) >= maxHunkDisplayLines {
+			remaining := len(pairs) - len(result)
+			if remaining > 0 {
+				result = append(result, PreviewMetaStyle.Render(fmt.Sprintf("  … (%d more changes)", remaining)))
+			}
+			break
+		}
+	}
+	return result
+}
+
+func (m PreviewModel) renderDiffOverlay(width, height int) string {
+	fileCount := len(m.diffHunkFiles)
+	titleLine := DiffTitleStyle.Render(fmt.Sprintf(" File Changes (%d files)", fileCount))
+
+	var lines []string
+	lines = append(lines, titleLine)
+	lines = append(lines, "")
+
+	if fileCount == 0 {
+		lines = append(lines, PreviewMetaStyle.Render("No file changes"))
+	} else {
+		innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
+		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
+
+		// Build all rendered lines (files + expanded hunks)
+		type renderedLine struct {
+			text    string
+			fileIdx int // which file this line belongs to (-1 for separators)
+		}
+		var allLines []renderedLine
+
+		for i, f := range m.diffHunkFiles {
+			// Cursor indicator
+			cursor := "  "
+			if i == m.diffFileCursor {
+				cursor = "> "
+			}
+
+			// Expand/collapse indicator
+			expandIcon := "▸ "
+			if m.diffExpanded[i] {
+				expandIcon = "▾ "
+			}
+
+			// File type icon
+			icon := IconModified
+			if f.isNewFile {
+				icon = IconNewFile
+			}
+
+			// Stats
+			addStr := DiffAddedStyle.Render(fmt.Sprintf("+%d", f.added))
+			rmStr := StatWorkingStyle.Render(fmt.Sprintf("-%d", f.removed))
+
+			line := fmt.Sprintf("%s%s%s %s  %s %s", cursor, expandIcon, icon, f.name, addStr, rmStr)
+			allLines = append(allLines, renderedLine{text: clipStyle.Render(line), fileIdx: i})
+
+			// Expanded hunks with inline diffs
+			if m.diffExpanded[i] {
+				for hi, h := range f.hunks {
+					if h.IsWrite {
+						// Write (new file): just show + lines
+						for _, dl := range strings.Split(h.NewString, "\n") {
+							if strings.TrimSpace(dl) == "" {
+								continue
+							}
+							styled := ansi.Truncate(DiffAddedStyle.Render("+ "+dl), innerWidth-4, "…")
+							allLines = append(allLines, renderedLine{text: "    " + styled, fileIdx: i})
+						}
+					} else {
+						// Edit: inline diff with word-level highlighting
+						for _, dl := range renderInlineDiff(h.OldString, h.NewString, innerWidth-4) {
+							allLines = append(allLines, renderedLine{text: "    " + dl, fileIdx: i})
+						}
+					}
+					// Separator between hunks (skip after last)
+					if hi < len(f.hunks)-1 {
+						sep := PreviewMetaStyle.Render("    " + strings.Repeat("·", min(innerWidth-8, 30)))
+						allLines = append(allLines, renderedLine{text: sep, fileIdx: i})
+					}
+				}
+			}
+		}
+
+		// Apply scroll: find the first line of the scroll-start file
+		scrollLineIdx := 0
+		if m.diffScroll > 0 {
+			for idx, rl := range allLines {
+				if rl.fileIdx >= m.diffScroll {
+					scrollLineIdx = idx
+					break
+				}
+			}
+		}
+
+		visLines := m.diffVisLines()
+		end := scrollLineIdx + visLines
+		if end > len(allLines) {
+			end = len(allLines)
+		}
+
+		for _, rl := range allLines[scrollLineIdx:end] {
+			lines = append(lines, rl.text)
+		}
+
+		// Scroll indicator
+		if len(allLines) > visLines {
+			pct := 0
+			if len(allLines)-visLines > 0 {
+				pct = (scrollLineIdx * 100) / (len(allLines) - visLines)
+			}
+			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d files (%d%%) ──", min(m.diffFileCursor+1, fileCount), fileCount, pct))
+			lines = append(lines, indicator)
+		}
+	}
+
+	content := strings.Join(lines, "\n")
+	return DiffOverlayStyle.
+		Width(width).
+		Height(height).
+		Render(content)
 }
 
 // injectAfterPrompt finds the last line containing ❯ in the viewport output

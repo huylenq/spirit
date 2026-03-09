@@ -31,10 +31,16 @@ type HooksReadyMsg struct {
 	Events []claude.HookEvent
 }
 
-// RawTranscriptReadyMsg is sent when the raw JSONL transcript is loaded.
+// RawTranscriptReadyMsg is sent when transcript entries are loaded.
 type RawTranscriptReadyMsg struct {
+	PaneID  string
+	Entries []claude.TranscriptEntry
+}
+
+// DiffHunksReadyMsg is sent when file diff hunks are loaded for a session.
+type DiffHunksReadyMsg struct {
 	PaneID string
-	JSON   string
+	Hunks  []claude.FileDiffHunk
 }
 
 // DiffStatsReadyMsg is sent when file diff stats are extracted from a transcript.

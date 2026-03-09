@@ -210,11 +210,18 @@ func (c *Client) SynthesizeAll(skipPaneID string) ([]SynthesizeResultData, error
 	return data.Results, err
 }
 
-// RawTranscript fetches the full JSONL transcript as formatted JSON.
-func (c *Client) RawTranscript(sessionID string) (string, error) {
-	var data RawTranscriptData
+// TranscriptEntries fetches parsed transcript entries for a session.
+func (c *Client) TranscriptEntries(sessionID string) ([]claude.TranscriptEntry, error) {
+	var data TranscriptEntriesData
 	err := c.rpcInto(Request{Type: ReqRawTranscript, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
-	return data.JSON, err
+	return data.Entries, err
+}
+
+// DiffHunks fetches file diff hunks (actual content) for a session.
+func (c *Client) DiffHunks(sessionID string) ([]claude.FileDiffHunk, error) {
+	var data DiffHunksData
+	err := c.rpcInto(Request{Type: ReqDiffHunks, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
+	return data.Hunks, err
 }
 
 // HookEvents fetches debug hook events for a pane.

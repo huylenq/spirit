@@ -620,7 +620,7 @@ func renderBadges(s claude.ClaudeSession) string {
 		badges = append(badges, StatDoneStyle.Render(s.StopReason))
 	}
 	if s.CompactCount > 0 {
-		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s%d", IconCompact, s.CompactCount)))
+		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
 	}
 	if len(badges) == 0 {
 		return ""

@@ -23,4 +23,7 @@ const (
 	// Hook state icons
 	IconWaiting = "\uf0f3"  // nf-fa-bell — waiting for user input (permission/elicitation)
 	IconCompact = "\uf01e"  // nf-fa-repeat — context compaction
+	// Diff overlay icons
+	IconNewFile  = "\uf067" // nf-fa-plus — new file (Write only)
+	IconModified = "\uf040" // nf-fa-pencil — modified file (has Edit)
 )

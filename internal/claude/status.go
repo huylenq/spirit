@@ -83,10 +83,14 @@ func WriteLastUserMessageCached(paneID, msg string) error {
 	return os.WriteFile(lastMsgFilePath(paneID), []byte(msg), 0o644)
 }
 
+// HookEffectNone is the sentinel value written when a hook triggers no state changes.
+const HookEffectNone = "-"
+
 type HookEvent struct {
 	Time     string
 	HookType string
 	Payload  string
+	Effect   string // what cmc did with this hook (empty = legacy/no data)
 }
 
 func ReadHookEvents(paneID string) ([]HookEvent, error) {
@@ -96,18 +100,22 @@ func ReadHookEvents(paneID string) ([]HookEvent, error) {
 	}
 	var events []HookEvent
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		// Format: "HH:MM:SS HookType\tPayload" (payload optional)
-		tabParts := strings.SplitN(line, "\t", 2)
+		// Format: "HH:MM:SS HookType\tPayload\tEffect" (payload and effect optional)
+		tabParts := strings.SplitN(line, "\t", 3)
 		timeAndType := tabParts[0]
 		payload := ""
-		if len(tabParts) == 2 {
+		effect := ""
+		if len(tabParts) >= 2 {
 			payload = tabParts[1]
+		}
+		if len(tabParts) >= 3 {
+			effect = tabParts[2]
 		}
 		tp := strings.SplitN(timeAndType, " ", 2)
 		if len(tp) != 2 {
 			continue
 		}
-		events = append(events, HookEvent{Time: tp[0], HookType: tp[1], Payload: payload})
+		events = append(events, HookEvent{Time: tp[0], HookType: tp[1], Payload: payload, Effect: effect})
 	}
 	return events, nil
 }

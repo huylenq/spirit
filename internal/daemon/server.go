@@ -114,6 +114,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCancelQueue:
 		return d.handleCancelQueue(req.Data)
 
+	case ReqDiffHunks:
+		return d.handleDiffHunks(req.Data)
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r
@@ -313,12 +316,12 @@ func (d *Daemon) handleRawTranscript(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	raw, err := claude.ReadRawTranscript(req.SessionID)
+	entries, err := claude.ReadTranscriptEntries(req.SessionID)
 	if err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
-	r := resultResponse(RawTranscriptData{JSON: raw})
+	r := resultResponse(TranscriptEntriesData{Entries: entries})
 	return &r
 }
 
@@ -557,6 +560,13 @@ func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
 	return &r
 }
 
-
-
-
+func (d *Daemon) handleDiffHunks(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	hunks := claude.ReadDiffHunks(req.SessionID)
+	r := resultResponse(DiffHunksData{Hunks: hunks})
+	return &r
+}

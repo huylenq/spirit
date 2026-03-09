@@ -51,6 +51,7 @@ type Model struct {
 	state          AppState
 	showHooks         bool
 	showRawTranscript bool
+	showDiffs         bool
 	hideTranscript    bool
 	showMinimap       bool
 	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
@@ -194,8 +195,8 @@ func (m Model) fetchRawTranscript(paneID, sessionID string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		raw, _ := m.client.RawTranscript(sessionID)
-		return RawTranscriptReadyMsg{PaneID: paneID, JSON: raw}
+		entries, _ := m.client.TranscriptEntries(sessionID)
+		return RawTranscriptReadyMsg{PaneID: paneID, Entries: entries}
 	}
 }
 
@@ -214,6 +215,9 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 	}
 	if m.showRawTranscript {
 		cmds = append(cmds, m.fetchRawTranscript(paneID, sessionID))
+	}
+	if m.showDiffs {
+		cmds = append(cmds, m.fetchDiffHunks(paneID, sessionID))
 	}
 	return cmds
 }
@@ -258,6 +262,16 @@ func (m Model) fetchAllDiffStats(sessions []claude.ClaudeSession) tea.Cmd {
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m Model) fetchDiffHunks(paneID, sessionID string) tea.Cmd {
+	if sessionID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		hunks, _ := m.client.DiffHunks(sessionID)
+		return DiffHunksReadyMsg{PaneID: paneID, Hunks: hunks}
+	}
 }
 
 func (m Model) fetchCachedSummary(paneID, sessionID string) tea.Cmd {

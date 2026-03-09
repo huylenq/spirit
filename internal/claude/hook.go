@@ -60,29 +60,19 @@ func HandleHook(hookType string) {
 		os.WriteFile(sessionFilePath(paneID), []byte(input.SessionID+"\n"), 0o644)
 	}
 
-	// Append to hook log (compact JSON on one line)
-	compactJSON := compactJSONString(rawJSON)
-	entry := fmt.Sprintf("%s %s\t%s\n", time.Now().Format("15:04:05"), hookType, compactJSON)
-	hooksPath := hookFilePath(paneID)
-	f, err := os.OpenFile(hooksPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err == nil {
-		f.WriteString(entry)
-		f.Close()
-		// Trim when file exceeds ~60KB
-		if info, err := os.Stat(hooksPath); err == nil && info.Size() > 61440 {
-			trimHookFile(hooksPath)
-		}
-	}
-
-	// Write status and optional data, then nudge daemon with the change
+	// Write status and optional data, then nudge daemon with the change.
+	// Build effect string alongside each action so it's always truthful.
 	nd := nudgeData{PaneID: paneID}
+	var effects []string
 	switch hookType {
 	case "UserPromptSubmit":
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
+		effects = append(effects, "status→working")
 		if input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
 			nd.LastUserMessage = input.Prompt
+			effects = append(effects, "captured prompt")
 		}
 		// Clear transient states — user has responded, session is active again
 		RemoveWaiting(paneID)
@@ -92,6 +82,7 @@ func HandleHook(hookType string) {
 	case "PreToolUse":
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
+		effects = append(effects, "status→working")
 		// Clear transient states — tool use means Claude is proceeding
 		RemoveWaiting(paneID)
 		os.Remove(stopReasonFilePath(paneID))
@@ -104,20 +95,24 @@ func HandleHook(hookType string) {
 			if isGitCommitCommand(cmd) {
 				WriteLastAction(paneID, "commit")
 				nd.IsGitCommit = boolPtr(true)
+				effects = append(effects, "git commit detected")
 			}
 		}
 		// Edit/Write clears committed state
 		if input.ToolName == "Edit" || input.ToolName == "Write" {
 			WriteLastAction(paneID, "edit")
 			nd.IsFileEdit = boolPtr(true)
+			effects = append(effects, "file edit; cleared commit")
 		}
 
 	case "Stop":
 		nd.Status = StatusUserTurn.String()
 		WriteStatus(paneID, StatusUserTurn)
+		effects = append(effects, "status→your-turn")
 		if input.StopReason != "" {
 			WriteStopReason(paneID, input.StopReason)
 			nd.StopReason = input.StopReason
+			effects = append(effects, "reason:"+input.StopReason)
 		}
 
 	case "Notification":
@@ -126,22 +121,47 @@ func HandleHook(hookType string) {
 			WriteStatus(paneID, StatusUserTurn)
 			WriteWaiting(paneID, input.NotifType)
 			nd.IsWaiting = boolPtr(true)
+			effects = append(effects, "waiting:"+input.NotifType)
 		}
 
 	case "SessionStart":
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
 		os.Remove(stopReasonFilePath(paneID))
+		effects = append(effects, "status→working; session init")
 
 	case "SessionEnd":
 		RemoveStatus(paneID) // removes all status files including waiting
 		nd.Remove = true
+		effects = append(effects, "session cleanup; files removed")
 
 	case "PreCompact":
 		count := ReadCompactCount(paneID)
 		count++
 		WriteCompactCount(paneID, count)
 		nd.Compacted = true
+		effects = append(effects, fmt.Sprintf("compact #%d", count))
+	}
+
+	var effect string
+	if len(effects) == 0 {
+		effect = HookEffectNone
+	} else {
+		effect = strings.Join(effects, "; ")
+	}
+
+	// Append to hook log (compact JSON on one line, with effect annotation)
+	compactJSON := compactJSONString(rawJSON)
+	entry := fmt.Sprintf("%s %s\t%s\t%s\n", time.Now().Format("15:04:05"), hookType, compactJSON, effect)
+	hooksPath := hookFilePath(paneID)
+	f, err := os.OpenFile(hooksPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err == nil {
+		f.WriteString(entry)
+		f.Close()
+		// Trim when file exceeds ~60KB
+		if info, err := os.Stat(hooksPath); err == nil && info.Size() > 61440 {
+			trimHookFile(hooksPath)
+		}
 	}
 
 	// Nudge daemon if we have something to report
