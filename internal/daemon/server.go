@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"sort"
+
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
@@ -77,6 +79,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 
 	case ReqHookEvents:
 		return d.handleHookEvents(req.Data)
+
+	case ReqAllHookEffects:
+		return d.handleAllHookEffects()
 
 	case ReqRawTranscript:
 		return d.handleRawTranscript(req.Data)
@@ -310,6 +315,36 @@ func (d *Daemon) handleHookEvents(data json.RawMessage) *Response {
 	return &r
 }
 
+func (d *Daemon) handleAllHookEffects() *Response {
+	d.mu.RLock()
+	sessions := d.sessions
+	d.mu.RUnlock()
+
+	var all []claude.GlobalHookEffect
+	for _, s := range sessions {
+		events, _ := claude.ReadHookEvents(s.PaneID)
+		for _, ev := range events {
+			if ev.Effect == "" || ev.Effect == claude.HookEffectNone {
+				continue
+			}
+			all = append(all, claude.GlobalHookEffect{
+				Time:      ev.Time,
+				HookType:  ev.HookType,
+				Effect:    ev.Effect,
+				AnimalIdx: s.AvatarAnimalIdx,
+				ColorIdx:  s.AvatarColorIdx,
+			})
+		}
+	}
+	// Sort by time descending (newest first). HH:MM:SS is lexicographically sortable.
+	sort.Slice(all, func(i, j int) bool { return all[i].Time > all[j].Time })
+	if len(all) > 25 {
+		all = all[:25]
+	}
+	r := resultResponse(AllHookEffectsData{Effects: all})
+	return &r
+}
+
 func (d *Daemon) handleRawTranscript(data json.RawMessage) *Response {
 	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
@@ -402,15 +437,14 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 	bm, _ := claude.ReadLaterBookmark(req.BookmarkID)
 	claude.RemoveLaterBookmark(req.BookmarkID)
 	if bm != nil {
-		// Restore status: check if Claude process is running for this pane
-		restoredStatus := claude.StatusUserTurn
+		// Restore status from the in-memory session (hook-derived truth).
+		// Don't infer from PID — Claude's process stays alive in user-turn too.
 		for _, s := range d.currentSessions() {
-			if s.PaneID == bm.PaneID && s.PID > 0 {
-				restoredStatus = claude.StatusAgentTurn
+			if s.PaneID == bm.PaneID {
+				claude.WriteStatus(bm.PaneID, s.Status)
 				break
 			}
 		}
-		claude.WriteStatus(bm.PaneID, restoredStatus)
 	}
 	d.nudge()
 	log.Printf("unlater: removed bookmark %s", req.BookmarkID)
