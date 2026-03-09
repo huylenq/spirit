@@ -218,6 +218,28 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 	return cmds
 }
 
+// fetchForSelection builds the standard cmd batch when the selected session changes:
+// preview capture, transcript, diff stats, summary, tmux pane switch, and active overlays.
+// If syncMinimap is true, also refreshes the minimap to track the new selection.
+func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []tea.Cmd {
+	cmds := []tea.Cmd{
+		capturePreview(s.PaneID),
+		m.fetchTranscript(s.PaneID, s.SessionID),
+		m.fetchDiffStats(s.PaneID, s.SessionID),
+		m.fetchCachedSummary(s.PaneID, s.SessionID),
+		switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
+	}
+	cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
+	if syncMinimap && m.showMinimap {
+		if s.TmuxSession != m.minimapSession {
+			cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
+		} else {
+			m.minimap.UpdateSelected(s.PaneID)
+		}
+	}
+	return cmds
+}
+
 func (m Model) fetchDiffStats(paneID, sessionID string) tea.Cmd {
 	if sessionID == "" {
 		return nil

@@ -17,6 +17,12 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
+const (
+	contentStartRow   = 2                       // rows 0-1 are top border + label
+	doubleClickWindow = 400 * time.Millisecond  // max gap between clicks for double-click
+	wheelScrollLines  = 3                       // lines to scroll per wheel tick
+)
+
 // executeChord dispatches a completed chord sequence to its action.
 func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 	switch chord.Keys {
@@ -740,15 +746,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if isClaude && m.list.SelectByPaneID(paneID) {
 				if s, ok := m.list.SelectedItem(); ok {
-					cmds := []tea.Cmd{
-						capturePreview(s.PaneID),
-						m.fetchTranscript(s.PaneID, s.SessionID),
-						m.fetchDiffStats(s.PaneID, s.SessionID),
-						m.fetchCachedSummary(s.PaneID, s.SessionID),
-						switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-					}
-					cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-					return m, tea.Batch(cmds...)
+					return m, tea.Batch(m.fetchForSelection(s, false)...)
 				}
 			} else if !isClaude {
 				return m, m.focusNonClaudePane()
@@ -758,44 +756,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Up):
 			m.list.MoveUp()
 			if s, ok := m.list.SelectedItem(); ok {
-				cmds := []tea.Cmd{
-					capturePreview(s.PaneID),
-					m.fetchTranscript(s.PaneID, s.SessionID),
-					m.fetchDiffStats(s.PaneID, s.SessionID),
-					m.fetchCachedSummary(s.PaneID, s.SessionID),
-					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-				}
-				cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-				if m.showMinimap {
-					if s.TmuxSession != m.minimapSession {
-						cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
-					} else {
-						m.minimap.UpdateSelected(s.PaneID)
-					}
-				}
-				return m, tea.Batch(cmds...)
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
 
 		case key.Matches(msg, Keys.Down):
 			m.list.MoveDown()
 			if s, ok := m.list.SelectedItem(); ok {
-				cmds := []tea.Cmd{
-					capturePreview(s.PaneID),
-					m.fetchTranscript(s.PaneID, s.SessionID),
-					m.fetchDiffStats(s.PaneID, s.SessionID),
-					m.fetchCachedSummary(s.PaneID, s.SessionID),
-					switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-				}
-				cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-				if m.showMinimap {
-					if s.TmuxSession != m.minimapSession {
-						cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
-					} else {
-						m.minimap.UpdateSelected(s.PaneID)
-					}
-				}
-				return m, tea.Batch(cmds...)
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
 
@@ -1073,8 +1041,8 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 		colOffset = 1 // left border
 	}
 
-	// Content area: rows [2, 2+contentHeight)
-	if y < 2 || y >= 2+contentHeight {
+	// Content area: rows [contentStartRow, contentStartRow+contentHeight)
+	if y < contentStartRow || y >= contentStartRow+contentHeight {
 		return panelNone
 	}
 
@@ -1082,7 +1050,7 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 	if m.showMinimap {
 		mmW, mmH := m.minimap.ViewSize()
 		if mmH > 0 && mmW > 0 {
-			mmTermRow := 2 + contentHeight - mmH
+			mmTermRow := contentStartRow + contentHeight - mmH
 			if x >= colOffset && x < colOffset+mmW && y >= mmTermRow {
 				return panelMinimap
 			}
@@ -1117,7 +1085,7 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) {
 	switch m.hitTestPanel(msg.X, msg.Y) {
 	case panelPreview:
-		m.preview.ScrollLines(dir * 3)
+		m.preview.ScrollLines(dir * wheelScrollLines)
 		return m, nil
 	case panelList:
 		if dir > 0 {
@@ -1126,22 +1094,7 @@ func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) 
 			m.list.MoveUp()
 		}
 		if s, ok := m.list.SelectedItem(); ok {
-			cmds := []tea.Cmd{
-				capturePreview(s.PaneID),
-				m.fetchTranscript(s.PaneID, s.SessionID),
-				m.fetchDiffStats(s.PaneID, s.SessionID),
-				m.fetchCachedSummary(s.PaneID, s.SessionID),
-				switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-			}
-			cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-			if m.showMinimap {
-				if s.TmuxSession != m.minimapSession {
-					cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
-				} else {
-					m.minimap.UpdateSelected(s.PaneID)
-				}
-			}
-			return m, tea.Batch(cmds...)
+			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 		return m, nil
 	}
@@ -1181,7 +1134,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	now := time.Now()
 	// Double-click on same pane → switch to it (like Enter)
-	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < 400*time.Millisecond {
+	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < doubleClickWindow {
 		m.lastClickPaneID = ""
 		m.lastClickTime = time.Time{}
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == paneID {
@@ -1207,15 +1160,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.minimap.UpdateSelected(paneID)
 	if isClaude && m.list.SelectByPaneID(paneID) {
 		if s, ok := m.list.SelectedItem(); ok {
-			cmds := []tea.Cmd{
-				capturePreview(s.PaneID),
-				m.fetchTranscript(s.PaneID, s.SessionID),
-				m.fetchDiffStats(s.PaneID, s.SessionID),
-				m.fetchCachedSummary(s.PaneID, s.SessionID),
-				switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-			}
-			cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-			return m, tea.Batch(cmds...)
+			return m, tea.Batch(m.fetchForSelection(s, false)...)
 		}
 	} else if !isClaude {
 		return m, m.focusNonClaudePane()
@@ -1225,7 +1170,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // handleListClick handles left-clicks on the session list panel.
 func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	listLocalY := msg.Y - 2 // content starts at row 2
+	listLocalY := msg.Y - contentStartRow
 	paneID := m.list.PaneIDAtLine(listLocalY)
 	if paneID == "" {
 		return m, nil
@@ -1233,7 +1178,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	now := time.Now()
 	// Double-click on same pane → switch (same as Enter)
-	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < 400*time.Millisecond {
+	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < doubleClickWindow {
 		m.lastClickPaneID = ""
 		m.lastClickTime = time.Time{}
 		m.list.SelectByPaneID(paneID)
@@ -1268,22 +1213,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	if m.list.SelectByPaneID(paneID) {
 		if s, ok := m.list.SelectedItem(); ok {
-			cmds := []tea.Cmd{
-				capturePreview(s.PaneID),
-				m.fetchTranscript(s.PaneID, s.SessionID),
-				m.fetchDiffStats(s.PaneID, s.SessionID),
-				m.fetchCachedSummary(s.PaneID, s.SessionID),
-				switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
-			}
-			cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
-			if m.showMinimap {
-				if s.TmuxSession != m.minimapSession {
-					cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
-				} else {
-					m.minimap.UpdateSelected(s.PaneID)
-				}
-			}
-			return m, tea.Batch(cmds...)
+			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 	}
 	return m, nil

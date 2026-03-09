@@ -591,14 +591,22 @@ func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, 
 	return first + "\n" + second
 }
 
+// hasBadges returns true if the session has any outcome badges to display.
+// Cheaper than renderBadges — no string allocation, just field checks.
+func hasBadges(s claude.ClaudeSession) bool {
+	return (s.LastActionCommit && s.Status == claude.StatusUserTurn) ||
+		(s.StopReason != "" && s.Status == claude.StatusUserTurn) ||
+		s.CompactCount > 0
+}
+
 // renderBadges returns inline outcome indicators for a session entry.
 // Returns empty string if no badges apply.
 func renderBadges(s claude.ClaudeSession) string {
 	var badges []string
-	if s.LastActionCommit && s.Status == claude.StatusDone {
+	if s.LastActionCommit && s.Status == claude.StatusUserTurn {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
 	}
-	if s.StopReason != "" && s.Status == claude.StatusDone {
+	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
 		badges = append(badges, StatDoneStyle.Render(s.StopReason))
 	}
 	if s.CompactCount > 0 {
@@ -666,7 +674,7 @@ func (m ListModel) PaneIDAtLine(line int) string {
 	query := strings.ToLower(m.narrow)
 	currentLine := 0
 	currentProject := ""
-	currentStatus := claude.Status(-1)
+	currentOrder := -1
 	anyLinesEmitted := false
 
 	for _, s := range m.allSorted {
@@ -681,8 +689,9 @@ func (m ListModel) PaneIDAtLine(line int) string {
 				currentLine++ // group header
 			}
 		} else {
-			if s.Status != currentStatus {
-				currentStatus = s.Status
+			order := sessionOrder(s)
+			if order != currentOrder {
+				currentOrder = order
 				currentProject = ""
 				if anyLinesEmitted {
 					currentLine++ // separator
@@ -750,7 +759,7 @@ func (m ListModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		}
 	}
 
-	if renderBadges(s) != "" {
+	if hasBadges(s) {
 		count++
 	}
 
