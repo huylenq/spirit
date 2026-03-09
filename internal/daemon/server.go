@@ -360,10 +360,6 @@ func (d *Daemon) handleLater(data json.RawMessage) *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
-	if err := claude.WriteLaterStatus(req.PaneID); err != nil {
-		r := errResponse(err.Error())
-		return &r
-	}
 	d.nudge()
 	log.Printf("later: bookmarked pane %s", req.PaneID)
 	r := resultResponse("ok")
@@ -404,11 +400,10 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 	claude.RemoveLaterBookmark(req.BookmarkID)
 	if bm != nil {
 		// Restore status: check if Claude process is running for this pane
-		// to decide between "working" and "stopped"
-		restoredStatus := claude.StatusDone
+		restoredStatus := claude.StatusUserTurn
 		for _, s := range d.currentSessions() {
 			if s.PaneID == bm.PaneID && s.PID > 0 {
-				restoredStatus = claude.StatusWorking
+				restoredStatus = claude.StatusAgentTurn
 				break
 			}
 		}

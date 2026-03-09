@@ -31,7 +31,7 @@ func hasSessionID(m *Model) bool {
 
 func canCommit(m *Model) bool {
 	s, ok := m.list.SelectedItem()
-	return ok && s.Status == claude.StatusDone && !s.CommitDonePending
+	return ok && s.Status == claude.StatusUserTurn && !s.CommitDonePending
 }
 
 // --- Exec methods (extracted from handleKey case blocks) ---
@@ -90,7 +90,7 @@ func (m Model) execSearch() (Model, tea.Cmd) {
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.list.SelectedItem(); ok {
-		if s.Status == claude.StatusLater {
+		if s.LaterBookmarkID != "" {
 			// Toggle: unlater to restore real status
 			paneID, bookmarkID := s.PaneID, s.LaterBookmarkID
 			return m, func() tea.Msg {
@@ -211,7 +211,7 @@ func (m Model) execCommit() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if s.Status != claude.StatusDone {
+	if s.Status != claude.StatusUserTurn {
 		return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 	}
 	if s.CommitDonePending {
@@ -231,7 +231,7 @@ func (m Model) execCommitAndDone() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if s.Status != claude.StatusDone {
+	if s.Status != claude.StatusUserTurn {
 		return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 	}
 	if s.CommitDonePending {

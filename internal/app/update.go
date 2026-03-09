@@ -195,7 +195,7 @@ func (m *Model) tryInitialSelection() bool {
 			n := len(items)
 			for offset := 1; offset < n; offset++ {
 				idx := (origIdx + offset) % n
-				if items[idx].Status == claude.StatusDone {
+				if items[idx].Status == claude.StatusUserTurn {
 					return m.list.SelectByPaneID(items[idx].PaneID)
 				}
 			}
@@ -225,12 +225,10 @@ func (m *Model) tryInitialSelection() bool {
 // claudeStatusToPane converts claude.Status to ui.PaneStatus* constant.
 func claudeStatusToPane(s claude.Status) int {
 	switch s {
-	case claude.StatusWorking:
-		return ui.PaneStatusWorking
-	case claude.StatusDone:
-		return ui.PaneStatusDone
-	case claude.StatusLater:
-		return ui.PaneStatusLater
+	case claude.StatusAgentTurn:
+		return ui.PaneStatusAgentTurn
+	case claude.StatusUserTurn:
+		return ui.PaneStatusUserTurn
 	default:
 		return ui.PaneStatusNone
 	}
@@ -273,7 +271,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showMinimap {
 			paneStatuses := make(map[string]int)
 			for _, s := range msg.Sessions {
-				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
+				if s.LaterBookmarkID != "" {
+					paneStatuses[s.PaneID] = ui.PaneStatusLater
+				} else {
+					paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
+				}
 			}
 			m.minimap.UpdateStatus(paneStatuses)
 		}
@@ -450,7 +452,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MinimapReadyMsg:
 		paneStatuses := make(map[string]int)
 		for _, s := range m.sessions {
-			paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
+			if s.LaterBookmarkID != "" {
+				paneStatuses[s.PaneID] = ui.PaneStatusLater
+			} else {
+				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
+			}
 		}
 		selectedPaneID := ""
 		if s, ok := m.list.SelectedItem(); ok {
@@ -910,7 +916,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, Keys.Commit):
 			if s, ok := m.list.SelectedItem(); ok {
-				if s.Status != claude.StatusDone {
+				if s.Status != claude.StatusUserTurn {
 					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 				}
 				if s.CommitDonePending {
@@ -928,7 +934,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, Keys.CommitAndDone):
 			if s, ok := m.list.SelectedItem(); ok {
-				if s.Status != claude.StatusDone {
+				if s.Status != claude.StatusUserTurn {
 					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 				}
 				if s.CommitDonePending {

@@ -361,11 +361,11 @@ func renderProjectSubHeader(project string) string {
 
 func renderStatusGroupHeader(order int) string {
 	switch order {
-	case 0:
+	case OrderUserTurn:
 		return GroupHeaderDoneStyle.Render(IconFlag + " YOUR TURN")
-	case 1:
+	case OrderAgentTurn:
 		return GroupHeaderWorkingStyle.Render(IconBolt + " CLAUDING")
-	case 2:
+	case OrderLater:
 		return GroupHeaderLaterStyle.Render(IconBookmark + " LATER")
 	default:
 		return ""

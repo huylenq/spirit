@@ -112,6 +112,7 @@ type NudgeData struct {
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
 	Compacted       bool   `json:"compacted,omitempty"`
+	Remove          bool   `json:"remove,omitempty"`
 }
 
 type CommitDoneData struct {

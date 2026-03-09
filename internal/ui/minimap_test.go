@@ -47,9 +47,9 @@ func makeTestGeometry() []tmux.PaneGeometry {
 func makeTestMinimap() MinimapModel {
 	geom := makeTestGeometry()
 	statuses := map[string]int{
-		"%55": PaneStatusDone, "%32": PaneStatusDone,
-		"%57": PaneStatusDone, "%48": PaneStatusDone, "%60": PaneStatusDone,
-		"%58": PaneStatusWorking, "%61": PaneStatusWorking,
+		"%55": PaneStatusUserTurn, "%32": PaneStatusUserTurn,
+		"%57": PaneStatusUserTurn, "%48": PaneStatusUserTurn, "%60": PaneStatusUserTurn,
+		"%58": PaneStatusAgentTurn, "%61": PaneStatusAgentTurn,
 	}
 
 	m := NewMinimapModel()
@@ -294,9 +294,9 @@ func findVisualNeighbor(grid [][]string, totalCols, totalRows int, fromPaneID st
 func TestGridRectsVsCellOwnership(t *testing.T) {
 	geom := makeTestGeometry()
 	statuses := map[string]int{
-		"%55": PaneStatusDone, "%32": PaneStatusDone,
-		"%57": PaneStatusDone, "%48": PaneStatusDone, "%60": PaneStatusDone,
-		"%58": PaneStatusWorking, "%61": PaneStatusWorking,
+		"%55": PaneStatusUserTurn, "%32": PaneStatusUserTurn,
+		"%57": PaneStatusUserTurn, "%48": PaneStatusUserTurn, "%60": PaneStatusUserTurn,
+		"%58": PaneStatusAgentTurn, "%61": PaneStatusAgentTurn,
 	}
 
 	// Test across a range of realistic sizes
@@ -361,9 +361,9 @@ func TestGridRectsVsCellOwnership(t *testing.T) {
 func TestNavigationMatchesVisual(t *testing.T) {
 	geom := makeTestGeometry()
 	statuses := map[string]int{
-		"%55": PaneStatusDone, "%32": PaneStatusDone,
-		"%57": PaneStatusDone, "%48": PaneStatusDone, "%60": PaneStatusDone,
-		"%58": PaneStatusWorking, "%61": PaneStatusWorking,
+		"%55": PaneStatusUserTurn, "%32": PaneStatusUserTurn,
+		"%57": PaneStatusUserTurn, "%48": PaneStatusUserTurn, "%60": PaneStatusUserTurn,
+		"%58": PaneStatusAgentTurn, "%61": PaneStatusAgentTurn,
 	}
 
 	sizes := [][2]int{
@@ -736,13 +736,13 @@ func TestSelectedPaneInfo(t *testing.T) {
 		t.Errorf("PaneIndex = %d, want 0", info.PaneIndex)
 	}
 	if !info.IsClaude {
-		t.Error("IsClaude = false, want true for %55 (has PaneStatusDone)")
+		t.Error("IsClaude = false, want true for %55 (has PaneStatusUserTurn)")
 	}
 
 	// Make a minimap with a non-Claude pane selected
 	geom := makeTestGeometry()
 	statuses := map[string]int{
-		"%55": PaneStatusDone,
+		"%55": PaneStatusUserTurn,
 		// %32 deliberately NOT in statuses → PaneStatusNone
 	}
 	m2 := NewMinimapModel()

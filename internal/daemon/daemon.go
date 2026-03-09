@@ -211,20 +211,7 @@ func (d *Daemon) fetchUsage() {
 	d.version++
 	sessions := d.sessions
 	d.mu.Unlock()
-
-	d.subMu.Lock()
-	for sub := range d.subscribers {
-		select {
-		case sub.ch <- sessions:
-		default:
-			select {
-			case <-sub.ch:
-			default:
-			}
-			sub.ch <- sessions
-		}
-	}
-	d.subMu.Unlock()
+	d.notifySubscribers(sessions)
 }
 
 func (d *Daemon) currentUsage() *claude.UsageStats {
@@ -241,14 +228,55 @@ func (d *Daemon) nudge() {
 	}
 }
 
+// notifySubscribers pushes the latest session list to all subscribers.
+// Non-blocking per subscriber: drops stale update, sends latest.
+func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
+	d.subMu.Lock()
+	for sub := range d.subscribers {
+		select {
+		case sub.ch <- sessions:
+		default:
+			select {
+			case <-sub.ch:
+			default:
+			}
+			sub.ch <- sessions
+		}
+	}
+	d.subMu.Unlock()
+}
+
 // patchSession applies a targeted status update from a hook, bypassing full discovery.
 // Returns true if a matching session was found and updated.
 func (d *Daemon) patchSession(nudge NudgeData) bool {
 	paneID := nudge.PaneID
+
+	d.mu.Lock()
+
+	// SessionEnd: remove session from memory
+	if nudge.Remove {
+		found := false
+		for i := range d.sessions {
+			if d.sessions[i].PaneID == paneID {
+				d.sessions = append(d.sessions[:i], d.sessions[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if !found {
+			d.mu.Unlock()
+			return false
+		}
+		d.version++
+		sessions := d.sessions
+		d.mu.Unlock()
+		d.notifySubscribers(sessions)
+		return true
+	}
+
 	status := claude.ParseStatus(nudge.Status)
 	now := time.Now()
 
-	d.mu.Lock()
 	found := false
 	for i := range d.sessions {
 		if d.sessions[i].PaneID == paneID {
@@ -257,9 +285,9 @@ func (d *Daemon) patchSession(nudge NudgeData) bool {
 			if nudge.LastUserMessage != "" {
 				d.sessions[i].LastUserMessage = nudge.LastUserMessage
 			}
-			if status == claude.StatusWorking {
+			if status == claude.StatusAgentTurn {
 				d.sessions[i].PermissionMode = claude.ReadPermissionMode(paneID)
-				// Clear transient states when session resumes working
+				// Clear transient states when agent resumes
 				d.sessions[i].StopReason = ""
 				d.sessions[i].IsWaiting = false
 			}
@@ -289,21 +317,7 @@ func (d *Daemon) patchSession(nudge NudgeData) bool {
 	d.version++
 	sessions := d.sessions
 	d.mu.Unlock()
-
-	// Notify subscribers
-	d.subMu.Lock()
-	for sub := range d.subscribers {
-		select {
-		case sub.ch <- sessions:
-		default:
-			select {
-			case <-sub.ch:
-			default:
-			}
-			sub.ch <- sessions
-		}
-	}
-	d.subMu.Unlock()
+	d.notifySubscribers(sessions)
 	return true
 }
 
@@ -349,22 +363,7 @@ func (d *Daemon) poll() {
 	d.sessions = sessions
 	d.version++
 	d.mu.Unlock()
-
-	// Notify all subscribers
-	d.subMu.Lock()
-	for sub := range d.subscribers {
-		// Non-blocking send — drop stale, send latest
-		select {
-		case sub.ch <- sessions:
-		default:
-			select {
-			case <-sub.ch:
-			default:
-			}
-			sub.ch <- sessions
-		}
-	}
-	d.subMu.Unlock()
+	d.notifySubscribers(sessions)
 }
 
 // resolveCommitDone checks pending commit-done operations against current sessions.
@@ -390,7 +389,7 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			delete(d.commitDonePanes, paneID)
 			continue
 		}
-		if s.Status == claude.StatusWorking {
+		if s.Status == claude.StatusAgentTurn {
 			// Mark that we've seen the session start working
 			if !entry.SawWorking {
 				entry.SawWorking = true
@@ -399,7 +398,7 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			}
 			continue
 		}
-		if s.Status != claude.StatusDone {
+		if s.Status != claude.StatusUserTurn {
 			continue
 		}
 		// Session is Done — but only resolve if it went through Working first
@@ -472,7 +471,7 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 			claude.RemoveQueueMessage(paneID)
 			continue
 		}
-		if s.Status != claude.StatusDone {
+		if s.Status != claude.StatusUserTurn {
 			continue
 		}
 		// Session is Done — deliver the message

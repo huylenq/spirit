@@ -238,16 +238,18 @@ func (m Model) renderNormalFooterHints() string {
 
 	parts = append(parts, hint("enter", "switch"), hint(">", "send"), hint("<", "queue"))
 
-	switch s.Status {
-	case claude.StatusDone:
-		if !s.CommitDonePending {
-			parts = append(parts, hint("c", "commit"), hint("C", "commit+done"))
-		}
-		parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
-	case claude.StatusWorking:
-		parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
-	case claude.StatusLater:
+	if s.LaterBookmarkID != "" {
 		parts = append(parts, hint("w", "unlater"))
+	} else {
+		switch s.Status {
+		case claude.StatusUserTurn:
+			if !s.CommitDonePending {
+				parts = append(parts, hint("c", "commit"), hint("C", "commit+done"))
+			}
+			parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
+		case claude.StatusAgentTurn:
+			parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
+		}
 	}
 
 	parts = append(parts, hint("d", "kill"))

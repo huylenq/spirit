@@ -78,8 +78,8 @@ func HandleHook(hookType string) {
 	nd := nudgeData{PaneID: paneID}
 	switch hookType {
 	case "UserPromptSubmit":
-		nd.Status = "working"
-		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
+		nd.Status = StatusAgentTurn.String()
+		WriteStatus(paneID, StatusAgentTurn)
 		if input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
 			nd.LastUserMessage = input.Prompt
@@ -90,8 +90,8 @@ func HandleHook(hookType string) {
 		nd.IsWaiting = boolPtr(false)
 
 	case "PreToolUse":
-		nd.Status = "working"
-		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
+		nd.Status = StatusAgentTurn.String()
+		WriteStatus(paneID, StatusAgentTurn)
 		// Clear transient states — tool use means Claude is proceeding
 		RemoveWaiting(paneID)
 		os.Remove(stopReasonFilePath(paneID))
@@ -113,8 +113,8 @@ func HandleHook(hookType string) {
 		}
 
 	case "Stop":
-		nd.Status = "stopped"
-		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
+		nd.Status = StatusUserTurn.String()
+		WriteStatus(paneID, StatusUserTurn)
 		if input.StopReason != "" {
 			WriteStopReason(paneID, input.StopReason)
 			nd.StopReason = input.StopReason
@@ -122,19 +122,20 @@ func HandleHook(hookType string) {
 
 	case "Notification":
 		if input.NotifType == "permission_prompt" || input.NotifType == "elicitation_dialog" {
+			nd.Status = StatusUserTurn.String()
+			WriteStatus(paneID, StatusUserTurn)
 			WriteWaiting(paneID, input.NotifType)
 			nd.IsWaiting = boolPtr(true)
 		}
 
 	case "SessionStart":
-		nd.Status = "working"
-		os.WriteFile(statusFilePath(paneID), []byte("working\n"), 0o644)
+		nd.Status = StatusAgentTurn.String()
+		WriteStatus(paneID, StatusAgentTurn)
 		os.Remove(stopReasonFilePath(paneID))
 
 	case "SessionEnd":
-		nd.Status = "stopped"
-		os.WriteFile(statusFilePath(paneID), []byte("stopped\n"), 0o644)
-		RemoveWaiting(paneID) // session is over, not waiting
+		RemoveStatus(paneID) // removes all status files including waiting
+		nd.Remove = true
 
 	case "PreCompact":
 		count := ReadCompactCount(paneID)
@@ -145,7 +146,7 @@ func HandleHook(hookType string) {
 
 	// Nudge daemon if we have something to report
 	if nd.Status != "" || nd.StopReason != "" || nd.IsWaiting != nil ||
-		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted {
+		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted || nd.Remove {
 		nudgeDaemon(nd)
 	}
 }
@@ -226,6 +227,7 @@ type nudgeData struct {
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
 	Compacted       bool   `json:"compacted,omitempty"`
+	Remove          bool   `json:"remove,omitempty"`
 }
 
 func boolPtr(v bool) *bool { return &v }

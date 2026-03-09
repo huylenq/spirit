@@ -21,12 +21,12 @@ type MinimapModel struct {
 	LastNavDebug   string // debug: last navigation attempt result
 }
 
-// PaneStatus constants mirror claude.Status without importing the package.
+// PaneStatus constants for minimap rendering (UI concept, not tied to claude.Status).
 const (
-	PaneStatusNone     = 0 // not a Claude pane
-	PaneStatusWorking  = 1
-	PaneStatusDone     = 2 // "your turn"
-	PaneStatusLater    = 3
+	PaneStatusNone      = 0 // not a Claude pane
+	PaneStatusAgentTurn = 1
+	PaneStatusUserTurn  = 2 // "your turn"
+	PaneStatusLater     = 3 // bookmarked pane
 )
 
 type minimapPane struct {
@@ -570,12 +570,12 @@ type paneStatusStyles struct {
 }
 
 var statusStyleMap = map[int]paneStatusStyles{
-	PaneStatusWorking: {
+	PaneStatusAgentTurn: {
 		Style:       minimapPaneWorkingStyle,
 		BorderColor: ColorWorking,
 		FillBg:      lipgloss.AdaptiveColor{Light: "#fef3c7", Dark: "#332510"}, // amber tint
 	},
-	PaneStatusDone: {
+	PaneStatusUserTurn: {
 		Style:       minimapPaneDoneStyle,
 		BorderColor: ColorDone,
 		FillBg:      lipgloss.AdaptiveColor{Light: "#dbeafe", Dark: "#1e2240"}, // blue tint
@@ -690,7 +690,7 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 					ch = hz
 				case isLeft || isRight:
 					ch = vt
-				case p.Status == PaneStatusWorking && isCenter:
+				case p.Status == PaneStatusAgentTurn && isCenter:
 					ch = spinnerView
 					cellStyle = ss.Style
 				case p.Status != PaneStatusNone && isCenter:
@@ -736,7 +736,7 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 
 		ss := stylesForStatus(selPane.pane.Status)
 		iconStr := ""
-		if selPane.pane.Status == PaneStatusWorking {
+		if selPane.pane.Status == PaneStatusAgentTurn {
 			iconStr = ss.Style.Render(spinnerView)
 		} else if selPane.pane.Status != PaneStatusNone {
 			iconStr = ss.Style.Render(IconFlag)

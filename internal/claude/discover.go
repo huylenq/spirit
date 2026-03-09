@@ -113,17 +113,18 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			if err != nil {
 				continue
 			}
-			// Crash recovery: if process is gone but status says working, mark done.
+			// Crash recovery: if process is gone but status says agent-turn, mark user-turn.
 			// SessionEnd hook normally handles this, but crashes skip the hook.
-			if status == StatusWorking {
-				WriteStatus(p.PaneID, StatusDone)
-				status = StatusDone
+			if status == StatusAgentTurn {
+				WriteStatus(p.PaneID, StatusUserTurn)
+				status = StatusUserTurn
 			}
-			if status == StatusLater {
+			if bookmarkByPane[p.PaneID] != "" {
+				// Bookmarked: keep session visible regardless of status
 				s := buildSession(p, 0, status, bookmarkByPane)
 				sessions = append(sessions, s)
-			} else if status == StatusDone {
-				// Claude process exited; clean up and don't show the session.
+			} else {
+				// No bookmark, no process: clean up
 				RemoveStatus(p.PaneID)
 			}
 			continue
@@ -131,7 +132,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 
 		status, err := ReadStatus(p.PaneID)
 		if err != nil {
-			status = StatusDone
+			status = StatusUserTurn
 		}
 
 		s := buildSession(p, pid, status, bookmarkByPane)
@@ -150,7 +151,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
 			PaneID:          bm.PaneID,
-			Status:          StatusLater,
+			Status:          StatusUserTurn,
 			Project:         bm.Project,
 			CWD:             bm.CWD,
 			Headline:        bm.Headline,
@@ -182,7 +183,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		SessionID:   ReadSessionID(p.PaneID),
 	}
 
-	if status == StatusWorking {
+	if status == StatusAgentTurn {
 		s.PermissionMode = ReadPermissionMode(p.PaneID)
 	}
 
@@ -212,9 +213,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 	s.IsWaiting = ReadWaiting(p.PaneID)
 	s.CompactCount = ReadCompactCount(p.PaneID)
 
-	if status == StatusLater {
-		s.LaterBookmarkID = bookmarkByPane[p.PaneID]
-	}
+	s.LaterBookmarkID = bookmarkByPane[p.PaneID]
 
 	return s
 }

@@ -8,19 +8,16 @@ import (
 type Status int
 
 const (
-	StatusWorking  Status = iota
-	StatusDone
-	StatusLater    // kept for compatibility
+	StatusAgentTurn Status = iota
+	StatusUserTurn
 )
 
 func (s Status) String() string {
 	switch s {
-	case StatusWorking:
-		return "working"
-	case StatusDone:
-		return "stopped"
-	case StatusLater:
-		return "later"
+	case StatusAgentTurn:
+		return "agent-turn"
+	case StatusUserTurn:
+		return "user-turn"
 	default:
 		return "unknown"
 	}
@@ -41,14 +38,12 @@ func (s *Status) UnmarshalJSON(data []byte) error {
 
 func ParseStatus(str string) Status {
 	switch str {
-	case "working":
-		return StatusWorking
-	case "stopped", "done":
-		return StatusDone
-	case "later", "deferred":
-		return StatusLater
+	case "agent-turn", "working":
+		return StatusAgentTurn
+	case "user-turn", "stopped", "done", "later", "deferred":
+		return StatusUserTurn
 	default:
-		return StatusDone
+		return StatusUserTurn
 	}
 }
 

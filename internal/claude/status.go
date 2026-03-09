@@ -42,17 +42,16 @@ func ReadSessionID(paneID string) string {
 func ReadStatus(paneID string) (Status, error) {
 	data, err := os.ReadFile(statusFilePath(paneID))
 	if err != nil {
-		return StatusDone, err
+		return StatusUserTurn, err
 	}
-	switch strings.TrimSpace(string(data)) {
-	case "working":
-		return StatusWorking, nil
-	case "stopped", "done":
-		return StatusDone, nil
-	case "later", "deferred":
-		return StatusLater, nil
+	s := strings.TrimSpace(string(data))
+	switch s {
+	case "agent-turn", "working":
+		return StatusAgentTurn, nil
+	case "user-turn", "stopped", "done", "later", "deferred":
+		return StatusUserTurn, nil
 	default:
-		return StatusDone, fmt.Errorf("unknown status: %s", string(data))
+		return StatusUserTurn, fmt.Errorf("unknown status: %s", s)
 	}
 }
 
@@ -362,9 +361,6 @@ func FindBookmarkIDByPane(paneID string) string {
 	return ""
 }
 
-func WriteLaterStatus(paneID string) error {
-	return WriteStatus(paneID, StatusLater)
-}
 
 
 
