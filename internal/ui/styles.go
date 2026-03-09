@@ -146,6 +146,13 @@ var (
 	// Diff stats
 	DiffAddedStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 
+	// Diff background highlights (dimmed, used for all diff lines)
+	DiffDelBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#f5e6e6", Dark: "#2a1517"})
+	DiffAddBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#e6f2e6", Dark: "#152a1a"})
+	// Char-level emphasis within inline diffs (slightly brighter bg)
+	DiffInlineDelBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#ebc8c8", Dark: "#3d1a1d"})
+	DiffInlineAddBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#c3dfc3", Dark: "#1a3d24"})
+
 	// Diff hunks overlay
 	DiffOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
