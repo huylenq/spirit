@@ -814,7 +814,13 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 			var effectStr string
 			switch {
 			case hookIsHandled(ev):
-				effectStr = "  " + ItemDetailStyle.Render(" → ") + DiffAddedStyle.Render(ev.Effect)
+				effectText := ev.Effect
+				effectSuffix := ""
+				if strings.HasSuffix(effectText, claude.HookEffectDedupSuffix) {
+					effectText = strings.TrimSuffix(effectText, claude.HookEffectDedupSuffix)
+					effectSuffix = ItemDetailStyle.Render(claude.HookEffectDedupSuffix)
+				}
+				effectStr = "  " + ItemDetailStyle.Render(" → ") + DiffAddedStyle.Render(effectText) + effectSuffix
 			case ev.Effect == "-":
 				effectStr = "  " + ItemDetailStyle.Render("(passthrough)")
 			default:

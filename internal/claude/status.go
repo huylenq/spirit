@@ -86,6 +86,10 @@ func WriteLastUserMessageCached(paneID, msg string) error {
 // HookEffectNone is the sentinel value written when a hook triggers no state changes.
 const HookEffectNone = "-"
 
+// HookEffectDedupSuffix is appended to effect strings when the daemon reports
+// that the nudge was redundant (no state change, no subscriber notification).
+const HookEffectDedupSuffix = " [=]"
+
 type HookEvent struct {
 	Time     string
 	HookType string
@@ -100,6 +104,7 @@ type GlobalHookEffect struct {
 	Effect    string `json:"effect"`
 	AnimalIdx int    `json:"animalIdx"`
 	ColorIdx  int    `json:"colorIdx"`
+	Count     int    `json:"count,omitempty"` // >1 when consecutive identical effects are merged
 }
 
 func ReadHookEvents(paneID string) ([]HookEvent, error) {

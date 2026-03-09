@@ -20,6 +20,7 @@ type Response struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 	Error   string          `json:"error,omitempty"`
 	Version uint64          `json:"version,omitempty"`
+	Deduped bool            `json:"deduped,omitempty"`
 }
 
 // Request type constants.
@@ -110,6 +111,7 @@ type NudgeData struct {
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
 	StopReason      string `json:"stopReason,omitempty"`
+	PermissionMode  string `json:"permissionMode,omitempty"`
 	IsWaiting       *bool  `json:"isWaiting,omitempty"`
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`

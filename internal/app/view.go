@@ -152,8 +152,17 @@ func (m Model) renderEffectsPanel() string {
 	} else {
 		for _, ev := range m.globalEffects {
 			avatar := ui.AvatarStyle(ev.ColorIdx).Render(ui.AvatarGlyph(ev.AnimalIdx))
+			effect := ev.Effect
+			suffix := ""
+			if strings.HasSuffix(effect, claude.HookEffectDedupSuffix) {
+				effect = strings.TrimSuffix(effect, claude.HookEffectDedupSuffix)
+				suffix += ui.ItemDetailStyle.Render(claude.HookEffectDedupSuffix)
+			}
+			if ev.Count > 1 {
+				suffix += ui.ItemDetailStyle.Render(fmt.Sprintf(" ×%d", ev.Count))
+			}
 			lines = append(lines,
-				avatar+" "+ui.ItemDetailStyle.Render(ev.Time+" "+ev.HookType+": ")+ui.TranscriptMsgStyle.Render(ev.Effect))
+				avatar+" "+ui.ItemDetailStyle.Render(ev.Time+" "+ev.HookType+": ")+ui.TranscriptMsgStyle.Render(effect)+suffix)
 		}
 	}
 

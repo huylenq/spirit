@@ -227,6 +227,9 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 	if m.showDiffs {
 		cmds = append(cmds, m.fetchDiffHunks(paneID, sessionID))
 	}
+	if m.debugMode {
+		cmds = append(cmds, m.fetchGlobalEffects())
+	}
 	return cmds
 }
 

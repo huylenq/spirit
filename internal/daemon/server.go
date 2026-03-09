@@ -167,9 +167,14 @@ func (d *Daemon) handleNudge(data json.RawMessage) *Response {
 		// Bare nudge without data — fall back to full poll
 		d.nudge()
 	} else {
-		if !d.patchSession(req) {
+		result := d.patchSession(req)
+		if result == patchNotFound {
 			// Pane not in session list yet — need full discovery
 			d.nudge()
+		}
+		if result == patchDeduped {
+			r := Response{Type: RespPong, Deduped: true}
+			return &r
 		}
 	}
 	r := Response{Type: RespPong}
@@ -338,10 +343,25 @@ func (d *Daemon) handleAllHookEffects() *Response {
 	}
 	// Sort by time descending (newest first). HH:MM:SS is lexicographically sortable.
 	sort.Slice(all, func(i, j int) bool { return all[i].Time > all[j].Time })
-	if len(all) > 25 {
-		all = all[:25]
+
+	// Merge consecutive identical entries (same hook type, effect, and avatar)
+	var merged []claude.GlobalHookEffect
+	for _, e := range all {
+		e.Count = 1
+		if n := len(merged); n > 0 {
+			prev := &merged[n-1]
+			if prev.HookType == e.HookType && prev.Effect == e.Effect &&
+				prev.AnimalIdx == e.AnimalIdx && prev.ColorIdx == e.ColorIdx {
+				prev.Count++
+				continue
+			}
+		}
+		merged = append(merged, e)
 	}
-	r := resultResponse(AllHookEffectsData{Effects: all})
+	if len(merged) > 25 {
+		merged = merged[:25]
+	}
+	r := resultResponse(AllHookEffectsData{Effects: merged})
 	return &r
 }
 

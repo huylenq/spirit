@@ -62,7 +62,7 @@ func HandleHook(hookType string) {
 
 	// Write status and optional data, then nudge daemon with the change.
 	// Build effect string alongside each action so it's always truthful.
-	nd := nudgeData{PaneID: paneID}
+	nd := nudgeData{PaneID: paneID, PermissionMode: input.PermissionMode}
 	var effects []string
 	switch hookType {
 	case "UserPromptSubmit":
@@ -150,6 +150,15 @@ func HandleHook(hookType string) {
 		effect = strings.Join(effects, "; ")
 	}
 
+	// Nudge daemon first so we can annotate the log with dedup status
+	shouldNudge := nd.Status != "" || nd.StopReason != "" || nd.IsWaiting != nil ||
+		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted || nd.Remove
+	if shouldNudge {
+		if nudgeDaemon(nd) {
+			effect += HookEffectDedupSuffix
+		}
+	}
+
 	// Append to hook log (compact JSON on one line, with effect annotation)
 	compactJSON := compactJSONString(rawJSON)
 	entry := fmt.Sprintf("%s %s\t%s\t%s\n", time.Now().Format("15:04:05"), hookType, compactJSON, effect)
@@ -162,12 +171,6 @@ func HandleHook(hookType string) {
 		if info, err := os.Stat(hooksPath); err == nil && info.Size() > 61440 {
 			trimHookFile(hooksPath)
 		}
-	}
-
-	// Nudge daemon if we have something to report
-	if nd.Status != "" || nd.StopReason != "" || nd.IsWaiting != nil ||
-		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted || nd.Remove {
-		nudgeDaemon(nd)
 	}
 }
 
@@ -243,6 +246,7 @@ type nudgeData struct {
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
 	StopReason      string `json:"stopReason,omitempty"`
+	PermissionMode  string `json:"permissionMode,omitempty"`
 	IsWaiting       *bool  `json:"isWaiting,omitempty"`
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
@@ -252,21 +256,34 @@ type nudgeData struct {
 
 func boolPtr(v bool) *bool { return &v }
 
-// nudgeDaemon sends a fire-and-forget "nudge" RPC to the daemon with the
-// status change data so it can patch the session in-place without re-polling.
-func nudgeDaemon(nd nudgeData) {
+// nudgeDaemon sends a "nudge" RPC to the daemon with the status change data
+// so it can patch the session in-place without re-polling.
+// Returns true if the daemon reported the nudge was deduped (no state change).
+func nudgeDaemon(nd nudgeData) bool {
 	sock := filepath.Join(StatusDir(), "daemon.sock")
 	conn, err := net.DialTimeout("unix", sock, 50*time.Millisecond)
 	if err != nil {
-		return // daemon not running, no big deal
+		return false // daemon not running, no big deal
 	}
 	defer conn.Close()
 	conn.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
 
-	json.NewEncoder(conn).Encode(nudgeRequest{
+	if err := json.NewEncoder(conn).Encode(nudgeRequest{
 		Type: "nudge",
 		Data: nd,
-	})
+	}); err != nil {
+		return false
+	}
+
+	// Read back response to check dedup status
+	conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	var resp struct {
+		Deduped bool `json:"deduped"`
+	}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return false
+	}
+	return resp.Deduped
 }
 
 // extractBashCommand extracts the "command" field from PostToolUse tool_input JSON.

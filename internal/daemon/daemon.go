@@ -246,9 +246,18 @@ func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
 	d.subMu.Unlock()
 }
 
+type patchResult int
+
+const (
+	patchNotFound patchResult = iota
+	patchApplied
+	patchDeduped
+)
+
 // patchSession applies a targeted status update from a hook, bypassing full discovery.
-// Returns true if a matching session was found and updated.
-func (d *Daemon) patchSession(nudge NudgeData) bool {
+// Returns patchNotFound if the pane isn't tracked, patchApplied if state changed,
+// or patchDeduped if the nudge was redundant (no version bump, no subscriber notify).
+func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	paneID := nudge.PaneID
 
 	d.mu.Lock()
@@ -265,60 +274,82 @@ func (d *Daemon) patchSession(nudge NudgeData) bool {
 		}
 		if !found {
 			d.mu.Unlock()
-			return false
+			return patchNotFound
 		}
 		d.version++
 		sessions := d.sessions
 		d.mu.Unlock()
 		d.notifySubscribers(sessions)
-		return true
+		return patchApplied
 	}
 
 	status := claude.ParseStatus(nudge.Status)
-	now := time.Now()
 
-	found := false
 	for i := range d.sessions {
-		if d.sessions[i].PaneID == paneID {
-			d.sessions[i].Status = status
-			d.sessions[i].LastChanged = now
-			if nudge.LastUserMessage != "" {
-				d.sessions[i].LastUserMessage = nudge.LastUserMessage
-			}
-			if status == claude.StatusAgentTurn {
-				d.sessions[i].PermissionMode = claude.ReadPermissionMode(paneID)
-				// Clear transient states when agent resumes
-				d.sessions[i].StopReason = ""
-				d.sessions[i].IsWaiting = false
-			}
-			if nudge.StopReason != "" {
-				d.sessions[i].StopReason = nudge.StopReason
-			}
-			if nudge.IsWaiting != nil {
-				d.sessions[i].IsWaiting = *nudge.IsWaiting
-			}
-			if nudge.IsGitCommit != nil && *nudge.IsGitCommit {
-				d.sessions[i].LastActionCommit = true
-			}
-			if nudge.IsFileEdit != nil && *nudge.IsFileEdit {
-				d.sessions[i].LastActionCommit = false
-			}
-			if nudge.Compacted {
-				d.sessions[i].CompactCount++
-			}
-			found = true
-			break
+		if d.sessions[i].PaneID != paneID {
+			continue
 		}
-	}
-	if !found {
+		s := &d.sessions[i]
+		changed := false
+
+		if nudge.Status != "" && s.Status != status {
+			s.Status = status
+			changed = true
+		}
+		if nudge.LastUserMessage != "" && s.LastUserMessage != nudge.LastUserMessage {
+			s.LastUserMessage = nudge.LastUserMessage
+			changed = true
+		}
+		if status == claude.StatusAgentTurn {
+			if nudge.PermissionMode != "" && s.PermissionMode != nudge.PermissionMode {
+				s.PermissionMode = nudge.PermissionMode
+				changed = true
+			}
+			if s.StopReason != "" {
+				s.StopReason = ""
+				changed = true
+			}
+			if s.IsWaiting {
+				s.IsWaiting = false
+				changed = true
+			}
+		}
+		if nudge.StopReason != "" && s.StopReason != nudge.StopReason {
+			s.StopReason = nudge.StopReason
+			changed = true
+		}
+		if nudge.IsWaiting != nil && s.IsWaiting != *nudge.IsWaiting {
+			s.IsWaiting = *nudge.IsWaiting
+			changed = true
+		}
+		if nudge.IsGitCommit != nil && *nudge.IsGitCommit && !s.LastActionCommit {
+			s.LastActionCommit = true
+			changed = true
+		}
+		if nudge.IsFileEdit != nil && *nudge.IsFileEdit && s.LastActionCommit {
+			s.LastActionCommit = false
+			changed = true
+		}
+		if nudge.Compacted {
+			s.CompactCount++
+			changed = true
+		}
+
+		if !changed {
+			d.mu.Unlock()
+			return patchDeduped
+		}
+
+		s.LastChanged = time.Now()
+		d.version++
+		sessions := d.sessions
 		d.mu.Unlock()
-		return false
+		d.notifySubscribers(sessions)
+		return patchApplied
 	}
-	d.version++
-	sessions := d.sessions
+
 	d.mu.Unlock()
-	d.notifySubscribers(sessions)
-	return true
+	return patchNotFound
 }
 
 func (d *Daemon) poll() {
