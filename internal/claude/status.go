@@ -93,6 +93,15 @@ type HookEvent struct {
 	Effect   string // what cmc did with this hook (empty = legacy/no data)
 }
 
+// GlobalHookEffect is a handled hook event tagged with its source session's avatar.
+type GlobalHookEffect struct {
+	Time      string `json:"time"`
+	HookType  string `json:"hookType"`
+	Effect    string `json:"effect"`
+	AnimalIdx int    `json:"animalIdx"`
+	ColorIdx  int    `json:"colorIdx"`
+}
+
 func ReadHookEvents(paneID string) ([]HookEvent, error) {
 	data, err := os.ReadFile(hookFilePath(paneID))
 	if err != nil {

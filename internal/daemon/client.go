@@ -231,6 +231,13 @@ func (c *Client) HookEvents(paneID string) ([]claude.HookEvent, error) {
 	return data.Events, err
 }
 
+// AllHookEffects fetches handled hook effects across all sessions (newest first, max 25).
+func (c *Client) AllHookEffects() ([]claude.GlobalHookEffect, error) {
+	var data AllHookEffectsData
+	err := c.rpcInto(Request{Type: ReqAllHookEffects}, &data)
+	return data.Effects, err
+}
+
 // PaneGeometry fetches pane layout for the minimap.
 func (c *Client) PaneGeometry(sessionName string) ([]tmux.PaneGeometry, error) {
 	var data PaneGeometryData

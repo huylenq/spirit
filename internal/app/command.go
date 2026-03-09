@@ -244,6 +244,9 @@ func (m Model) execCommitAndDone() (Model, tea.Cmd) {
 
 func (m Model) execDebug() (Model, tea.Cmd) {
 	m.debugMode = !m.debugMode
+	if m.debugMode {
+		return m, m.fetchGlobalEffects()
+	}
 	return m, nil
 }
 

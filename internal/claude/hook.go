@@ -68,7 +68,7 @@ func HandleHook(hookType string) {
 	case "UserPromptSubmit":
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
-		effects = append(effects, "status→working")
+		effects = append(effects, "status → working")
 		if input.Prompt != "" {
 			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
 			nd.LastUserMessage = input.Prompt
@@ -82,7 +82,7 @@ func HandleHook(hookType string) {
 	case "PreToolUse":
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
-		effects = append(effects, "status→working")
+		effects = append(effects, "status → working")
 		// Clear transient states — tool use means Claude is proceeding
 		RemoveWaiting(paneID)
 		os.Remove(stopReasonFilePath(paneID))
@@ -108,7 +108,7 @@ func HandleHook(hookType string) {
 	case "Stop":
 		nd.Status = StatusUserTurn.String()
 		WriteStatus(paneID, StatusUserTurn)
-		effects = append(effects, "status→your-turn")
+		effects = append(effects, "status → your-turn")
 		if input.StopReason != "" {
 			WriteStopReason(paneID, input.StopReason)
 			nd.StopReason = input.StopReason
@@ -128,7 +128,7 @@ func HandleHook(hookType string) {
 		nd.Status = StatusAgentTurn.String()
 		WriteStatus(paneID, StatusAgentTurn)
 		os.Remove(stopReasonFilePath(paneID))
-		effects = append(effects, "status→working; session init")
+		effects = append(effects, "status → working; session init")
 
 	case "SessionEnd":
 		RemoveStatus(paneID) // removes all status files including waiting

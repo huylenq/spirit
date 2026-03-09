@@ -88,10 +88,13 @@ func (m Model) View() string {
 		}
 	}
 
-	// Debug overlay at bottom-right
+	// Debug overlay: effects log (left) + session info (right)
 	if m.debugMode {
-		if debugStr := m.renderDebugOverlay(); debugStr != "" {
-			content = ui.OverlayBottomRight(content, debugStr, innerWidth)
+		effectsPanel := m.renderEffectsPanel()
+		sessionPanel := m.renderSessionPanel()
+		combined := lipgloss.JoinHorizontal(lipgloss.Bottom, effectsPanel, " ", sessionPanel)
+		if combined != "" {
+			content = ui.OverlayBottomRight(content, combined, innerWidth)
 		}
 	}
 
@@ -140,25 +143,38 @@ func (m Model) renderChordHints() string {
 	return prefix + "  " + strings.Join(parts, "  ")
 }
 
-func (m Model) renderDebugOverlay() string {
+func (m Model) renderEffectsPanel() string {
+	var lines []string
+	lines = append(lines, ui.DebugTitleStyle.Render("EFFECTS"))
+
+	if len(m.globalEffects) == 0 {
+		lines = append(lines, ui.ItemDetailStyle.Render("(no handled effects)"))
+	} else {
+		for _, ev := range m.globalEffects {
+			avatar := ui.AvatarStyle(ev.ColorIdx).Render(ui.AvatarGlyph(ev.AnimalIdx))
+			lines = append(lines,
+				avatar+" "+ui.ItemDetailStyle.Render(ev.Time+" "+ev.HookType+": ")+ui.TranscriptMsgStyle.Render(ev.Effect))
+		}
+	}
+
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderSessionPanel() string {
 	s, ok := m.list.SelectedItem()
 	if !ok {
 		return ""
 	}
 
-	title := ui.DebugTitleStyle.Render("DEBUG")
-	muted := lipgloss.NewStyle().Foreground(ui.ColorMuted)
-	val := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
-
 	line := func(label, v string) string {
 		if v == "" {
 			v = "(empty)"
 		}
-		return muted.Render(label+": ") + val.Render(v)
+		return ui.ItemDetailStyle.Render(label+": ") + ui.TranscriptMsgStyle.Render(v)
 	}
 
 	var lines []string
-	lines = append(lines, title)
+	lines = append(lines, ui.DebugTitleStyle.Render("SESSION"))
 	lines = append(lines, line("PaneID", s.PaneID))
 	lines = append(lines, line("SessionID", s.SessionID))
 	lines = append(lines, line("Status", s.Status.String()))
@@ -172,27 +188,27 @@ func (m Model) renderDebugOverlay() string {
 	lines = append(lines, line("GitBranch", s.GitBranch))
 
 	// Usage bar info
-	lines = append(lines, muted.Render("--- usage bar ---"))
+	lines = append(lines, ui.ItemDetailStyle.Render("--- usage bar ---"))
 	if m.usageBar.HasData() {
 		lines = append(lines, line("SessionPct", fmt.Sprintf("%d%%", m.usageBar.SessionPct())))
 		lines = append(lines, line("Resets", m.usageBar.Resets()))
 		lines = append(lines, line("RippleActive", fmt.Sprintf("%v", m.usageBar.RippleActive())))
 	} else {
-		lines = append(lines, muted.Render("(no usage data yet)"))
+		lines = append(lines, ui.ItemDetailStyle.Render("(no usage data yet)"))
 	}
 
 	// Summary cache info
 	if s.SessionID != "" {
 		cached := claude.ReadCachedSummary(s.SessionID)
 		sMod, tMod, fresh := claude.SummaryCacheInfo(s.SessionID)
-		lines = append(lines, muted.Render("--- summary cache ---"))
+		lines = append(lines, ui.ItemDetailStyle.Render("--- summary cache ---"))
 		if cached != nil {
 			lines = append(lines, line("Objective", debugTruncate(cached.Objective, 40)))
 			lines = append(lines, line("CacheHL", debugTruncate(cached.Headline, 40)))
 			lines = append(lines, line("ProblemType", cached.ProblemType))
 			lines = append(lines, line("InputWords", fmt.Sprintf("%d", cached.InputWords)))
 		} else {
-			lines = append(lines, muted.Render("(no cached summary)"))
+			lines = append(lines, ui.ItemDetailStyle.Render("(no cached summary)"))
 		}
 		freshStr := "stale"
 		if fresh {
@@ -206,8 +222,7 @@ func (m Model) renderDebugOverlay() string {
 		lines = append(lines, line("CacheFresh", freshStr))
 	}
 
-	body := strings.Join(lines, "\n")
-	return ui.DebugOverlayStyle.Render(body)
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
 }
 
 func debugTruncate(s string, n int) string {

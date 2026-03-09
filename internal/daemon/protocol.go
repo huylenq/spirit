@@ -45,7 +45,8 @@ const (
 	ReqQueue            = "queue"
 	ReqCancelQueue      = "cancel_queue"
 	ReqRawTranscript    = "raw_transcript"
-	ReqDiffHunks        = "diffhunks")
+	ReqDiffHunks        = "diffhunks"
+	ReqAllHookEffects   = "allhookeffects")
 
 // Response type constants.
 const (
@@ -156,6 +157,10 @@ type TranscriptEntriesData struct {
 
 type DiffHunksData struct {
 	Hunks []claude.FileDiffHunk `json:"hunks"`
+}
+
+type AllHookEffectsData struct {
+	Effects []claude.GlobalHookEffect `json:"effects"`
 }
 
 type PaneGeometryData struct {

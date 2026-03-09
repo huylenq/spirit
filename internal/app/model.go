@@ -77,6 +77,7 @@ type Model struct {
 	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
 	debugMode            bool      // toggle debug overlay (D key)
+	globalEffects        []claude.GlobalHookEffect // latest handled effects across all sessions
 	showHelp             bool      // toggle help overlay (? key)
 	lastClickPaneID      string    // pane clicked last (for double-click detection)
 	lastClickTime        time.Time // when the last minimap click happened
@@ -197,6 +198,13 @@ func (m Model) fetchRawTranscript(paneID, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		entries, _ := m.client.TranscriptEntries(sessionID)
 		return RawTranscriptReadyMsg{PaneID: paneID, Entries: entries}
+	}
+}
+
+func (m Model) fetchGlobalEffects() tea.Cmd {
+	return func() tea.Msg {
+		effects, _ := m.client.AllHookEffects()
+		return GlobalEffectsReadyMsg{Effects: effects}
 	}
 }
 

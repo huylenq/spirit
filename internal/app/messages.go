@@ -72,6 +72,11 @@ type SynthesizeAllReadyMsg struct {
 	Err     error
 }
 
+// GlobalEffectsReadyMsg is sent when global hook effects are loaded.
+type GlobalEffectsReadyMsg struct {
+	Effects []claude.GlobalHookEffect
+}
+
 // ClearFlashMsg auto-dismisses the error flash overlay.
 type ClearFlashMsg struct{}
 
