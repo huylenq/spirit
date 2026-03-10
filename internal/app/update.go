@@ -126,6 +126,70 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
+// selectDefaultPane picks the default session as if ctrl-tab was pressed:
+// skip originating pane, rotate to next user-turn, fall back to agent-turn,
+// then origPane itself, then first non-Later in same tmux session.
+// Returns true if the cursor was moved.
+func (m *Model) selectDefaultPane() bool {
+	if !m.origPane.Captured {
+		return false
+	}
+	items := m.list.Items()
+	if len(items) == 0 {
+		return false
+	}
+
+	origIdx := -1
+	for i, s := range items {
+		if s.PaneID == m.origPane.PaneID {
+			origIdx = i
+			break
+		}
+	}
+	if origIdx >= 0 {
+		n := len(items)
+		for offset := 1; offset < n; offset++ {
+			idx := (origIdx + offset) % n
+			if items[idx].Status == claude.StatusUserTurn && items[idx].LaterBookmarkID == "" {
+				return m.list.SelectByPaneID(items[idx].PaneID)
+			}
+		}
+		// No other user-turn — fall back to first agent-turn session
+		for _, s := range items {
+			if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
+				return m.list.SelectByPaneID(s.PaneID)
+			}
+		}
+		return m.list.SelectByPaneID(m.origPane.PaneID)
+	}
+
+	// Fallback: first non-Later session in same tmux session (already sorted)
+	for _, s := range items {
+		if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
+			return m.list.SelectByPaneID(s.PaneID)
+		}
+	}
+
+	return false
+}
+
+// snapToDefault calls selectDefaultPane and returns cmds to fetch
+// preview/transcript/summary for the newly selected session.
+func (m *Model) snapToDefault() []tea.Cmd {
+	if !m.selectDefaultPane() {
+		return nil
+	}
+	s, ok := m.list.SelectedItem()
+	if !ok {
+		return nil
+	}
+	return []tea.Cmd{
+		capturePreview(s.PaneID),
+		m.fetchTranscript(s.PaneID, s.SessionID),
+		m.fetchCachedSummary(s.PaneID, s.SessionID),
+	}
+}
+
 // tryInitialSelection auto-selects a pane on launch.
 //
 // Two modes controlled by env vars:
@@ -151,43 +215,19 @@ func (m *Model) tryInitialSelection() bool {
 	}
 	m.initialSelectionDone = true
 
-	items := m.list.Items()
-
 	if m.rotateNext {
-		// ctrl-tab: skip originating pane, rotate to next user-turn session
-		origIdx := -1
-		for i, s := range items {
-			if s.PaneID == m.origPane.PaneID {
-				origIdx = i
-				break
-			}
-		}
-		if origIdx >= 0 {
-			n := len(items)
-			for offset := 1; offset < n; offset++ {
-				idx := (origIdx + offset) % n
-				if items[idx].Status == claude.StatusUserTurn && items[idx].LaterBookmarkID == "" {
-					return m.list.SelectByPaneID(items[idx].PaneID)
-				}
-			}
-			// No other user-turn — fall back to first agent-turn session
-			for _, s := range items {
-				if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
-					return m.list.SelectByPaneID(s.PaneID)
-				}
-			}
+		return m.selectDefaultPane()
+	}
+
+	// ctrl-space: exact match on originating pane (any status)
+	for _, s := range m.sessions {
+		if s.PaneID == m.origPane.PaneID {
 			return m.list.SelectByPaneID(m.origPane.PaneID)
-		}
-	} else {
-		// ctrl-space: exact match on originating pane (any status)
-		for _, s := range m.sessions {
-			if s.PaneID == m.origPane.PaneID {
-				return m.list.SelectByPaneID(m.origPane.PaneID)
-			}
 		}
 	}
 
 	// Fallback: first non-Later session in same tmux session (already sorted)
+	items := m.list.Items()
 	for _, s := range items {
 		if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
 			return m.list.SelectByPaneID(s.PaneID)
@@ -438,18 +478,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MinimapReadyMsg:
 		paneStatuses := make(map[string]int)
+		paneAvatarColors := make(map[string]int)
 		for _, s := range m.sessions {
 			if s.LaterBookmarkID != "" {
 				paneStatuses[s.PaneID] = ui.PaneStatusLater
 			} else {
 				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
 			}
+			paneAvatarColors[s.PaneID] = s.AvatarColorIdx
 		}
 		selectedPaneID := ""
 		if s, ok := m.list.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
-		m.minimap.SetData(msg.Panes, paneStatuses, selectedPaneID, msg.SessionName)
+		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatarColors, selectedPaneID, msg.SessionName)
 		m.minimapSession = msg.SessionName
 		return m, nil
 
@@ -559,7 +601,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if s, ok := m.list.SelectedItem(); ok {
-				return m, sendPromptRelay(s.PaneID, val)
+				cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
+				cmds = append(cmds, m.snapToDefault()...)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		default:
@@ -586,22 +630,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Empty submit on a session with pending queue → cancel
 				if s.QueuePending != "" {
 					sessionID := s.SessionID
-					return m, func() tea.Msg {
+					cmds := []tea.Cmd{func() tea.Msg {
 						if err := m.client.CancelQueue(sessionID); err != nil {
 							return flashErrorMsg("cancel failed: " + err.Error())
 						}
 						return flashInfoMsg("queue cancelled")
-					}
+					}}
+					cmds = append(cmds, m.snapToDefault()...)
+					return m, tea.Batch(cmds...)
 				}
 				return m, nil
 			}
 			paneID, sessionID := s.PaneID, s.SessionID
-			return m, func() tea.Msg {
+			cmds := []tea.Cmd{func() tea.Msg {
 				if err := m.client.Queue(paneID, sessionID, val); err != nil {
 					return flashErrorMsg("queue failed: " + err.Error())
 				}
 				return flashInfoMsg("message queued")
-			}
+			}}
+			cmds = append(cmds, m.snapToDefault()...)
+			return m, tea.Batch(cmds...)
 		default:
 			ti := m.queueRelay.TextInput()
 			newTI, cmd := ti.Update(msg)
@@ -717,6 +765,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
+			// At project level, esc drops back to session level instead of quitting
+			if key.Matches(msg, Keys.Escape) && m.list.SelectionLevel() == ui.LevelProject {
+				m.list.EnterSessionLevel()
+				if s, ok := m.list.SelectedItem(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
+				}
+				return m, nil
+			}
 			if m.origPane.Captured {
 				tmux.SwitchToPaneQuiet(m.origPane.Session, m.origPane.Window, m.origPane.Pane)
 			}
@@ -753,7 +809,39 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, Keys.NavLeft):
+			// h: enter project-level navigation
+			if m.list.SelectionLevel() == ui.LevelSession {
+				m.list.EnterProjectLevel()
+				// Show preview for first session in selected project
+				if proj, ok := m.list.SelectedProject(); ok {
+					if s, ok := m.list.FirstSessionInProject(proj); ok {
+						return m, tea.Batch(m.fetchForSelection(s, true)...)
+					}
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, Keys.NavRight):
+			// l: exit project-level, enter session-level
+			if m.list.SelectionLevel() == ui.LevelProject {
+				m.list.EnterSessionLevel()
+				if s, ok := m.list.SelectedItem(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
+				}
+			}
+			return m, nil
+
 		case key.Matches(msg, Keys.Up):
+			if m.list.SelectionLevel() == ui.LevelProject {
+				m.list.MoveUpProject()
+				if proj, ok := m.list.SelectedProject(); ok {
+					if s, ok := m.list.FirstSessionInProject(proj); ok {
+						return m, tea.Batch(m.fetchForSelection(s, true)...)
+					}
+				}
+				return m, nil
+			}
 			m.list.MoveUp()
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -761,6 +849,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.Down):
+			if m.list.SelectionLevel() == ui.LevelProject {
+				m.list.MoveDownProject()
+				if proj, ok := m.list.SelectedProject(); ok {
+					if s, ok := m.list.FirstSessionInProject(proj); ok {
+						return m, tea.Batch(m.fetchForSelection(s, true)...)
+					}
+				}
+				return m, nil
+			}
 			m.list.MoveDown()
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -772,6 +869,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.Enter):
+			// Project level: enter drops into session level (same as l)
+			if m.list.SelectionLevel() == ui.LevelProject {
+				m.list.EnterSessionLevel()
+				if s, ok := m.list.SelectedItem(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
+				}
+				return m, nil
+			}
 			if m.showDiffs {
 				m.preview.ToggleDiffExpand()
 				return m, nil
@@ -823,6 +928,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, Keys.Search):
+			// Exit project level when entering search
+			if m.list.SelectionLevel() == ui.LevelProject {
+				m.list.EnterSessionLevel()
+			}
 			m.state = StateSearching
 			m.search.Activate()
 			return m, nil
@@ -1092,13 +1201,26 @@ func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) 
 		m.preview.ScrollLines(dir * wheelScrollLines)
 		return m, nil
 	case panelList:
-		if dir > 0 {
-			m.list.MoveDown()
+		if m.list.SelectionLevel() == ui.LevelProject {
+			if dir > 0 {
+				m.list.MoveDownProject()
+			} else {
+				m.list.MoveUpProject()
+			}
+			if proj, ok := m.list.SelectedProject(); ok {
+				if s, ok := m.list.FirstSessionInProject(proj); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
+				}
+			}
 		} else {
-			m.list.MoveUp()
-		}
-		if s, ok := m.list.SelectedItem(); ok {
-			return m, tea.Batch(m.fetchForSelection(s, true)...)
+			if dir > 0 {
+				m.list.MoveDown()
+			} else {
+				m.list.MoveUp()
+			}
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
 		}
 		return m, nil
 	}
