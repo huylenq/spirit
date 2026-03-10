@@ -114,7 +114,6 @@ func simulateCellOwnership(m MinimapModel) (grid [][]string, totalCols, totalRow
 			if y2 > gridH {
 				y2 = gridH
 			}
-
 			for r := y1; r < y2; r++ {
 				for c := x1; c < x2; c++ {
 					grid[r][xOffset+c] = p.PaneID

@@ -18,6 +18,7 @@ type MinimapModel struct {
 	selectedPaneID string
 	height         int
 	windowCols     int    // columns per window in the grid (default 40)
+	collapse       bool   // collapse single-pane windows to narrower columns
 	spinnerView    string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
@@ -100,6 +101,7 @@ var (
 )
 
 const DefaultMinimapWindowCols = 40
+const collapsedWindowCols = 12 // narrower column for single-pane windows
 
 func NewMinimapModel() MinimapModel {
 	return MinimapModel{windowCols: DefaultMinimapWindowCols}
@@ -107,6 +109,11 @@ func NewMinimapModel() MinimapModel {
 
 func (m *MinimapModel) SetSize(_, h int) {
 	m.height = h
+}
+
+// SetCollapse enables/disables collapsing single-pane windows to narrower columns.
+func (m *MinimapModel) SetCollapse(on bool) {
+	m.collapse = on
 }
 
 // SetWindowCols sets the per-window column width for the minimap grid.
@@ -132,11 +139,17 @@ func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, inn
 	if gaps < 0 {
 		gaps = 0
 	}
-	innerW = len(windows)*cols + gaps*3
 	winCols = make([]int, len(windows))
-	for i := range winCols {
-		winCols[i] = cols
+	innerW = 0
+	for i, w := range windows {
+		if m.collapse && len(w.Panes) == 1 && collapsedWindowCols < cols {
+			winCols[i] = collapsedWindowCols
+		} else {
+			winCols[i] = cols
+		}
+		innerW += winCols[i]
 	}
+	innerW += gaps * 3
 	innerH := m.height - 2
 	gridH = innerH - 1
 	if gridH < 1 {

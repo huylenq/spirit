@@ -46,7 +46,7 @@ var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSma
 
 // minimapModeFlash returns a styled string showing all modes with the active one highlighted,
 // plus a scale indicator showing the current max height.
-func minimapModeFlash(active string, maxH int) string {
+func minimapModeFlash(active string, maxH int, collapse bool) string {
 	var parts []string
 	for _, mode := range minimapModes {
 		if mode == active {
@@ -56,7 +56,11 @@ func minimapModeFlash(active string, maxH int) string {
 		}
 	}
 	scale := "  " + ui.FooterKeyStyle.Render("+/-") + " " + ui.FooterKeyStyle.Render(fmt.Sprintf("%d", maxH))
-	return "minimap: " + strings.Join(parts, ui.FooterDimStyle.Render(" · ")) + scale
+	collapseLabel := ui.FooterDimStyle.Render("collapse")
+	if collapse {
+		collapseLabel = ui.FooterKeyStyle.Render("collapse")
+	}
+	return "minimap: " + strings.Join(parts, ui.FooterDimStyle.Render(" · ")) + scale + "  " + ui.FooterKeyStyle.Render("c") + " " + collapseLabel
 }
 
 func nextMinimapMode(mode string) string {
@@ -102,6 +106,7 @@ type Model struct {
 	showMinimap       bool
 	minimapMode       string // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
 	minimapMaxH       int    // max minimap height (persisted pref, default 14)
+	minimapCollapse   bool   // collapse single-pane windows in minimap
 	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
 	binaryPath        string // cached os.Executable() result
 	minimapSession    string // tmux session currently shown in minimap
@@ -163,6 +168,7 @@ func NewModel(client *daemon.Client) Model {
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
+		minimapCollapse:   loadPrefBool("minimapCollapse"),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
@@ -216,6 +222,7 @@ func (m *Model) applyLayout() {
 	m.minimap.SetSize(0, minimapH)
 	// Scale window cols proportionally to height, preserving the default 40:14 aspect ratio
 	m.minimap.SetWindowCols(m.minimapMaxH * ui.DefaultMinimapWindowCols / defaultMinimapMaxH)
+	m.minimap.SetCollapse(m.minimapCollapse)
 
 	// When docked, subtract minimap height so panels shrink to make room
 	if m.shouldDockMinimap() {

@@ -675,6 +675,10 @@ func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.minimapMaxH--
 			m.applyLayout()
 		}
+	case "c":
+		m.minimapCollapse = !m.minimapCollapse
+		savePrefBool("minimapCollapse", m.minimapCollapse)
+		m.applyLayout()
 	default:
 		// Exit and persist scale, then re-dispatch so the key isn't swallowed
 		m.state = StateNormal
@@ -688,7 +692,7 @@ func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // flashMinimapSettings shows the current minimap mode+scale in the flash bar with a 3s timeout.
 func (m *Model) flashMinimapSettings() tea.Cmd {
-	m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH)
+	m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH, m.minimapCollapse)
 	m.flashIsError = false
 	m.flashExpiry = time.Now().Add(3 * time.Second)
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
@@ -1138,7 +1142,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.MinimapMode):
 		m.state = StateMinimapSettings
-		m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH)
+		m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH, m.minimapCollapse)
 		m.flashIsError = false
 		m.flashExpiry = time.Now().Add(3 * time.Second)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
