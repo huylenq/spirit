@@ -64,6 +64,7 @@ type PaneGeometry struct {
 	SessionName                       string
 	WindowIndex                       int
 	WindowName                        string
+	PaneTitle                         string
 	PaneIndex                         int
 	Left, Top                         int
 	Width, Height                     int
@@ -75,6 +76,7 @@ func ListPaneGeometry(sessionName string) ([]PaneGeometry, error) {
 		"#{pane_id}",
 		"#{window_index}",
 		"#{window_name}",
+		"#{pane_title}",
 		"#{pane_index}",
 		"#{pane_left}",
 		"#{pane_top}",
@@ -94,22 +96,23 @@ func ListPaneGeometry(sessionName string) ([]PaneGeometry, error) {
 			continue
 		}
 		parts := strings.Split(line, "\x1f")
-		if len(parts) != 10 {
+		if len(parts) != 11 {
 			continue
 		}
 		winIdx, _ := strconv.Atoi(parts[1])
-		paneIdx, _ := strconv.Atoi(parts[3])
-		left, _ := strconv.Atoi(parts[4])
-		top, _ := strconv.Atoi(parts[5])
-		w, _ := strconv.Atoi(parts[6])
-		h, _ := strconv.Atoi(parts[7])
-		ww, _ := strconv.Atoi(parts[8])
-		wh, _ := strconv.Atoi(parts[9])
+		paneIdx, _ := strconv.Atoi(parts[4])
+		left, _ := strconv.Atoi(parts[5])
+		top, _ := strconv.Atoi(parts[6])
+		w, _ := strconv.Atoi(parts[7])
+		h, _ := strconv.Atoi(parts[8])
+		ww, _ := strconv.Atoi(parts[9])
+		wh, _ := strconv.Atoi(parts[10])
 		panes = append(panes, PaneGeometry{
 			PaneID:       parts[0],
 			SessionName:  sessionName,
 			WindowIndex:  winIdx,
 			WindowName:   parts[2],
+			PaneTitle:    parts[3],
 			PaneIndex:    paneIdx,
 			Left:         left,
 			Top:          top,

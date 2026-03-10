@@ -105,6 +105,32 @@ func (m *PreviewModel) ClearSession() {
 	m.summary = nil
 }
 
+// SetNonClaudePane shows a raw terminal capture for a non-Claude pane.
+func (m *PreviewModel) SetNonClaudePane(paneID string, paneTitle string, content string) {
+	title := paneTitle
+	if title == "" {
+		title = paneID
+	}
+	isNew := m.session == nil || m.session.PaneID != paneID
+	m.session = &claude.ClaudeSession{PaneID: paneID, Project: title}
+	if isNew {
+		m.userMessages = nil
+		m.diffFiles = nil
+		m.diffStats = nil
+		m.summary = nil
+	}
+	if m.content == content {
+		return // skip re-render when content unchanged (daemon re-captures every ~1s)
+	}
+	m.content = content
+	if m.ready {
+		m.viewport.SetContent(truncateLines(content, m.viewport.Width))
+		if isNew {
+			m.viewport.GotoBottom()
+		}
+	}
+}
+
 func (m *PreviewModel) SetSession(s *claude.ClaudeSession, content string) {
 	isNewSession := m.session == nil || m.session.PaneID != s.PaneID
 	if isNewSession {

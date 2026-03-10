@@ -34,6 +34,7 @@ type minimapPane struct {
 	SessionName string
 	WindowIndex int
 	WindowName  string
+	PaneTitle   string
 	PaneIndex   int
 	// Absolute pixel coords within the window
 	Left, Top, Width, Height int
@@ -48,6 +49,7 @@ type MinimapPaneInfo struct {
 	SessionName string
 	WindowIndex int
 	PaneIndex   int
+	PaneTitle   string
 	IsClaude    bool
 }
 
@@ -134,6 +136,7 @@ func (m *MinimapModel) SetData(geom []tmux.PaneGeometry, paneStatuses map[string
 			SessionName:  g.SessionName,
 			WindowIndex:  g.WindowIndex,
 			WindowName:   g.WindowName,
+			PaneTitle:    g.PaneTitle,
 			PaneIndex:    g.PaneIndex,
 			Left:         g.Left,
 			Top:          g.Top,
@@ -423,6 +426,7 @@ func (m MinimapModel) SelectedPaneInfo() (MinimapPaneInfo, bool) {
 				SessionName: p.SessionName,
 				WindowIndex: p.WindowIndex,
 				PaneIndex:   p.PaneIndex,
+				PaneTitle:   p.PaneTitle,
 				IsClaude:    p.Status != PaneStatusNone,
 			}, true
 		}

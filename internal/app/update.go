@@ -327,6 +327,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showMinimap && m.minimapSession == "" {
 				cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
 			}
+		} else if m.nonClaudePane != nil {
+			cmds = append(cmds, capturePreview(m.nonClaudePane.PaneID))
 		}
 		// Wait for next daemon push
 		cmds = append(cmds, m.waitForDaemonUpdate())
@@ -338,8 +340,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetSession(&s, msg.Content)
-		} else if m.nonClaudePaneID != "" && m.nonClaudePaneID == msg.PaneID {
-			m.preview.SetNonClaudePane(msg.PaneID, msg.Content)
+		} else if m.nonClaudePane != nil && m.nonClaudePane.PaneID == msg.PaneID {
+			m.preview.SetNonClaudePane(msg.PaneID, m.nonClaudePane.PaneTitle, msg.Content)
 		}
 		return m, nil
 
@@ -505,23 +507,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MinimapReadyMsg:
 		paneStatuses := make(map[string]int)
-		paneAvatars := make(map[string]ui.PaneAvatarInfo)
 		for _, s := range m.sessions {
 			if s.LaterBookmarkID != "" {
 				paneStatuses[s.PaneID] = ui.PaneStatusLater
 			} else {
 				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
 			}
-			paneAvatars[s.PaneID] = ui.PaneAvatarInfo{
-				ColorIdx:  s.AvatarColorIdx,
-				AnimalIdx: s.AvatarAnimalIdx,
-			}
 		}
 		selectedPaneID := ""
 		if s, ok := m.list.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
-		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatars, selectedPaneID, msg.SessionName)
+		m.minimap.SetData(msg.Panes, paneStatuses, selectedPaneID, msg.SessionName)
 		m.minimapSession = msg.SessionName
 		return m, nil
 
@@ -1152,7 +1149,7 @@ func (m *Model) focusNonClaudePane() tea.Cmd {
 		m.preview.ClearSession()
 		return nil
 	}
-	m.nonClaudePaneID = info.PaneID
+	m.nonClaudePane = &info
 	return tea.Batch(
 		capturePreview(info.PaneID),
 		switchPaneQuiet(info.SessionName, info.WindowIndex, info.PaneIndex),

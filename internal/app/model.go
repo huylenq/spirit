@@ -82,6 +82,7 @@ type Model struct {
 	showHelp             bool      // toggle help overlay (? key)
 	lastClickPaneID      string    // pane clicked last (for double-click detection)
 	lastClickTime        time.Time // when the last minimap click happened
+	nonClaudePane        *ui.MinimapPaneInfo // focused non-Claude pane (minimap nav)
 	palette              ui.PaletteModel
 	commands             []Command
 }
@@ -241,6 +242,7 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 // preview capture, transcript, diff stats, summary, tmux pane switch, and active overlays.
 // If syncMinimap is true, also refreshes the minimap to track the new selection.
 func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []tea.Cmd {
+	m.nonClaudePane = nil // clear non-Claude focus when selecting a Claude session
 	cmds := []tea.Cmd{
 		capturePreview(s.PaneID),
 		m.fetchTranscript(s.PaneID, s.SessionID),
