@@ -180,6 +180,7 @@ func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
 	if !m.list.SelectByPaneID(targetID) {
 		return nil
 	}
+	m.recordJump() // register destination so ctrl+i can reach it
 	s, ok := m.list.SelectedItem()
 	if !ok {
 		return nil
@@ -211,29 +212,34 @@ func (m *Model) tryInitialSelection() bool {
 		return false
 	}
 	m.initialSelectionDone = true
-	m.recordJump() // record cursor-0 default so ctrl+i can return to the auto-selected target
+	m.recordJump() // record pre-selection position (cursor 0)
 
+	var moved bool
 	if m.rotateNext {
-		return m.selectDefaultPane()
-	}
-
-	// ctrl-space: exact match on originating pane (any status)
-	for _, s := range m.sessions {
-		if s.PaneID == m.origPane.PaneID {
-			return m.list.SelectByPaneID(m.origPane.PaneID)
+		moved = m.selectDefaultPane()
+	} else {
+		// ctrl-space: exact match on originating pane (any status)
+		for _, s := range m.sessions {
+			if s.PaneID == m.origPane.PaneID {
+				moved = m.list.SelectByPaneID(m.origPane.PaneID)
+				break
+			}
+		}
+		// Fallback: first non-Later session in same tmux session (already sorted)
+		if !moved {
+			items := m.list.Items()
+			for _, s := range items {
+				if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
+					moved = m.list.SelectByPaneID(s.PaneID)
+					break
+				}
+			}
 		}
 	}
-
-	// Fallback: first non-Later session in same tmux session (already sorted)
-	items := m.list.Items()
-	for _, s := range items {
-		if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
-			return m.list.SelectByPaneID(s.PaneID)
-		}
+	if moved {
+		m.recordJump() // register destination so ctrl+i can reach it
 	}
-
-	// Default: cursor stays at 0
-	return false
+	return moved
 }
 
 // claudeStatusToPane converts claude.Status to ui.PaneStatus* constant.
@@ -291,6 +297,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.Sessions
 		m.list.SetItems(m.sessions)
 		m.tryInitialSelection()
+		// On first load, pre-register the snap target so ctrl+i can reach it
+		if !m.initialSelectionDone && len(m.jumpTrail) == 0 && len(m.sessions) > 0 {
+			m.recordJump() // current position (cursor 0)
+			if target := m.list.SnapTargetPaneID(); target != "" {
+				m.jumpTrail = append(m.jumpTrail, target)
+				m.jumpCursor = len(m.jumpTrail)
+			}
+			m.initialSelectionDone = true
+		}
 		// Auto-select newly created session once it appears
 		if m.pendingSelectPaneID != "" {
 			m.list.EnterSessionLevel() // switch from project → session level
@@ -1319,6 +1334,14 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.ScrollUp):
 		m.preview.ScrollUp()
+		return m, nil
+
+	case key.Matches(msg, Keys.LineDown):
+		m.preview.ScrollLines(1)
+		return m, nil
+
+	case key.Matches(msg, Keys.LineUp):
+		m.preview.ScrollLines(-1)
 		return m, nil
 
 	case key.Matches(msg, Keys.PageDown):
