@@ -14,6 +14,16 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
+// MessageLogEntry is a recorded flash message for the message log.
+type MessageLogEntry struct {
+	Text    string
+	IsError bool
+	Time    time.Time
+}
+
+const maxMessageLog = 50
+const messageToastTTL = 8 * time.Second
+
 var claudeSpinner = spinner.Spinner{
 	Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
 	FPS:    80 * time.Millisecond,
@@ -31,6 +41,7 @@ const (
 	StateNewSessionPrompt
 	StateMinimapSettings
 	StatePrefsEditor
+	StateIdeaPrompt // creating or editing an idea
 )
 
 const defaultMinimapMaxH = 14
@@ -121,6 +132,9 @@ type Model struct {
 	flashMsg       string    // transient message overlay
 	flashIsError   bool      // true = error style, false = info style
 	flashExpiry    time.Time // when to auto-dismiss the flash
+	messageLog     []MessageLogEntry // ring buffer of past flash messages (permanent history)
+	toastQueue     []MessageLogEntry // entries actively displayed in the toast overlay
+	showMessageLog bool              // toggle full message log overlay
 	renaming       bool   // true while Haiku is generating a window name
 	pendingChord         string // accumulated chord prefix (e.g. "y" waiting for next key)
 	initialSelectionDone bool   // true after first smart cursor placement
@@ -144,6 +158,7 @@ type Model struct {
 	debugMode            bool      // toggle debug overlay (D key)
 	globalEffects        []claude.GlobalHookEffect // latest handled effects across all sessions
 	showHelp             bool      // toggle help overlay (? key)
+	showSpiritAnimal     bool      // toggle spirit animal overlay (gs chord)
 	lastClickPaneID      string    // pane clicked last (for double-click detection)
 	lastClickTime        time.Time // when the last minimap click happened
 	jumpTrail            []string  // pane IDs for jump history (like Vim's jumplist)
@@ -152,11 +167,16 @@ type Model struct {
 	palette              ui.PaletteModel
 	prefsEditor          ui.PrefsEditorModel
 	commands             []Command
+	editingIdeaID        string // non-empty when editing existing idea
+	editingIdeaCWD       string // CWD for idea being created/edited
+	submittingIdeaID     string // idea ID being submitted as session
+	submittingIdeaCWD    string // CWD for idea being submitted
 }
 
 func NewModel(client *daemon.Client) Model {
 	list := ui.NewListModel()
 	list.SetGroupByProject(loadPrefBool("groupByProject"))
+	list.SetShowIdeas(loadPrefBool("showIdeas"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -183,6 +203,38 @@ func NewModel(client *daemon.Client) Model {
 		rotateNext:        os.Getenv("CMC_ROTATE_NEXT") == "1",
 		binaryPath:        bin,
 	}
+}
+
+// toast enqueues a message for display in the toast overlay and schedules its removal.
+func (m *Model) toast(text string, isError bool) tea.Cmd {
+	m.toastQueue = append(m.toastQueue, MessageLogEntry{
+		Text:    text,
+		IsError: isError,
+		Time:    time.Now(),
+	})
+	return tea.Tick(messageToastTTL, func(time.Time) tea.Msg { return ClearToastMsg{} })
+}
+
+// setFlash records a flash message and writes it to the footer flash bar.
+// When the flash bar is occupied by a transient state (StateMinimapSettings),
+// it routes to the toast overlay instead.
+func (m *Model) setFlash(text string, isError bool, ttl time.Duration) tea.Cmd {
+	m.messageLog = append(m.messageLog, MessageLogEntry{
+		Text:    text,
+		IsError: isError,
+		Time:    time.Now(),
+	})
+	if len(m.messageLog) > maxMessageLog {
+		m.messageLog = m.messageLog[len(m.messageLog)-maxMessageLog:]
+	}
+
+	if m.state == StateMinimapSettings {
+		return m.toast(text, isError)
+	}
+	m.flashMsg = text
+	m.flashIsError = isError
+	m.flashExpiry = time.Now().Add(ttl)
+	return tea.Tick(ttl, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 }
 
 // innerWidth returns the usable content width (total width minus side borders when not fullscreen).
@@ -547,6 +599,30 @@ func (m *Model) jumpForward() string {
 	}
 	m.jumpCursor++
 	return m.jumpTrail[m.jumpCursor]
+}
+
+// discoverIdeas scans unique CWDs from sessions for .cmc/ideas/ directories.
+func (m Model) discoverIdeas(sessions []claude.ClaudeSession) tea.Cmd {
+	// Collect unique CWDs
+	seen := make(map[string]bool)
+	var cwds []string
+	for _, s := range sessions {
+		if s.CWD != "" && !seen[s.CWD] {
+			seen[s.CWD] = true
+			cwds = append(cwds, s.CWD)
+		}
+	}
+	if len(cwds) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		var all []claude.Idea
+		for _, cwd := range cwds {
+			ideas, _ := claude.ReadAllIdeas(cwd)
+			all = append(all, ideas...)
+		}
+		return IdeasRefreshedMsg{Ideas: all}
+	}
 }
 
 func (m Model) fetchRenameWindow(sessionName string, windowIndex int) tea.Cmd {

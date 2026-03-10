@@ -81,6 +81,9 @@ type GlobalEffectsReadyMsg struct {
 // ClearFlashMsg auto-dismisses the error flash overlay.
 type ClearFlashMsg struct{}
 
+// ClearToastMsg pops the oldest entry from the toast queue after its TTL expires.
+type ClearToastMsg struct{}
+
 // MinimapReadyMsg is sent when pane geometry is loaded for the minimap.
 type MinimapReadyMsg struct {
 	SessionName string
@@ -105,6 +108,11 @@ type OriginalPaneCapturedMsg struct {
 // NewSessionCreatedMsg is sent when a new tmux window+session is spawned via "a".
 type NewSessionCreatedMsg struct {
 	PaneID string
+}
+
+// IdeasRefreshedMsg is sent when idea discovery completes.
+type IdeasRefreshedMsg struct {
+	Ideas []claude.Idea
 }
 
 // PaneKilledMsg is sent after attempting to kill a session and close its pane.

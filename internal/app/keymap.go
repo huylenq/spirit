@@ -113,6 +113,9 @@ type KeyMap struct {
 	JumpBack    key.Binding
 	JumpForward key.Binding
 
+	// Message log overlay
+	MessageLog key.Binding
+
 	// Preferences editor
 	Prefs key.Binding
 }
@@ -166,6 +169,7 @@ var Chords = []Chord{
 	{Keys: "gh", Help: "hooks"},
 	{Keys: "gt", Help: "transcript json"},
 	{Keys: "gg", Help: "top"},
+	{Keys: "gs", Help: "spirit animal"},
 }
 
 func init() {
@@ -176,6 +180,7 @@ func init() {
 		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
 		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
 		"gg": func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
+		"gs": func(m *Model) (Model, tea.Cmd) { return m.execShowSpiritAnimal() },
 	}
 	for i := range Chords {
 		Chords[i].Execute = executors[Chords[i].Keys]
@@ -372,7 +377,11 @@ var Keys = KeyMap{
 		key.WithHelp("ctrl+o/i", "jump back/fwd"),
 	),
 	JumpForward: key.NewBinding(
-		key.WithKeys("ctrl+i"),
+		key.WithKeys("tab"), // ctrl+i and tab are the same byte (0x09) in terminals
+	),
+	MessageLog: key.NewBinding(
+		key.WithKeys("!"),
+		key.WithHelp("!", "messages"),
 	),
 	Prefs: key.NewBinding(
 		key.WithKeys("P"),

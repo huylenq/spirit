@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -90,7 +91,22 @@ func (m Model) View() string {
 
 	// Preview panel (reduced height when queue section visible)
 	previewH := contentHeight - queueHeight
-	previewContent := m.preview.View()
+	var previewContent string
+	if m.state == StateIdeaPrompt {
+		project := ""
+		if m.editingIdeaCWD != "" {
+			// Extract basename manually to avoid filepath import
+			parts := strings.Split(m.editingIdeaCWD, "/")
+			if len(parts) > 0 {
+				project = parts[len(parts)-1]
+			}
+		}
+		previewContent = m.renderIdeaEditor(project, previewWidth, previewH)
+	} else if idea, ok := m.list.SelectedIdea(); ok {
+		previewContent = m.renderIdeaPreview(idea, previewWidth)
+	} else {
+		previewContent = m.preview.View()
+	}
 	previewPanel := ui.PreviewPanelStyle.
 		Width(previewWidth).
 		Height(previewH).
@@ -132,9 +148,26 @@ func (m Model) View() string {
 		}
 	}
 
+	// Spirit animal overlay centered (lower z-order than help)
+	if m.showSpiritAnimal {
+		if s, ok := m.list.SelectedItem(); ok {
+			overlay := ui.RenderSpiritOverlay(s.AvatarAnimalIdx, s.AvatarColorIdx, m.width, m.height)
+			content = ui.OverlayCentered(content, overlay, innerWidth)
+		}
+	}
+
 	// Help overlay centered
 	if m.showHelp {
 		content = ui.OverlayCentered(content, m.renderHelpOverlay(), innerWidth)
+	}
+
+	// Message log: full history (!) or auto-toast for suppressed messages
+	if !m.debugMode {
+		if m.showMessageLog {
+			content = ui.OverlayBottomRight(content, m.renderMessageLog(), innerWidth)
+		} else if toast := m.renderMessageToast(); toast != "" {
+			content = ui.OverlayBottomRight(content, toast, innerWidth)
+		}
 	}
 
 	// Command palette overlay centered
@@ -370,6 +403,23 @@ func hint(k, desc string) string {
 func (m Model) renderNormalFooterHints() string {
 	var parts []string
 
+	// Idea-specific footer
+	if m.list.IsIdeaSelected() {
+		parts = append(parts, hint("j/k", "nav"))
+		parts = append(parts, hint("enter", "submit"), hint("i", "edit"), hint("e", "$EDITOR"), hint("d", "delete"))
+		parts = append(parts, hint("?", "help"), hint("q", "quit"))
+		return strings.Join(parts, "  ")
+	}
+
+	// IDEAS project-level footer
+	if m.list.SelectionLevel() == ui.LevelProject {
+		if pe, ok := m.list.SelectedProject(); ok && pe.StatusOrder == ui.OrderIdeas {
+			parts = append(parts, hint("j/k", "nav"), hint("i", "new idea"), hint("l", "enter"))
+			parts = append(parts, hint("?", "help"), hint("q", "quit"))
+			return strings.Join(parts, "  ")
+		}
+	}
+
 	s, hasSelection := m.list.SelectedItem()
 
 	// Always show nav
@@ -453,6 +503,7 @@ func (m Model) renderHelpOverlay() string {
 		hint("g", "group by project"),
 		hint("t", "toggle transcript"),
 		hint("z", "fullscreen toggle"),
+		hint("!", "message log"),
 	}
 	col3Parts = append(col3Parts, chordHints...)
 	col3Parts = append(col3Parts, "", ui.FooterDimStyle.Render("press ? or esc to close"))
@@ -461,6 +512,114 @@ func (m Model) renderHelpOverlay() string {
 	columns := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2, "    ", col3)
 	body := title + "\n\n" + columns
 	return ui.HelpOverlayStyle.Render(body)
+}
+
+// formatMessageEntry formats a single message log entry as a styled line.
+func formatMessageEntry(entry MessageLogEntry) string {
+	ts := ui.FooterDimStyle.Render(entry.Time.Format("15:04:05"))
+	style := ui.FlashInfoStyle
+	if entry.IsError {
+		style = ui.FlashErrorStyle
+	}
+	return ts + " " + style.Render(entry.Text)
+}
+
+// renderMessageLog returns the full message history overlay.
+func (m Model) renderMessageLog() string {
+	title := ui.HelpTitleStyle.Render("Messages")
+	dismiss := ui.FooterDimStyle.Render("! or esc to close")
+	if len(m.messageLog) == 0 {
+		body := title + "\n\n" + ui.FooterDimStyle.Render("no messages yet") + "\n\n" + dismiss
+		return ui.HelpOverlayStyle.Render(body)
+	}
+	entries := m.messageLog
+	if len(entries) > 20 {
+		entries = entries[len(entries)-20:]
+	}
+	var lines []string
+	for _, entry := range entries {
+		lines = append(lines, formatMessageEntry(entry))
+	}
+	body := title + "\n\n" + strings.Join(lines, "\n") + "\n\n" + dismiss
+	return ui.HelpOverlayStyle.Render(body)
+}
+
+// renderMessageToast renders the active toast queue. Entries are explicitly popped
+// by ClearToastMsg ticks — no TTL filtering needed here.
+func (m Model) renderMessageToast() string {
+	if len(m.toastQueue) == 0 {
+		return ""
+	}
+	var lines []string
+	for _, entry := range m.toastQueue {
+		lines = append(lines, formatMessageEntry(entry))
+	}
+	return ui.ToastStyle.Render(strings.Join(lines, "\n"))
+}
+
+func ideaAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+// renderIdeaEditor renders the idea textarea editor inline in the preview panel.
+func (m Model) renderIdeaEditor(project string, width, height int) string {
+	var modeLabel string
+	switch m.promptEditor.Mode() {
+	case ui.ModeNewIdea:
+		modeLabel = "New idea"
+	case ui.ModeEditIdea:
+		modeLabel = "Edit idea"
+	default:
+		modeLabel = "Idea"
+	}
+
+	header := ui.PromptEditorTitleStyle.Render(modeLabel + ": " + project)
+
+	// Size the textarea to fill available space
+	editorWidth := width - 4
+	if editorWidth < 20 {
+		editorWidth = 20
+	}
+	editorHeight := height - 6 // header + hints + padding
+	if editorHeight < 3 {
+		editorHeight = 3
+	}
+	m.promptEditor.SetSize(editorWidth, editorHeight)
+
+	body := m.promptEditor.ViewTextarea()
+
+	hint := ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" save  ") +
+		ui.FooterKeyStyle.Render("alt+enter") + ui.FooterDimStyle.Render(" newline  ") +
+		ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" cancel")
+
+	return header + "\n\n" + body + "\n\n" + hint
+}
+
+// renderIdeaPreview renders the full idea body as plain text for the preview panel.
+func (m Model) renderIdeaPreview(idea claude.Idea, width int) string {
+	header := ui.PromptEditorTitleStyle.Render(ui.IconIdea + " " + idea.DisplayTitle())
+	project := ui.ItemDetailStyle.Render(ui.IconFolder + " " + idea.Project)
+	age := ui.ItemDetailStyle.Render("created " + ideaAge(idea.CreatedAt) + " ago")
+
+	body := idea.Body
+	if body == "" {
+		body = ui.ItemDetailStyle.Render("(empty)")
+	}
+
+	return header + "\n" + project + "  " + age + "\n\n" + body
 }
 
 func (m Model) renderSearchBar(width int) string {
@@ -508,6 +667,10 @@ func (m Model) renderFooter(width int) string {
 		h := ui.FooterKeyStyle.Render("enter") + " append  " +
 			ui.FooterKeyStyle.Render("↑↓") + " select  " +
 			ui.FooterKeyStyle.Render("ctrl+d") + " remove  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateIdeaPrompt:
+		h := ui.FooterKeyStyle.Render("enter") + " save  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateKillConfirm:

@@ -232,21 +232,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.client != nil {
 			m.client.Close()
 		}
-		m.flashMsg = "daemon disconnected, reconnecting..."
-		m.flashIsError = true
-		m.flashExpiry = time.Now().Add(30 * time.Second)
-		return m, reconnectToDaemon()
+		flashCmd := m.setFlash("daemon disconnected, reconnecting...", true, 30*time.Second)
+		return m, tea.Batch(flashCmd, reconnectToDaemon())
 
 	case DaemonReconnectedMsg:
 		m.err = nil
 		m.client = msg.Client
-		m.flashMsg = "reconnected"
-		m.flashIsError = false
-		m.flashExpiry = time.Now().Add(2 * time.Second)
-		return m, tea.Batch(
-			m.subscribeToDaemon(),
-			tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} }),
-		)
+		flashCmd := m.setFlash("reconnected", false, 2*time.Second)
+		return m, tea.Batch(m.subscribeToDaemon(), flashCmd)
 
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
@@ -299,9 +292,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.nonClaudePane != nil {
 			cmds = append(cmds, capturePreview(m.nonClaudePane.PaneID))
 		}
+		// Discover ideas from visible project CWDs
+		cmds = append(cmds, m.discoverIdeas(msg.Sessions))
 		// Wait for next daemon push
 		cmds = append(cmds, m.waitForDaemonUpdate())
 		return m, tea.Batch(cmds...)
+
+	case IdeasRefreshedMsg:
+		m.list.SetIdeas(msg.Ideas)
+		return m, nil
 
 	case PreviewReadyMsg:
 		if msg.Err != nil {
@@ -351,10 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SummaryReadyMsg:
 		if msg.Err != nil {
-			m.flashMsg = "Synthesize failed: " + msg.Err.Error()
-			m.flashIsError = true
-			m.flashExpiry = time.Now().Add(5 * time.Second)
-			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+			return m, m.setFlash("Synthesize failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetSummary(msg.Summary)
@@ -375,19 +371,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.SetItems(m.sessions)
 		}
 		if msg.FromCache && msg.UserRequested {
-			m.flashMsg = "summary unchanged (cached)"
-			m.flashIsError = false
-			m.flashExpiry = time.Now().Add(2 * time.Second)
-			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+			return m, m.setFlash("summary unchanged (cached)", false, 2*time.Second)
 		}
 		return m, nil
 
 	case SynthesizeAllReadyMsg:
 		if msg.Err != nil {
-			m.flashMsg = "Synthesize all failed: " + msg.Err.Error()
-			m.flashIsError = true
-			m.flashExpiry = time.Now().Add(5 * time.Second)
-			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+			return m, m.setFlash("Synthesize all failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
 		updated := false
 		for _, r := range msg.Results {
@@ -415,41 +405,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case flashInfoMsg:
-		m.flashMsg = string(msg)
-		m.flashIsError = false
-		m.flashExpiry = time.Now().Add(2 * time.Second)
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+		return m, m.setFlash(string(msg), false, 2*time.Second)
 
 	case flashErrorMsg:
-		m.flashMsg = string(msg)
-		m.flashIsError = true
-		m.flashExpiry = time.Now().Add(5 * time.Second)
-		return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+		return m, m.setFlash(string(msg), true, 5*time.Second)
+
+	case ClearToastMsg:
+		if len(m.toastQueue) > 0 {
+			m.toastQueue = m.toastQueue[1:]
+		}
+		return m, nil
 
 	case ClearFlashMsg:
 		if !m.flashExpiry.IsZero() && !time.Now().Before(m.flashExpiry) {
+			// Don't auto-dismiss minimap settings state — it requires explicit
+			// exit (Esc or unrecognized key) to prevent accidental commands when
+			// the transient state escapes without the user noticing.
+			if m.state == StateMinimapSettings {
+				return m, nil
+			}
 			m.flashMsg = ""
 			m.flashIsError = false
 			m.flashExpiry = time.Time{}
-			if m.state == StateMinimapSettings {
-				m.state = StateNormal
-				savePrefInt("minimapMaxH", m.minimapMaxH)
-			}
 		}
 		return m, nil
 
 	case WindowRenameMsg:
 		m.renaming = false
 		if msg.Err != nil {
-			m.flashMsg = "Rename failed: " + msg.Err.Error()
-			m.flashIsError = true
-			m.flashExpiry = time.Now().Add(5 * time.Second)
-			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+			return m, m.setFlash("Rename failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
-		m.flashMsg = "renamed → " + msg.Name
-		m.flashIsError = false
-		m.flashExpiry = time.Now().Add(3 * time.Second)
-		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+		return m, m.setFlash("renamed → "+msg.Name, false, 3*time.Second)
 
 	case NewSessionCreatedMsg:
 		if m.newSessionWasSession {
@@ -461,10 +447,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSelectPaneID = msg.PaneID
 		}
 		m.newSessionWasSession = false
-		m.flashMsg = "new session created"
-		m.flashIsError = false
-		m.flashExpiry = time.Now().Add(2 * time.Second)
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+		return m, m.setFlash("new session created", false, 2*time.Second)
 
 	case PaneKilledMsg:
 		title := m.killTargetTitle
@@ -477,15 +460,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.killTargetColorIdx = 0
 		m.killTargetBookmarkID = ""
 		if msg.Err != nil {
-			m.flashMsg = "kill failed: " + msg.Err.Error()
-			m.flashIsError = true
-			m.flashExpiry = time.Now().Add(5 * time.Second)
-			return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+			return m, m.setFlash("kill failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
-		m.flashMsg = "killed " + title
-		m.flashIsError = false
-		m.flashExpiry = time.Now().Add(2 * time.Second)
-		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+		return m, m.setFlash("killed "+title, false, 2*time.Second)
 
 	case OriginalPaneCapturedMsg:
 		if msg.Err == nil {
@@ -537,7 +514,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseMsg:
-		if m.state != StateNormal || m.showHelp {
+		if m.state != StateNormal || m.showHelp || m.showSpiritAnimal {
 			return m, nil
 		}
 		switch msg.Button {
@@ -575,6 +552,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyQueueRelay(msg)
 	case StateNewSessionPrompt:
 		return m.handleKeyNewSession(msg)
+	case StateIdeaPrompt:
+		return m.handleKeyIdeaPrompt(msg)
 	case StatePalette:
 		return m.handleKeyPalette(msg)
 	default:
@@ -642,6 +621,12 @@ func (m Model) handleKeyKillConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "esc":
+		m.state = StateNormal
+		m.flashMsg = ""
+		m.flashExpiry = time.Time{}
+		savePrefInt("minimapMaxH", m.minimapMaxH)
+		return m, nil
 	case "M":
 		m.minimapMode = nextMinimapMode(m.minimapMode)
 		savePrefString("minimapMode", m.minimapMode)
@@ -847,6 +832,8 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Escape):
 		m.state = StateNormal
 		m.promptEditor.Deactivate()
+		m.submittingIdeaID = ""
+		m.submittingIdeaCWD = ""
 		// Restore previous session-level selection if we came from there
 		if m.newSessionWasSession {
 			m.list.EnterSessionLevel()
@@ -871,8 +858,60 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		model := m.promptEditor.SelectedModel()
 		prompt := m.promptEditor.Confirm()
 		m.state = StateNormal
+		// If submitting an idea, delete the idea file after spawning
+		spawnCmd := m.spawnNewSession(prompt, model)
+		if m.submittingIdeaID != "" {
+			ideaCWD, ideaID := m.submittingIdeaCWD, m.submittingIdeaID
+			m.submittingIdeaID = ""
+			m.submittingIdeaCWD = ""
+			return m, tea.Batch(spawnCmd, func() tea.Msg {
+				claude.RemoveIdea(ideaCWD, ideaID) //nolint:errcheck
+				return nil
+			})
+		}
 		// Keep newSessionWasSession alive — cleared in NewSessionCreatedMsg handler
-		return m, m.spawnNewSession(prompt, model)
+		return m, spawnCmd
+	default:
+		cmd := m.promptEditor.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyIdeaPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.promptEditor.Deactivate()
+		m.editingIdeaID = ""
+		m.editingIdeaCWD = ""
+		return m, nil
+	case msg.Type == tea.KeyEnter && msg.Alt:
+		// Alt+Enter: insert newline
+		cmd := m.promptEditor.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+		return m, cmd
+	case msg.Type == tea.KeyEnter:
+		body := m.promptEditor.Confirm()
+		m.state = StateNormal
+		if strings.TrimSpace(body) == "" {
+			m.editingIdeaID = ""
+			m.editingIdeaCWD = ""
+			return m, nil
+		}
+		id := m.editingIdeaID
+		cwd := m.editingIdeaCWD
+		if id == "" {
+			id = claude.GenerateIdeaID()
+		}
+		m.editingIdeaID = ""
+		m.editingIdeaCWD = ""
+		return m, func() tea.Msg {
+			err := claude.WriteIdea(cwd, claude.Idea{ID: id, Body: body})
+			if err != nil {
+				return flashErrorMsg("save idea: " + err.Error())
+			}
+			// Re-discover ideas
+			return flashInfoMsg("idea saved")
+		}
 	default:
 		cmd := m.promptEditor.Update(msg)
 		return m, cmd
@@ -928,6 +967,21 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// When spirit animal overlay is open, any key dismisses it
+	if m.showSpiritAnimal {
+		m.showSpiritAnimal = false
+		return m, nil
+	}
+
+	// When message log overlay is open, ! and esc dismiss it
+	if m.showMessageLog {
+		switch {
+		case key.Matches(msg, Keys.MessageLog), key.Matches(msg, Keys.Escape):
+			m.showMessageLog = false
+		}
+		return m, nil
+	}
+
 	// Handle multi-key chord sequences
 	if m.pendingChord != "" {
 		seq := m.pendingChord + msg.String()
@@ -947,6 +1001,30 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(ChordsWithPrefix(msg.String())) > 0 {
 		m.pendingChord = msg.String()
 		return m, nil
+	}
+
+	// Idea-specific keys (when cursor is in ideas zone)
+	if m.list.IsIdeaSelected() {
+		switch {
+		case key.Matches(msg, Keys.Enter):
+			return m.execSubmitIdea()
+		case msg.String() == "i":
+			return m.execEditIdea()
+		case msg.String() == "e":
+			return m.execOpenIdeaInEditor()
+		case key.Matches(msg, Keys.Kill), msg.String() == "x":
+			return m.execDeleteIdea()
+		}
+		// Fall through to common nav keys (up/down/h/l/q/esc/etc.)
+	}
+
+	// New idea from project level in IDEAS section
+	if m.list.SelectionLevel() == ui.LevelProject {
+		if pe, ok := m.list.SelectedProject(); ok && pe.StatusOrder == ui.OrderIdeas {
+			if msg.String() == "i" {
+				return m.execNewIdea()
+			}
+		}
 	}
 
 	switch {
@@ -1209,6 +1287,15 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefBool("groupByProject", newMode)
 		return m, nil
 
+	case msg.String() == "I":
+		newVal := !m.list.ShowIdeas()
+		m.list.SetShowIdeas(newVal)
+		savePrefBool("showIdeas", newVal)
+		if newVal {
+			return m, m.setFlash("IDEAS on", false, 2*time.Second)
+		}
+		return m, m.setFlash("IDEAS off", false, 2*time.Second)
+
 	case key.Matches(msg, Keys.Minimap):
 		m.showMinimap = !m.showMinimap
 		savePrefBool("minimap", m.showMinimap)
@@ -1337,6 +1424,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.Help):
 		m.showHelp = true
+		return m, nil
+
+	case key.Matches(msg, Keys.MessageLog):
+		m.showMessageLog = true
 		return m, nil
 
 	case key.Matches(msg, Keys.Fullscreen):

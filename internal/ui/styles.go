@@ -44,9 +44,12 @@ var (
 				Bold(true).
 				Padding(0, 1)
 
+	ColorIdea = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — ideas
+
 	GroupHeaderWorkingStyle  = GroupHeaderStyle.Foreground(ColorWorking)
 	GroupHeaderDoneStyle     = GroupHeaderStyle.Foreground(ColorDone)
 	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
+	GroupHeaderIdeaStyle     = GroupHeaderStyle.Foreground(ColorIdea)
 	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
 	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
@@ -177,6 +180,12 @@ var (
 
 	FlashInfoStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
+			Padding(0, 1)
+
+	// Toast notification overlay (transient, bottom-right)
+	ToastStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ColorMuted).
 			Padding(0, 1)
 
 	// Help overlay
