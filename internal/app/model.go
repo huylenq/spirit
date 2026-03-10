@@ -127,6 +127,8 @@ type Model struct {
 	killTargetSessionID  string // session ID of the pane being killed
 	killTargetPID        int    // PID of the claude process to kill
 	killTargetTitle      string // display title for kill confirmation
+	killTargetAnimalIdx  int    // avatar animal index for kill confirmation
+	killTargetColorIdx   int    // avatar color index for kill confirmation
 	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
 	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
@@ -466,6 +468,17 @@ func sendPromptRelay(paneID, text string) tea.Cmd {
 			return flashErrorMsg("send failed: " + err.Error())
 		}
 		return flashInfoMsg("sent")
+	}
+}
+
+// sendBangKey sends "!" as an interactive keystroke (no -l, no Enter)
+// to trigger Claude's bash mode switch.
+func sendBangKey(paneID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := tmux.SendKeys(paneID, "!"); err != nil {
+			return flashErrorMsg("send failed: " + err.Error())
+		}
+		return nil
 	}
 }
 

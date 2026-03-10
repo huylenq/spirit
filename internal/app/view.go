@@ -463,8 +463,11 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateKillConfirm:
+		avatarColor := ui.AvatarColor(m.killTargetColorIdx)
+		avatarStr := ui.AvatarStyle(m.killTargetColorIdx).Render(ui.AvatarGlyph(m.killTargetAnimalIdx))
+		titleStr := lipgloss.NewStyle().Bold(true).Foreground(avatarColor).Render(m.killTargetTitle)
 		prompt := ui.FooterDimStyle.Render("Kill ") +
-			ui.FooterDangerStyle.Render(m.killTargetTitle) +
+			avatarStr + " " + titleStr +
 			ui.FooterDimStyle.Render(" ? ") +
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"

@@ -515,6 +515,9 @@ func (m ListModel) View() string {
 		selectedPaneID = m.filtered[m.cursor].PaneID
 	}
 
+	// Pre-calculate snap-to-default target
+	snapTargetID := m.SnapTargetPaneID()
+
 	// Project-level selection
 	selectedProject, atProjectLevel := m.SelectedProject()
 
@@ -565,7 +568,8 @@ func (m ListModel) View() string {
 		}
 
 		isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
-		lines = append(lines, m.renderItem(isSelected, s, dw, query))
+		isSnapTarget := !isSelected && s.PaneID == snapTargetID
+		lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
 	}
 
 	// Truncate to fit available height
@@ -606,7 +610,7 @@ func renderStatusGroupHeader(order int) string {
 	}
 }
 
-func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
+func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
 	// Display name priority: custom title → headline → first message → (new session)
 	var displayName string
@@ -701,7 +705,11 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		} else {
 			styledName = displayName
 		}
-		namePart = "    " + iconStr + styledName
+		if isSnapTarget {
+			namePart = "  " + SnapTargetBarStyle.Render("▯") + " " + iconStr + styledName
+		} else {
+			namePart = "    " + iconStr + styledName
+		}
 		gapStr = strings.Repeat(" ", gap)
 	}
 
@@ -714,9 +722,17 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 			withBg(style).Width(m.width - 5).Render(content)
 	}
 
+	// snapSubtitle wraps an unselected subtitle with the snap-target bar at col 2.
+	// Visually: "  │" + content — same width as "      " (6 spaces).
+	snapSubtitle := func(style lipgloss.Style, content string) string {
+		return "  " + SnapTargetBarStyle.Render("▯") + style.Render("   "+content)
+	}
+
 	if m.summaryLoadingPanes[s.PaneID] {
 		if isSelected {
 			line += "\n" + selSubtitle(SelectedBgStyle.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
+		} else if isSnapTarget {
+			line += "\n" + snapSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
 		} else {
 			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" synthesizing…")
 		}
@@ -725,26 +741,26 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	// Show queue badge with count
 	if len(s.QueuePending) > 0 {
 		queueBadge := fmt.Sprintf("%s %d", IconQueue, len(s.QueuePending))
-		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, false)
+		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isSnapTarget, false)
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
-		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, doHL)
+		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isSnapTarget, doHL)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
 		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, true)
+			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isSnapTarget, true)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
 		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
-			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, true)
+			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isSnapTarget, true)
 		}
 	}
 
@@ -752,6 +768,8 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 	if badges := renderBadges(s); badges != "" {
 		if isSelected {
 			line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
+		} else if isSnapTarget {
+			line += "\n" + snapSubtitle(ItemDetailStyle, badges)
 		} else {
 			line += "\n" + ItemDetailStyle.Render("      "+badges)
 		}
@@ -780,7 +798,7 @@ func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
 
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHighlight bool) string {
+func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSnapTarget, doHighlight bool) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
 
@@ -805,7 +823,14 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHi
 		return bgStyle.Render("  ") + SelectedBarStyle.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
-	// Unselected
+	// Unselected — with optional snap-target bar at col 2
+	if isSnapTarget {
+		prefix := "   " + icon + " "
+		if doHighlight && query != "" {
+			return "  " + SnapTargetBarStyle.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
+		}
+		return "  " + SnapTargetBarStyle.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
+	}
 	prefix := "      " + icon + " "
 	if doHighlight && query != "" {
 		return ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
@@ -816,22 +841,22 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, doHi
 // renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
 // at word boundaries. The first line gets the icon; the second is indented with
 // spaces matching the icon's width.
-func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, doHighlight bool) string {
+func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isSnapTarget, doHighlight bool) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	if msgWidth < 1 {
-		return m.renderSubtitleLine(text, query, icon, isSelected, doHighlight)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight)
 	}
 
 	// Word-wrap at word boundary to split into two lines
 	line1, rest := wordWrapFirst(text, msgWidth)
 	if rest == "" {
-		return m.renderSubtitleLine(text, query, icon, isSelected, doHighlight)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight)
 	}
 
 	// Render first line, second line with blank icon of same width
-	first := m.renderSubtitleLine(line1, query, icon, isSelected, doHighlight)
+	first := m.renderSubtitleLine(line1, query, icon, isSelected, isSnapTarget, doHighlight)
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
-	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, doHighlight)
+	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isSnapTarget, doHighlight)
 	return first + "\n" + second
 }
 

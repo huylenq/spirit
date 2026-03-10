@@ -498,6 +498,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.killTargetSessionID = ""
 		m.killTargetPID = 0
 		m.killTargetTitle = ""
+		m.killTargetAnimalIdx = 0
+		m.killTargetColorIdx = 0
 		m.killTargetBookmarkID = ""
 		if msg.Err != nil {
 			m.flashMsg = "kill failed: " + msg.Err.Error()
@@ -652,6 +654,8 @@ func (m Model) handleKeyKillConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.killTargetSessionID = ""
 		m.killTargetPID = 0
 		m.killTargetTitle = ""
+		m.killTargetAnimalIdx = 0
+		m.killTargetColorIdx = 0
 		m.killTargetBookmarkID = ""
 		return m, nil
 	default:
@@ -717,14 +721,11 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		// Bang mode: ! as first character sends ! immediately (bash mode)
+		// Bang mode: ! as first character sends ! to pane (bash mode) and stays in relay
 		if msg.String() == "!" && m.relay.Value() == "" {
-			m.state = StateNormal
-			m.relay.Deactivate()
+			m.relay.EnterBangMode()
 			if s, ok := m.list.SelectedItem(); ok {
-				cmds := []tea.Cmd{sendPromptRelay(s.PaneID, "!")}
-				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
-				return m, tea.Batch(cmds...)
+				return m, sendPromptRelay(s.PaneID, "!")
 			}
 			return m, nil
 		}
@@ -1206,6 +1207,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.killTargetSessionID = s.SessionID
 			m.killTargetPID = s.PID
 			m.killTargetTitle = sessionDisplayTitle(s)
+			m.killTargetAnimalIdx = s.AvatarAnimalIdx
+			m.killTargetColorIdx = s.AvatarColorIdx
 			m.killTargetBookmarkID = s.LaterBookmarkID
 		}
 		return m, nil

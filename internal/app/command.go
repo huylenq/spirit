@@ -196,6 +196,8 @@ func (m Model) execKill() (Model, tea.Cmd) {
 		m.killTargetSessionID = s.SessionID
 		m.killTargetPID = s.PID
 		m.killTargetTitle = sessionDisplayTitle(s)
+		m.killTargetAnimalIdx = s.AvatarAnimalIdx
+		m.killTargetColorIdx = s.AvatarColorIdx
 		m.killTargetBookmarkID = s.LaterBookmarkID
 	}
 	return m, nil
