@@ -310,12 +310,12 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 }
 
 func (d *Daemon) handleHookEvents(data json.RawMessage) *Response {
-	var req PaneData
+	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	events, _ := claude.ReadHookEvents(req.PaneID)
+	events, _ := claude.ReadHookEvents(req.SessionID)
 	r := resultResponse(HookEventsData{Events: events})
 	return &r
 }
@@ -327,7 +327,10 @@ func (d *Daemon) handleAllHookEffects() *Response {
 
 	var all []claude.GlobalHookEffect
 	for _, s := range sessions {
-		events, _ := claude.ReadHookEvents(s.PaneID)
+		if s.SessionID == "" {
+			continue
+		}
+		events, _ := claude.ReadHookEvents(s.SessionID)
 		for _, ev := range events {
 			if ev.Effect == "" || ev.Effect == claude.HookEffectNone {
 				continue
@@ -440,7 +443,10 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 		syscall.Kill(req.PID, syscall.SIGTERM) //nolint:errcheck
 	}
 	tmux.KillPane(req.PaneID) //nolint:errcheck
-	claude.RemoveStatus(req.PaneID)
+	if req.SessionID != "" {
+		claude.RemoveSessionFiles(req.SessionID)
+	}
+	claude.RemovePaneMapping(req.PaneID)
 	d.nudge()
 	log.Printf("later+kill: bookmarked and killed pane %s", req.PaneID)
 	r := resultResponse("ok")
@@ -460,8 +466,8 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 		// Restore status from the in-memory session (hook-derived truth).
 		// Don't infer from PID — Claude's process stays alive in user-turn too.
 		for _, s := range d.currentSessions() {
-			if s.PaneID == bm.PaneID {
-				claude.WriteStatus(bm.PaneID, s.Status)
+			if s.PaneID == bm.PaneID && s.SessionID != "" {
+				claude.WriteStatus(s.SessionID, s.Status)
 				break
 			}
 		}
@@ -551,30 +557,30 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
-	// Register the pending commit and nudge so subscribers see CommitDonePending immediately
+	// Register the pending commit keyed by sessionID
 	d.commitDoneMu.Lock()
-	d.commitDonePanes[req.PaneID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, CreatedAt: time.Now()}
+	d.commitDonePanes[req.SessionID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, CreatedAt: time.Now()}
 	d.commitDoneMu.Unlock()
 	d.nudge()
 	tag := "commit"
 	if killOnDone {
 		tag = "commit-done"
 	}
-	log.Printf("%s: registered pane %s", tag, req.PaneID)
+	log.Printf("%s: registered session %s (pane %s)", tag, req.SessionID, req.PaneID)
 	r := resultResponse("ok")
 	return &r
 }
 
 func (d *Daemon) handleCancelCommitDone(data json.RawMessage) *Response {
-	var req PaneData
+	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
 	d.commitDoneMu.Lock()
-	delete(d.commitDonePanes, req.PaneID)
+	delete(d.commitDonePanes, req.SessionID)
 	d.commitDoneMu.Unlock()
-	log.Printf("commit-done: cancelled pane %s", req.PaneID)
+	log.Printf("commit-done: cancelled session %s", req.SessionID)
 	r := resultResponse("ok")
 	return &r
 }
@@ -585,31 +591,31 @@ func (d *Daemon) handleQueue(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	if err := claude.WriteQueueMessage(req.PaneID, req.Message); err != nil {
+	if err := claude.WriteQueueMessage(req.SessionID, req.Message); err != nil {
 		r := errResponse("write queue: " + err.Error())
 		return &r
 	}
 	d.queueMu.Lock()
-	d.queuePanes[req.PaneID] = req.Message
+	d.queuePanes[req.SessionID] = req.Message
 	d.queueMu.Unlock()
 	d.nudge()
-	log.Printf("queue: registered pane %s", req.PaneID)
+	log.Printf("queue: registered session %s", req.SessionID)
 	r := resultResponse("ok")
 	return &r
 }
 
 func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
-	var req PaneData
+	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
 	d.queueMu.Lock()
-	delete(d.queuePanes, req.PaneID)
+	delete(d.queuePanes, req.SessionID)
 	d.queueMu.Unlock()
-	claude.RemoveQueueMessage(req.PaneID)
+	claude.RemoveQueueMessage(req.SessionID)
 	d.nudge()
-	log.Printf("queue: cancelled pane %s", req.PaneID)
+	log.Printf("queue: cancelled session %s", req.SessionID)
 	r := resultResponse("ok")
 	return &r
 }

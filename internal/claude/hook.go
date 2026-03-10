@@ -55,37 +55,44 @@ func HandleHook(hookType string) {
 		}
 	}
 
-	// Persist session ID
-	if input.SessionID != "" {
-		os.WriteFile(sessionFilePath(paneID), []byte(input.SessionID+"\n"), 0o644)
+	// Bail early if no session ID — can't write session-keyed files without it
+	sessionID := input.SessionID
+	if sessionID == "" {
+		return
 	}
+
+	// Persist pane→session mapping (pane-keyed reverse lookup)
+	os.WriteFile(sessionFilePath(paneID), []byte(sessionID+"\n"), 0o644)
+
+	// Migrate any old pane-keyed files to session-keyed (idempotent)
+	MigrateToSessionKey(paneID, sessionID)
 
 	// Write status and optional data, then nudge daemon with the change.
 	// Build effect string alongside each action so it's always truthful.
-	nd := nudgeData{PaneID: paneID, PermissionMode: input.PermissionMode}
+	nd := nudgeData{PaneID: paneID, SessionID: sessionID, PermissionMode: input.PermissionMode}
 	var effects []string
 	switch hookType {
 	case "UserPromptSubmit":
 		nd.Status = StatusAgentTurn.String()
-		WriteStatus(paneID, StatusAgentTurn)
-		effects = append(effects, "status → working")
+		WriteStatus(sessionID, StatusAgentTurn)
+		effects = append(effects, "status → agent-turn")
 		if input.Prompt != "" {
-			os.WriteFile(lastMsgFilePath(paneID), []byte(input.Prompt), 0o644)
+			os.WriteFile(lastMsgFilePath(sessionID), []byte(input.Prompt), 0o644)
 			nd.LastUserMessage = input.Prompt
 			effects = append(effects, "captured prompt")
 		}
 		// Clear transient states — user has responded, session is active again
-		RemoveWaiting(paneID)
-		os.Remove(stopReasonFilePath(paneID))
+		RemoveWaiting(sessionID)
+		os.Remove(stopReasonFilePath(sessionID))
 		nd.IsWaiting = boolPtr(false)
 
 	case "PreToolUse":
 		nd.Status = StatusAgentTurn.String()
-		WriteStatus(paneID, StatusAgentTurn)
-		effects = append(effects, "status → working")
+		WriteStatus(sessionID, StatusAgentTurn)
+		effects = append(effects, "status → agent-turn")
 		// Clear transient states — tool use means Claude is proceeding
-		RemoveWaiting(paneID)
-		os.Remove(stopReasonFilePath(paneID))
+		RemoveWaiting(sessionID)
+		os.Remove(stopReasonFilePath(sessionID))
 		nd.IsWaiting = boolPtr(false)
 
 	case "PostToolUse":
@@ -93,24 +100,24 @@ func HandleHook(hookType string) {
 		if input.ToolName == "Bash" {
 			cmd := extractBashCommand(input.ToolInput)
 			if isGitCommitCommand(cmd) {
-				WriteLastAction(paneID, "commit")
+				WriteLastAction(sessionID, "commit")
 				nd.IsGitCommit = boolPtr(true)
 				effects = append(effects, "git commit detected")
 			}
 		}
 		// Edit/Write clears committed state
 		if input.ToolName == "Edit" || input.ToolName == "Write" {
-			WriteLastAction(paneID, "edit")
+			WriteLastAction(sessionID, "edit")
 			nd.IsFileEdit = boolPtr(true)
 			effects = append(effects, "file edit; cleared commit")
 		}
 
 	case "Stop":
 		nd.Status = StatusUserTurn.String()
-		WriteStatus(paneID, StatusUserTurn)
-		effects = append(effects, "status → your-turn")
+		WriteStatus(sessionID, StatusUserTurn)
+		effects = append(effects, "status → user-turn")
 		if input.StopReason != "" {
-			WriteStopReason(paneID, input.StopReason)
+			WriteStopReason(sessionID, input.StopReason)
 			nd.StopReason = input.StopReason
 			effects = append(effects, "reason:"+input.StopReason)
 		}
@@ -118,27 +125,28 @@ func HandleHook(hookType string) {
 	case "Notification":
 		if input.NotifType == "permission_prompt" || input.NotifType == "elicitation_dialog" {
 			nd.Status = StatusUserTurn.String()
-			WriteStatus(paneID, StatusUserTurn)
-			WriteWaiting(paneID, input.NotifType)
+			WriteStatus(sessionID, StatusUserTurn)
+			WriteWaiting(sessionID, input.NotifType)
 			nd.IsWaiting = boolPtr(true)
 			effects = append(effects, "waiting:"+input.NotifType)
 		}
 
 	case "SessionStart":
-		nd.Status = StatusAgentTurn.String()
-		WriteStatus(paneID, StatusAgentTurn)
-		os.Remove(stopReasonFilePath(paneID))
-		effects = append(effects, "status → working; session init")
+		nd.Status = StatusUserTurn.String()
+		WriteStatus(sessionID, StatusUserTurn)
+		os.Remove(stopReasonFilePath(sessionID))
+		effects = append(effects, "status → user-turn; session init")
 
 	case "SessionEnd":
-		RemoveStatus(paneID) // removes all status files including waiting
+		RemoveSessionFiles(sessionID)
+		RemovePaneMapping(paneID)
 		nd.Remove = true
 		effects = append(effects, "session cleanup; files removed")
 
 	case "PreCompact":
-		count := ReadCompactCount(paneID)
+		count := ReadCompactCount(sessionID)
 		count++
-		WriteCompactCount(paneID, count)
+		WriteCompactCount(sessionID, count)
 		nd.Compacted = true
 		effects = append(effects, fmt.Sprintf("compact #%d", count))
 	}
@@ -162,7 +170,7 @@ func HandleHook(hookType string) {
 	// Append to hook log (compact JSON on one line, with effect annotation)
 	compactJSON := compactJSONString(rawJSON)
 	entry := fmt.Sprintf("%s %s\t%s\t%s\n", time.Now().Format("15:04:05"), hookType, compactJSON, effect)
-	hooksPath := hookFilePath(paneID)
+	hooksPath := hookFilePath(sessionID)
 	f, err := os.OpenFile(hooksPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err == nil {
 		f.WriteString(entry)
@@ -243,6 +251,7 @@ type nudgeRequest struct {
 
 type nudgeData struct {
 	PaneID          string `json:"paneID"`
+	SessionID       string `json:"sessionID,omitempty"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
 	StopReason      string `json:"stopReason,omitempty"`

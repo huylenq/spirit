@@ -195,6 +195,7 @@ func (m Model) execKill() (Model, tea.Cmd) {
 		}
 		m.state = StateKillConfirm
 		m.killTargetPaneID = s.PaneID
+		m.killTargetSessionID = s.SessionID
 		m.killTargetPID = s.PID
 		m.killTargetTitle = sessionDisplayTitle(s)
 		m.killTargetBookmarkID = s.LaterBookmarkID
@@ -213,9 +214,9 @@ func (m Model) execCommit() (Model, tea.Cmd) {
 	if s.CommitDonePending {
 		return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
 	}
-	paneID, pid := s.PaneID, s.PID
+	paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
 	return m, func() tea.Msg {
-		if err := m.client.CommitOnly(paneID, pid); err != nil {
+		if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
 			return flashErrorMsg("commit failed: " + err.Error())
 		}
 		return flashInfoMsg("commit started")
@@ -233,9 +234,9 @@ func (m Model) execCommitAndDone() (Model, tea.Cmd) {
 	if s.CommitDonePending {
 		return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
 	}
-	paneID, pid := s.PaneID, s.PID
+	paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
 	return m, func() tea.Msg {
-		if err := m.client.CommitAndDone(paneID, pid); err != nil {
+		if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
 			return flashErrorMsg("commit+done failed: " + err.Error())
 		}
 		return flashInfoMsg("commit+done started")
@@ -302,7 +303,7 @@ func (m Model) execToggleHooks() (Model, tea.Cmd) {
 	m.preview.SetShowDiffs(false)
 	if m.showHooks {
 		if s, ok := m.list.SelectedItem(); ok {
-			return m, m.fetchHooks(s.PaneID)
+			return m, m.fetchHooks(s.PaneID, s.SessionID)
 		}
 	}
 	return m, nil

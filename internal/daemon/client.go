@@ -224,10 +224,10 @@ func (c *Client) DiffHunks(sessionID string) ([]claude.FileDiffHunk, error) {
 	return data.Hunks, err
 }
 
-// HookEvents fetches debug hook events for a pane.
-func (c *Client) HookEvents(paneID string) ([]claude.HookEvent, error) {
+// HookEvents fetches debug hook events for a session.
+func (c *Client) HookEvents(sessionID string) ([]claude.HookEvent, error) {
 	var data HookEventsData
-	err := c.rpcInto(Request{Type: ReqHookEvents, Data: marshalData(PaneData{PaneID: paneID})}, &data)
+	err := c.rpcInto(Request{Type: ReqHookEvents, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
 	return data.Events, err
 }
 
@@ -273,28 +273,28 @@ func (c *Client) RenameWindow(sessionName string, windowIndex int) (string, erro
 }
 
 // CommitOnly sends /commit-commands:commit to the pane (no auto-kill on completion).
-func (c *Client) CommitOnly(paneID string, pid int) error {
-	return c.rpcInto(Request{Type: ReqCommitOnly, Data: marshalData(CommitDoneData{PaneID: paneID, PID: pid})}, nil)
+func (c *Client) CommitOnly(paneID, sessionID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqCommitOnly, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
 }
 
 // CommitAndDone sends /commit-commands:commit to the pane and registers it for auto-kill on commit.
-func (c *Client) CommitAndDone(paneID string, pid int) error {
-	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, PID: pid})}, nil)
+func (c *Client) CommitAndDone(paneID, sessionID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
 }
 
-// CancelCommitDone removes the pending commit-and-done registration for a pane.
-func (c *Client) CancelCommitDone(paneID string) error {
-	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+// CancelCommitDone removes the pending commit-and-done registration for a session.
+func (c *Client) CancelCommitDone(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
 }
 
-// Queue registers a message for delivery when the pane's session becomes Done.
-func (c *Client) Queue(paneID, message string) error {
-	return c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, Message: message})}, nil)
+// Queue registers a message for delivery when the session becomes Done.
+func (c *Client) Queue(paneID, sessionID, message string) error {
+	return c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, SessionID: sessionID, Message: message})}, nil)
 }
 
-// CancelQueue removes a pending queued message for a pane.
-func (c *Client) CancelQueue(paneID string) error {
-	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(PaneData{PaneID: paneID})}, nil)
+// CancelQueue removes a pending queued message for a session.
+func (c *Client) CancelQueue(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
 }
 
 

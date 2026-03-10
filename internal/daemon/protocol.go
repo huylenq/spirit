@@ -108,6 +108,7 @@ type RenameWindowData struct {
 
 type NudgeData struct {
 	PaneID          string `json:"paneID"`
+	SessionID       string `json:"sessionID,omitempty"`
 	Status          string `json:"status"`
 	LastUserMessage string `json:"lastUserMessage,omitempty"`
 	StopReason      string `json:"stopReason,omitempty"`
@@ -120,13 +121,15 @@ type NudgeData struct {
 }
 
 type CommitDoneData struct {
-	PaneID string `json:"paneID"`
-	PID    int    `json:"pid"`
+	PaneID    string `json:"paneID"`
+	SessionID string `json:"sessionID"`
+	PID       int    `json:"pid"`
 }
 
 type QueueData struct {
-	PaneID  string `json:"paneID"`
-	Message string `json:"message"`
+	PaneID    string `json:"paneID"`
+	SessionID string `json:"sessionID"`
+	Message   string `json:"message"`
 }
 
 // --- Response data payloads ---

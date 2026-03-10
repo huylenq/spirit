@@ -71,6 +71,7 @@ type Model struct {
 	pendingChord         string // accumulated chord prefix (e.g. "y" waiting for next key)
 	initialSelectionDone bool   // true after first smart cursor placement
 	killTargetPaneID     string // pane being confirmed for kill
+	killTargetSessionID  string // session ID of the pane being killed
 	killTargetPID        int    // PID of the claude process to kill
 	killTargetTitle      string // display title for kill confirmation
 	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
@@ -208,9 +209,12 @@ func (m Model) fetchGlobalEffects() tea.Cmd {
 	}
 }
 
-func (m Model) fetchHooks(paneID string) tea.Cmd {
+func (m Model) fetchHooks(paneID, sessionID string) tea.Cmd {
+	if sessionID == "" {
+		return nil
+	}
 	return func() tea.Msg {
-		events, _ := m.client.HookEvents(paneID)
+		events, _ := m.client.HookEvents(sessionID)
 		return HooksReadyMsg{PaneID: paneID, Events: events}
 	}
 }
@@ -219,7 +223,7 @@ func (m Model) fetchHooks(paneID string) tea.Cmd {
 func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 	var cmds []tea.Cmd
 	if m.showHooks {
-		cmds = append(cmds, m.fetchHooks(paneID))
+		cmds = append(cmds, m.fetchHooks(paneID, sessionID))
 	}
 	if m.showRawTranscript {
 		cmds = append(cmds, m.fetchRawTranscript(paneID, sessionID))

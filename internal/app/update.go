@@ -83,13 +83,16 @@ func sessionDisplayTitle(s claude.ClaudeSession) string {
 }
 
 // killPaneCmd sends SIGTERM to the claude process, kills the tmux pane, and cleans up status files.
-func killPaneCmd(paneID string, pid int, bookmarkID string) tea.Cmd {
+func killPaneCmd(paneID, sessionID string, pid int, bookmarkID string) tea.Cmd {
 	return func() tea.Msg {
 		if pid > 0 {
 			syscall.Kill(pid, syscall.SIGTERM) //nolint:errcheck
 		}
 		tmux.KillPane(paneID) //nolint:errcheck
-		claude.RemoveStatus(paneID)
+		if sessionID != "" {
+			claude.RemoveSessionFiles(sessionID)
+		}
+		claude.RemovePaneMapping(paneID)
 		if bookmarkID != "" {
 			claude.RemoveLaterBookmark(bookmarkID)
 		}
@@ -127,7 +130,7 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 //
 // Two modes controlled by env vars:
 //   - selectActive (ctrl-space): select the originating pane's session
-//   - rotateNext   (ctrl-tab):   skip originating pane, rotate to next YOUR TURN
+//   - rotateNext   (ctrl-tab):   skip originating pane, rotate to next user-turn
 //
 // Fallback chain (both modes):
 //  1. Mode-specific selection (see above)
@@ -151,7 +154,7 @@ func (m *Model) tryInitialSelection() bool {
 	items := m.list.Items()
 
 	if m.rotateNext {
-		// ctrl-tab: skip originating pane, rotate to next YOUR TURN session
+		// ctrl-tab: skip originating pane, rotate to next user-turn session
 		origIdx := -1
 		for i, s := range items {
 			if s.PaneID == m.origPane.PaneID {
@@ -163,13 +166,13 @@ func (m *Model) tryInitialSelection() bool {
 			n := len(items)
 			for offset := 1; offset < n; offset++ {
 				idx := (origIdx + offset) % n
-				if items[idx].Status == claude.StatusUserTurn {
+				if items[idx].Status == claude.StatusUserTurn && items[idx].LaterBookmarkID == "" {
 					return m.list.SelectByPaneID(items[idx].PaneID)
 				}
 			}
-			// No other YOUR TURN — fall back to first WORKING session
+			// No other user-turn — fall back to first agent-turn session
 			for _, s := range items {
-				if s.Status == claude.StatusAgentTurn {
+				if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
 					return m.list.SelectByPaneID(s.PaneID)
 				}
 			}
@@ -184,9 +187,9 @@ func (m *Model) tryInitialSelection() bool {
 		}
 	}
 
-	// Fallback: first session in same tmux session (already sorted)
+	// Fallback: first non-Later session in same tmux session (already sorted)
 	for _, s := range items {
-		if s.TmuxSession == m.origPane.Session {
+		if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
 			return m.list.SelectByPaneID(s.PaneID)
 		}
 	}
@@ -400,6 +403,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		title := m.killTargetTitle
 		m.state = StateNormal
 		m.killTargetPaneID = ""
+		m.killTargetSessionID = ""
 		m.killTargetPID = 0
 		m.killTargetTitle = ""
 		m.killTargetBookmarkID = ""
@@ -529,10 +533,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateKillConfirm:
 		switch msg.String() {
 		case "y":
-			return m, killPaneCmd(m.killTargetPaneID, m.killTargetPID, m.killTargetBookmarkID)
+			return m, killPaneCmd(m.killTargetPaneID, m.killTargetSessionID, m.killTargetPID, m.killTargetBookmarkID)
 		case "n", "esc":
 			m.state = StateNormal
 			m.killTargetPaneID = ""
+			m.killTargetSessionID = ""
 			m.killTargetPID = 0
 			m.killTargetTitle = ""
 			m.killTargetBookmarkID = ""
@@ -580,9 +585,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if val == "" {
 				// Empty submit on a session with pending queue → cancel
 				if s.QueuePending != "" {
-					paneID := s.PaneID
+					sessionID := s.SessionID
 					return m, func() tea.Msg {
-						if err := m.client.CancelQueue(paneID); err != nil {
+						if err := m.client.CancelQueue(sessionID); err != nil {
 							return flashErrorMsg("cancel failed: " + err.Error())
 						}
 						return flashInfoMsg("queue cancelled")
@@ -590,9 +595,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			paneID := s.PaneID
+			paneID, sessionID := s.PaneID, s.SessionID
 			return m, func() tea.Msg {
-				if err := m.client.Queue(paneID, val); err != nil {
+				if err := m.client.Queue(paneID, sessionID, val); err != nil {
 					return flashErrorMsg("queue failed: " + err.Error())
 				}
 				return flashInfoMsg("message queued")
@@ -901,6 +906,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.state = StateKillConfirm
 				m.killTargetPaneID = s.PaneID
+				m.killTargetSessionID = s.SessionID
 				m.killTargetPID = s.PID
 				m.killTargetTitle = sessionDisplayTitle(s)
 				m.killTargetBookmarkID = s.LaterBookmarkID
@@ -915,9 +921,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if s.CommitDonePending {
 					return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
 				}
-				paneID, pid := s.PaneID, s.PID
+				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
 				return m, func() tea.Msg {
-					if err := m.client.CommitOnly(paneID, pid); err != nil {
+					if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
 						return flashErrorMsg("commit failed: " + err.Error())
 					}
 					return flashInfoMsg("commit started")
@@ -933,9 +939,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if s.CommitDonePending {
 					return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
 				}
-				paneID, pid := s.PaneID, s.PID
+				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
 				return m, func() tea.Msg {
-					if err := m.client.CommitAndDone(paneID, pid); err != nil {
+					if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
 						return flashErrorMsg("commit+done failed: " + err.Error())
 					}
 					return flashInfoMsg("commit+done started")

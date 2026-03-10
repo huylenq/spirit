@@ -90,33 +90,46 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	// Load bookmarks once for the entire discover cycle
 	bookmarks, _ := ReadAllLaterBookmarks()
 	bookmarkByPane := make(map[string]string, len(bookmarks)) // paneID → bookmarkID
-	laterPaneIDs := make(map[string]bool, len(bookmarks))
 	for _, bm := range bookmarks {
 		bookmarkByPane[bm.PaneID] = bm.ID
-		laterPaneIDs[bm.PaneID] = true
 	}
 
+	// Build active sets for CleanStale
 	activePaneIDs := make(map[string]bool)
+	activeSessionIDs := make(map[string]bool)
 	for _, p := range panes {
 		activePaneIDs[p.PaneID] = true
+		if sid := ReadSessionID(p.PaneID); sid != "" {
+			activeSessionIDs[sid] = true
+		}
 	}
-	CleanStale(activePaneIDs, laterPaneIDs)
+	for _, bm := range bookmarks {
+		if bm.SessionID != "" {
+			activeSessionIDs[bm.SessionID] = true
+		}
+		activePaneIDs[bm.PaneID] = true
+	}
+	CleanStale(activeSessionIDs, activePaneIDs)
 
 	// Single ps call replaces all per-pane pgrep+ps invocations
 	procTree := buildProcessTree()
 
 	var sessions []ClaudeSession
 	for _, p := range panes {
+		sessionID := ReadSessionID(p.PaneID)
 		pid := findClaudeInTree(procTree, p.PanePID)
 		if pid == 0 {
-			status, err := ReadStatus(p.PaneID)
+			if sessionID == "" {
+				continue
+			}
+			status, err := ReadStatus(sessionID)
 			if err != nil {
 				continue
 			}
 			// Crash recovery: if process is gone but status says agent-turn, mark user-turn.
 			// SessionEnd hook normally handles this, but crashes skip the hook.
 			if status == StatusAgentTurn {
-				WriteStatus(p.PaneID, StatusUserTurn)
+				WriteStatus(sessionID, StatusUserTurn)
 				status = StatusUserTurn
 			}
 			if bookmarkByPane[p.PaneID] != "" {
@@ -125,12 +138,16 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 				sessions = append(sessions, s)
 			} else {
 				// No bookmark, no process: clean up
-				RemoveStatus(p.PaneID)
+				RemoveSessionFiles(sessionID)
+				RemovePaneMapping(p.PaneID)
 			}
 			continue
 		}
 
-		status, err := ReadStatus(p.PaneID)
+		if sessionID == "" {
+			continue // no session ID yet, skip
+		}
+		status, err := ReadStatus(sessionID)
 		if err != nil {
 			status = StatusUserTurn
 		}
@@ -168,6 +185,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 }
 
 func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[string]string) ClaudeSession {
+	sessionID := ReadSessionID(p.PaneID)
 	s := ClaudeSession{
 		PaneID:      p.PaneID,
 		Status:      status,
@@ -178,40 +196,41 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		TmuxWindow:  p.WindowIndex,
 		TmuxPane:    p.PaneIndex,
 		PID:         pid,
-		LastChanged: getStatusModTime(p.PaneID),
 		CreatedAt:   p.PaneCreated,
-		SessionID:   ReadSessionID(p.PaneID),
+		SessionID:   sessionID,
 	}
 
-	if status == StatusAgentTurn {
-		s.PermissionMode = ReadPermissionMode(p.PaneID)
-	}
+	if sessionID != "" {
+		s.LastChanged = getStatusModTime(sessionID)
 
-	if s.SessionID != "" {
+		if status == StatusAgentTurn {
+			s.PermissionMode = ReadPermissionMode(sessionID)
+		}
+
 		// Prefer hook-written cache (avoids transcript tail-scan missing old messages)
-		if cached := ReadLastUserMessageCached(p.PaneID); cached != "" {
+		if cached := ReadLastUserMessageCached(sessionID); cached != "" {
 			s.LastUserMessage = cached
 		} else {
-			s.LastUserMessage = ReadLastUserMessage(s.SessionID)
+			s.LastUserMessage = ReadLastUserMessage(sessionID)
 		}
-		if cached := ReadCachedSummary(s.SessionID); cached != nil && cached.Headline != "" {
+		if cached := ReadCachedSummary(sessionID); cached != nil && cached.Headline != "" {
 			s.Headline = cached.Headline
 		}
-		s.CustomTitle = ReadCustomTitle(s.SessionID)
-		s.FirstMessage = ReadFirstUserMessage(s.SessionID)
+		s.CustomTitle = ReadCustomTitle(sessionID)
+		s.FirstMessage = ReadFirstUserMessage(sessionID)
 
 		// Prefer hook-derived last action when present (faster than transcript scan)
-		if action := ReadLastAction(p.PaneID); action != "" {
+		if action := ReadLastAction(sessionID); action != "" {
 			s.LastActionCommit = action == "commit"
 		} else {
-			s.LastActionCommit = ReadLastActionCommit(s.SessionID)
+			s.LastActionCommit = ReadLastActionCommit(sessionID)
 		}
-	}
 
-	// Hook-derived fields from status files
-	s.StopReason = ReadStopReason(p.PaneID)
-	s.IsWaiting = ReadWaiting(p.PaneID)
-	s.CompactCount = ReadCompactCount(p.PaneID)
+		// Hook-derived fields from status files
+		s.StopReason = ReadStopReason(sessionID)
+		s.IsWaiting = ReadWaiting(sessionID)
+		s.CompactCount = ReadCompactCount(sessionID)
+	}
 
 	s.LaterBookmarkID = bookmarkByPane[p.PaneID]
 
@@ -227,8 +246,8 @@ func getGitBranch(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func getStatusModTime(paneID string) time.Time {
-	info, err := os.Stat(statusFilePath(paneID))
+func getStatusModTime(sessionID string) time.Time {
+	info, err := os.Stat(statusFilePath(sessionID))
 	if err != nil {
 		return time.Time{}
 	}

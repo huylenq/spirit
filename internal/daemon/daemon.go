@@ -42,10 +42,10 @@ type Daemon struct {
 	nudgeCh chan struct{} // hooks signal this to trigger immediate poll
 
 	commitDoneMu    sync.Mutex
-	commitDonePanes map[string]commitDoneEntry // paneID → entry
+	commitDonePanes map[string]commitDoneEntry // sessionID → entry
 
 	queueMu    sync.Mutex
-	queuePanes map[string]string // paneID → message
+	queuePanes map[string]string // sessionID → message
 
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
@@ -255,101 +255,109 @@ const (
 )
 
 // patchSession applies a targeted status update from a hook, bypassing full discovery.
-// Returns patchNotFound if the pane isn't tracked, patchApplied if state changed,
+// Matches by SessionID (primary) with PaneID fallback.
+// Returns patchNotFound if the session isn't tracked, patchApplied if state changed,
 // or patchDeduped if the nudge was redundant (no version bump, no subscriber notify).
 func (d *Daemon) patchSession(nudge NudgeData) patchResult {
-	paneID := nudge.PaneID
-
 	d.mu.Lock()
+
+	// Find session: match by SessionID first, then PaneID fallback
+	idx := -1
+	for i := range d.sessions {
+		if nudge.SessionID != "" && d.sessions[i].SessionID == nudge.SessionID {
+			idx = i
+			break
+		}
+		if d.sessions[i].PaneID == nudge.PaneID {
+			idx = i
+			// Don't break — keep looking for a SessionID match
+		}
+	}
 
 	// SessionEnd: remove session from memory
 	if nudge.Remove {
-		found := false
-		for i := range d.sessions {
-			if d.sessions[i].PaneID == paneID {
-				d.sessions = append(d.sessions[:i], d.sessions[i+1:]...)
-				found = true
-				break
-			}
-		}
-		if !found {
+		if idx < 0 {
 			d.mu.Unlock()
 			return patchNotFound
 		}
+		d.sessions = append(d.sessions[:idx], d.sessions[idx+1:]...)
 		d.version++
 		sessions := d.sessions
 		d.mu.Unlock()
 		d.notifySubscribers(sessions)
 		return patchApplied
+	}
+
+	if idx < 0 {
+		d.mu.Unlock()
+		return patchNotFound
+	}
+
+	s := &d.sessions[idx]
+	changed := false
+
+	// Session moved panes (e.g. --resume in a new pane)
+	if nudge.PaneID != "" && s.PaneID != nudge.PaneID {
+		s.PaneID = nudge.PaneID
+		changed = true
 	}
 
 	status := claude.ParseStatus(nudge.Status)
 
-	for i := range d.sessions {
-		if d.sessions[i].PaneID != paneID {
-			continue
-		}
-		s := &d.sessions[i]
-		changed := false
-
-		if nudge.Status != "" && s.Status != status {
-			s.Status = status
+	if nudge.Status != "" && s.Status != status {
+		s.Status = status
+		changed = true
+	}
+	if nudge.LastUserMessage != "" && s.LastUserMessage != nudge.LastUserMessage {
+		s.LastUserMessage = nudge.LastUserMessage
+		changed = true
+	}
+	if status == claude.StatusAgentTurn {
+		if nudge.PermissionMode != "" && s.PermissionMode != nudge.PermissionMode {
+			s.PermissionMode = nudge.PermissionMode
 			changed = true
 		}
-		if nudge.LastUserMessage != "" && s.LastUserMessage != nudge.LastUserMessage {
-			s.LastUserMessage = nudge.LastUserMessage
+		if s.StopReason != "" {
+			s.StopReason = ""
 			changed = true
 		}
-		if status == claude.StatusAgentTurn {
-			if nudge.PermissionMode != "" && s.PermissionMode != nudge.PermissionMode {
-				s.PermissionMode = nudge.PermissionMode
-				changed = true
-			}
-			if s.StopReason != "" {
-				s.StopReason = ""
-				changed = true
-			}
-			if s.IsWaiting {
-				s.IsWaiting = false
-				changed = true
-			}
-		}
-		if nudge.StopReason != "" && s.StopReason != nudge.StopReason {
-			s.StopReason = nudge.StopReason
+		if s.IsWaiting {
+			s.IsWaiting = false
 			changed = true
 		}
-		if nudge.IsWaiting != nil && s.IsWaiting != *nudge.IsWaiting {
-			s.IsWaiting = *nudge.IsWaiting
-			changed = true
-		}
-		if nudge.IsGitCommit != nil && *nudge.IsGitCommit && !s.LastActionCommit {
-			s.LastActionCommit = true
-			changed = true
-		}
-		if nudge.IsFileEdit != nil && *nudge.IsFileEdit && s.LastActionCommit {
-			s.LastActionCommit = false
-			changed = true
-		}
-		if nudge.Compacted {
-			s.CompactCount++
-			changed = true
-		}
-
-		if !changed {
-			d.mu.Unlock()
-			return patchDeduped
-		}
-
-		s.LastChanged = time.Now()
-		d.version++
-		sessions := d.sessions
-		d.mu.Unlock()
-		d.notifySubscribers(sessions)
-		return patchApplied
+	}
+	if nudge.StopReason != "" && s.StopReason != nudge.StopReason {
+		s.StopReason = nudge.StopReason
+		changed = true
+	}
+	if nudge.IsWaiting != nil && s.IsWaiting != *nudge.IsWaiting {
+		s.IsWaiting = *nudge.IsWaiting
+		changed = true
+	}
+	if nudge.IsGitCommit != nil && *nudge.IsGitCommit && !s.LastActionCommit {
+		s.LastActionCommit = true
+		changed = true
+	}
+	if nudge.IsFileEdit != nil && *nudge.IsFileEdit && s.LastActionCommit {
+		s.LastActionCommit = false
+		changed = true
+	}
+	if nudge.Compacted {
+		s.CompactCount++
+		changed = true
 	}
 
+	if !changed {
+		d.mu.Unlock()
+		return patchDeduped
+	}
+
+	s.LastChanged = time.Now()
+	d.version++
+	sessions := d.sessions
 	d.mu.Unlock()
-	return patchNotFound
+	d.notifySubscribers(sessions)
+	return patchApplied
 }
 
 func (d *Daemon) poll() {
@@ -369,14 +377,16 @@ func (d *Daemon) poll() {
 	d.queueMu.Lock()
 	d.synthesizingMu.Lock()
 	for i := range sessions {
-		paneID := sessions[i].PaneID
-		if _, pending := d.commitDonePanes[paneID]; pending {
-			sessions[i].CommitDonePending = true
+		sid := sessions[i].SessionID
+		if sid != "" {
+			if _, pending := d.commitDonePanes[sid]; pending {
+				sessions[i].CommitDonePending = true
+			}
+			if msg, pending := d.queuePanes[sid]; pending {
+				sessions[i].QueuePending = msg
+			}
 		}
-		if msg, pending := d.queuePanes[paneID]; pending {
-			sessions[i].QueuePending = msg
-		}
-		if d.synthesizingPanes[paneID] {
+		if d.synthesizingPanes[sessions[i].PaneID] {
 			sessions[i].SynthesizePending = true
 		}
 	}
@@ -407,25 +417,27 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 		return
 	}
 
-	sessionByPane := make(map[string]*claude.ClaudeSession, len(sessions))
+	sessionByID := make(map[string]*claude.ClaudeSession, len(sessions))
 	for i := range sessions {
-		sessionByPane[sessions[i].PaneID] = &sessions[i]
+		if sessions[i].SessionID != "" {
+			sessionByID[sessions[i].SessionID] = &sessions[i]
+		}
 	}
 
-	for paneID, entry := range d.commitDonePanes {
-		s, exists := sessionByPane[paneID]
+	for sessionID, entry := range d.commitDonePanes {
+		s, exists := sessionByID[sessionID]
 		if !exists {
 			// Session disappeared — clean up
-			log.Printf("commit-done: pane %s disappeared, removing", paneID)
-			delete(d.commitDonePanes, paneID)
+			log.Printf("commit-done: session %s disappeared, removing", sessionID)
+			delete(d.commitDonePanes, sessionID)
 			continue
 		}
 		if s.Status == claude.StatusAgentTurn {
 			// Mark that we've seen the session start working
 			if !entry.SawWorking {
 				entry.SawWorking = true
-				d.commitDonePanes[paneID] = entry
-				log.Printf("commit-done: pane %s now working", paneID)
+				d.commitDonePanes[sessionID] = entry
+				log.Printf("commit-done: session %s now working", sessionID)
 			}
 			continue
 		}
@@ -436,24 +448,25 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 		if !entry.SawWorking {
 			// Expire if the session never started working (e.g. user interrupted the prompt)
 			if time.Since(entry.CreatedAt) > 30*time.Second {
-				log.Printf("commit-done: pane %s timed out waiting for working state, removing", paneID)
-				delete(d.commitDonePanes, paneID)
+				log.Printf("commit-done: session %s timed out waiting for working state, removing", sessionID)
+				delete(d.commitDonePanes, sessionID)
 			}
 			continue
 		}
 		if s.LastActionCommit && entry.KillOnDone {
-			log.Printf("commit-done: pane %s committed, killing", paneID)
+			log.Printf("commit-done: session %s committed, killing pane %s", sessionID, s.PaneID)
 			if entry.PID > 0 {
 				syscall.Kill(entry.PID, syscall.SIGTERM) //nolint:errcheck
 			}
-			tmux.KillPane(paneID)   //nolint:errcheck
-			claude.RemoveStatus(paneID)
+			tmux.KillPane(s.PaneID) //nolint:errcheck
+			claude.RemoveSessionFiles(sessionID)
+			claude.RemovePaneMapping(s.PaneID)
 		} else if s.LastActionCommit {
-			log.Printf("commit: pane %s committed", paneID)
+			log.Printf("commit: session %s committed", sessionID)
 		} else {
-			log.Printf("commit: pane %s done but no commit detected", paneID)
+			log.Printf("commit: session %s done but no commit detected", sessionID)
 		}
-		delete(d.commitDonePanes, paneID)
+		delete(d.commitDonePanes, sessionID)
 	}
 }
 
@@ -471,11 +484,11 @@ func (d *Daemon) recoverQueue() {
 		if !strings.HasSuffix(name, ".queue") {
 			continue
 		}
-		paneID := strings.TrimSuffix(name, ".queue")
-		msg := claude.ReadQueueMessage(paneID)
+		sessionID := strings.TrimSuffix(name, ".queue")
+		msg := claude.ReadQueueMessage(sessionID)
 		if msg != "" {
-			d.queuePanes[paneID] = msg
-			log.Printf("queue: recovered pane %s", paneID)
+			d.queuePanes[sessionID] = msg
+			log.Printf("queue: recovered session %s", sessionID)
 		}
 	}
 }
@@ -489,30 +502,32 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 		return
 	}
 
-	sessionByPane := make(map[string]*claude.ClaudeSession, len(sessions))
+	sessionByID := make(map[string]*claude.ClaudeSession, len(sessions))
 	for i := range sessions {
-		sessionByPane[sessions[i].PaneID] = &sessions[i]
+		if sessions[i].SessionID != "" {
+			sessionByID[sessions[i].SessionID] = &sessions[i]
+		}
 	}
 
-	for paneID, msg := range d.queuePanes {
-		s, exists := sessionByPane[paneID]
+	for sessionID, msg := range d.queuePanes {
+		s, exists := sessionByID[sessionID]
 		if !exists {
-			log.Printf("queue: pane %s disappeared, removing", paneID)
-			delete(d.queuePanes, paneID)
-			claude.RemoveQueueMessage(paneID)
+			log.Printf("queue: session %s disappeared, removing", sessionID)
+			delete(d.queuePanes, sessionID)
+			claude.RemoveQueueMessage(sessionID)
 			continue
 		}
 		if s.Status != claude.StatusUserTurn {
 			continue
 		}
-		// Session is Done — deliver the message
-		if err := tmux.SendKeysLiteral(paneID, msg); err != nil {
-			log.Printf("queue: send to pane %s failed: %v (will retry)", paneID, err)
+		// Session is Done — deliver the message to its current pane
+		if err := tmux.SendKeysLiteral(s.PaneID, msg); err != nil {
+			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
 			continue
 		}
-		log.Printf("queue: delivered to pane %s", paneID)
-		delete(d.queuePanes, paneID)
-		claude.RemoveQueueMessage(paneID)
+		log.Printf("queue: delivered to pane %s (session %s)", s.PaneID, sessionID)
+		delete(d.queuePanes, sessionID)
+		claude.RemoveQueueMessage(sessionID)
 	}
 }
 

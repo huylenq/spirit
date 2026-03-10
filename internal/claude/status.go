@@ -23,8 +23,8 @@ func StatusDir() string {
 	return filepath.Join(home, ".cache", "cmc")
 }
 
-func statusFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".status")
+func statusFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".status")
 }
 
 func sessionFilePath(paneID string) string {
@@ -39,8 +39,8 @@ func ReadSessionID(paneID string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func ReadStatus(paneID string) (Status, error) {
-	data, err := os.ReadFile(statusFilePath(paneID))
+func ReadStatus(sessionID string) (Status, error) {
+	data, err := os.ReadFile(statusFilePath(sessionID))
 	if err != nil {
 		return StatusUserTurn, err
 	}
@@ -55,32 +55,32 @@ func ReadStatus(paneID string) (Status, error) {
 	}
 }
 
-func WriteStatus(paneID string, status Status) error {
+func WriteStatus(sessionID string, status Status) error {
 	dir := statusDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(statusFilePath(paneID), []byte(status.String()+"\n"), 0o644)
+	return os.WriteFile(statusFilePath(sessionID), []byte(status.String()+"\n"), 0o644)
 }
 
-func hookFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".hooks")
+func hookFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".hooks")
 }
 
-func lastMsgFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".lastmsg")
+func lastMsgFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".lastmsg")
 }
 
-func ReadLastUserMessageCached(paneID string) string {
-	data, err := os.ReadFile(lastMsgFilePath(paneID))
+func ReadLastUserMessageCached(sessionID string) string {
+	data, err := os.ReadFile(lastMsgFilePath(sessionID))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func WriteLastUserMessageCached(paneID, msg string) error {
-	return os.WriteFile(lastMsgFilePath(paneID), []byte(msg), 0o644)
+func WriteLastUserMessageCached(sessionID, msg string) error {
+	return os.WriteFile(lastMsgFilePath(sessionID), []byte(msg), 0o644)
 }
 
 // HookEffectNone is the sentinel value written when a hook triggers no state changes.
@@ -107,8 +107,8 @@ type GlobalHookEffect struct {
 	Count     int    `json:"count,omitempty"` // >1 when consecutive identical effects are merged
 }
 
-func ReadHookEvents(paneID string) ([]HookEvent, error) {
-	data, err := os.ReadFile(hookFilePath(paneID))
+func ReadHookEvents(sessionID string) ([]HookEvent, error) {
+	data, err := os.ReadFile(hookFilePath(sessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +146,8 @@ var (
 	permModeCacheMu sync.Mutex
 )
 
-func ReadPermissionMode(paneID string) string {
-	path := hookFilePath(paneID)
+func ReadPermissionMode(sessionID string) string {
+	path := hookFilePath(sessionID)
 	info, err := os.Stat(path)
 	if err != nil {
 		return ""
@@ -155,13 +155,13 @@ func ReadPermissionMode(paneID string) string {
 
 	// Check mtime cache — avoid re-reading if hooks file hasn't changed
 	permModeCacheMu.Lock()
-	if cached, ok := permModeCache[paneID]; ok && cached.modTime.Equal(info.ModTime()) {
+	if cached, ok := permModeCache[sessionID]; ok && cached.modTime.Equal(info.ModTime()) {
 		permModeCacheMu.Unlock()
 		return cached.mode
 	}
 	permModeCacheMu.Unlock()
 
-	events, err := ReadHookEvents(paneID)
+	events, err := ReadHookEvents(sessionID)
 	if err != nil {
 		return ""
 	}
@@ -180,75 +180,75 @@ func ReadPermissionMode(paneID string) string {
 	}
 
 	permModeCacheMu.Lock()
-	permModeCache[paneID] = permModeCacheEntry{mode: mode, modTime: info.ModTime()}
+	permModeCache[sessionID] = permModeCacheEntry{mode: mode, modTime: info.ModTime()}
 	permModeCacheMu.Unlock()
 
 	return mode
 }
 
-func queueFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".queue")
+func queueFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".queue")
 }
 
-func ReadQueueMessage(paneID string) string {
-	data, err := os.ReadFile(queueFilePath(paneID))
+func ReadQueueMessage(sessionID string) string {
+	data, err := os.ReadFile(queueFilePath(sessionID))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func WriteQueueMessage(paneID, message string) error {
-	return os.WriteFile(queueFilePath(paneID), []byte(message), 0o644)
+func WriteQueueMessage(sessionID, message string) error {
+	return os.WriteFile(queueFilePath(sessionID), []byte(message), 0o644)
 }
 
-func RemoveQueueMessage(paneID string) {
-	os.Remove(queueFilePath(paneID))
+func RemoveQueueMessage(sessionID string) {
+	os.Remove(queueFilePath(sessionID))
 }
 
-func stopReasonFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".stopreason")
+func stopReasonFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".stopreason")
 }
 
-func waitingFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".waiting")
+func waitingFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".waiting")
 }
 
-func compactCountFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".compactcount")
+func compactCountFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".compactcount")
 }
 
-func lastActionFilePath(paneID string) string {
-	return filepath.Join(statusDir(), paneID+".lastaction")
+func lastActionFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".lastaction")
 }
 
-func ReadStopReason(paneID string) string {
-	data, err := os.ReadFile(stopReasonFilePath(paneID))
+func ReadStopReason(sessionID string) string {
+	data, err := os.ReadFile(stopReasonFilePath(sessionID))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func WriteStopReason(paneID, reason string) {
-	os.WriteFile(stopReasonFilePath(paneID), []byte(reason), 0o644)
+func WriteStopReason(sessionID, reason string) {
+	os.WriteFile(stopReasonFilePath(sessionID), []byte(reason), 0o644)
 }
 
-func ReadWaiting(paneID string) bool {
-	_, err := os.Stat(waitingFilePath(paneID))
+func ReadWaiting(sessionID string) bool {
+	_, err := os.Stat(waitingFilePath(sessionID))
 	return err == nil
 }
 
-func WriteWaiting(paneID, notifType string) {
-	os.WriteFile(waitingFilePath(paneID), []byte(notifType), 0o644)
+func WriteWaiting(sessionID, notifType string) {
+	os.WriteFile(waitingFilePath(sessionID), []byte(notifType), 0o644)
 }
 
-func RemoveWaiting(paneID string) {
-	os.Remove(waitingFilePath(paneID))
+func RemoveWaiting(sessionID string) {
+	os.Remove(waitingFilePath(sessionID))
 }
 
-func ReadCompactCount(paneID string) int {
-	data, err := os.ReadFile(compactCountFilePath(paneID))
+func ReadCompactCount(sessionID string) int {
+	data, err := os.ReadFile(compactCountFilePath(sessionID))
 	if err != nil {
 		return 0
 	}
@@ -256,35 +256,63 @@ func ReadCompactCount(paneID string) int {
 	return n
 }
 
-func WriteCompactCount(paneID string, n int) {
-	os.WriteFile(compactCountFilePath(paneID), []byte(strconv.Itoa(n)), 0o644)
+func WriteCompactCount(sessionID string, n int) {
+	os.WriteFile(compactCountFilePath(sessionID), []byte(strconv.Itoa(n)), 0o644)
 }
 
-func ReadLastAction(paneID string) string {
-	data, err := os.ReadFile(lastActionFilePath(paneID))
+func ReadLastAction(sessionID string) string {
+	data, err := os.ReadFile(lastActionFilePath(sessionID))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func WriteLastAction(paneID, action string) {
-	os.WriteFile(lastActionFilePath(paneID), []byte(action), 0o644)
+func WriteLastAction(sessionID, action string) {
+	os.WriteFile(lastActionFilePath(sessionID), []byte(action), 0o644)
 }
 
-func RemoveStatus(paneID string) {
-	os.Remove(statusFilePath(paneID))
+// RemoveSessionFiles removes all session-keyed status files for a session.
+func RemoveSessionFiles(sessionID string) {
+	os.Remove(statusFilePath(sessionID))
+	os.Remove(hookFilePath(sessionID))
+	os.Remove(lastMsgFilePath(sessionID))
+	os.Remove(queueFilePath(sessionID))
+	os.Remove(stopReasonFilePath(sessionID))
+	os.Remove(waitingFilePath(sessionID))
+	os.Remove(compactCountFilePath(sessionID))
+	os.Remove(lastActionFilePath(sessionID))
+}
+
+// RemovePaneMapping removes the pane→session reverse mapping file.
+func RemovePaneMapping(paneID string) {
 	os.Remove(sessionFilePath(paneID))
-	os.Remove(hookFilePath(paneID))
-	os.Remove(lastMsgFilePath(paneID))
-	os.Remove(queueFilePath(paneID))
-	os.Remove(stopReasonFilePath(paneID))
-	os.Remove(waitingFilePath(paneID))
-	os.Remove(compactCountFilePath(paneID))
-	os.Remove(lastActionFilePath(paneID))
 }
 
-func CleanStale(activePaneIDs, laterPaneIDs map[string]bool) error {
+// MigrateToSessionKey renames old pane-keyed files to session-keyed.
+// Idempotent: skips if old file doesn't exist, removes old if new already exists.
+func MigrateToSessionKey(paneID, sessionID string) {
+	if paneID == sessionID {
+		return
+	}
+	dir := statusDir()
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction"}
+	for _, ext := range exts {
+		oldPath := filepath.Join(dir, paneID+ext)
+		newPath := filepath.Join(dir, sessionID+ext)
+		if _, err := os.Stat(oldPath); err != nil {
+			continue // old file doesn't exist
+		}
+		if _, err := os.Stat(newPath); err == nil {
+			os.Remove(oldPath) // new already exists, just clean up old
+			continue
+		}
+		os.Rename(oldPath, newPath)
+	}
+}
+
+// CleanStale removes status files for sessions and pane mappings that are no longer active.
+func CleanStale(activeSessionIDs map[string]bool, activePaneIDs map[string]bool) error {
 	dir := statusDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -294,12 +322,17 @@ func CleanStale(activePaneIDs, laterPaneIDs map[string]bool) error {
 		return err
 	}
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".status") {
-			continue
-		}
-		paneID := strings.TrimSuffix(e.Name(), ".status")
-		if !activePaneIDs[paneID] && !laterPaneIDs[paneID] {
-			RemoveStatus(paneID)
+		name := e.Name()
+		if strings.HasSuffix(name, ".status") {
+			sessionID := strings.TrimSuffix(name, ".status")
+			if !activeSessionIDs[sessionID] {
+				RemoveSessionFiles(sessionID)
+			}
+		} else if strings.HasSuffix(name, ".session") {
+			paneID := strings.TrimSuffix(name, ".session")
+			if !activePaneIDs[paneID] {
+				RemovePaneMapping(paneID)
+			}
 		}
 	}
 	return nil
