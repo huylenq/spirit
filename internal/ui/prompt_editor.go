@@ -1,9 +1,22 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+)
+
+// ModelOptions lists the models available for new session creation.
+// Each model's first letter doubles as its alt+key shortcut.
+var ModelOptions = []string{"opus", "sonnet", "haiku"}
+
+// Cached styles for prompt editor hint rendering (avoids allocations in View hot path).
+var (
+	peKeyStyle      = lipgloss.NewStyle().Foreground(ColorGreen)
+	peActiveStyle   = lipgloss.NewStyle().Bold(true).Foreground(ColorGreen)
+	peBadgeStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
 )
 
 // PromptEditorModel wraps a textarea for multiline prompt input (new session).
@@ -89,28 +102,25 @@ func (m *PromptEditorModel) View(title string, width int) string {
 
 	header := PromptEditorTitleStyle.Render("New session: " + title)
 	if m.selectedModel != "" {
-		header += "  " + lipgloss.NewStyle().Foreground(ColorMuted).Render("["+m.selectedModel+"]")
+		header += "  " + peBadgeStyle.Render("["+m.selectedModel+"]")
 	}
 
 	body := m.input.View()
 
-	// Key labels match the overlay's green title/border color
-	k := lipgloss.NewStyle().Foreground(ColorGreen)
-	dim := FooterDimStyle
-
-	// Compact model hint: "alt+ Opus · Sonnet · Haiku" with key letter green
-	renderModel := func(name string) string {
+	// Compact model hint: "alt+ opus · sonnet · haiku" with key letter green
+	var modelParts []string
+	for _, name := range ModelOptions {
 		if name == m.selectedModel {
-			return lipgloss.NewStyle().Bold(true).Foreground(ColorGreen).Render(name)
+			modelParts = append(modelParts, peActiveStyle.Render(name))
+		} else {
+			modelParts = append(modelParts, peKeyStyle.Render(string(name[0]))+FooterDimStyle.Render(name[1:]))
 		}
-		return k.Render(string(name[0])) + dim.Render(name[1:])
 	}
-	sep := dim.Render(" · ")
-	modelHint := k.Render("alt+ ") +
-		renderModel("opus") + sep + renderModel("sonnet") + sep + renderModel("haiku")
+	sep := FooterDimStyle.Render(" · ")
+	modelHint := peKeyStyle.Render("alt+ ") + strings.Join(modelParts, sep)
 
-	hint := k.Render("enter") + dim.Render(" send  ") +
-		k.Render("esc") + dim.Render(" cancel") + "\n" + modelHint
+	hint := peKeyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
+		peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + "\n" + modelHint
 
 	content := header + "\n\n" + body + "\n\n" + hint
 
