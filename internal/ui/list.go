@@ -960,6 +960,7 @@ func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, 
 func hasBadges(s claude.ClaudeSession) bool {
 	return (s.LastActionCommit && s.Status == claude.StatusUserTurn) ||
 		(s.StopReason != "" && s.Status == claude.StatusUserTurn) ||
+		(s.SkillName != "" && s.Status == claude.StatusUserTurn) ||
 		s.CompactCount > 0
 }
 
@@ -969,6 +970,9 @@ func renderBadges(s claude.ClaudeSession) string {
 	var badges []string
 	if s.LastActionCommit && s.Status == claude.StatusUserTurn {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
+	}
+	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
+		badges = append(badges, StatDoneStyle.Render("/"+s.SkillName))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
 		badges = append(badges, StatDoneStyle.Render(s.StopReason))

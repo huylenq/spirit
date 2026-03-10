@@ -28,8 +28,13 @@ func (m Model) View() string {
 	// With corners when bordered, without corners in fullscreen
 	topBorder := m.usageBar.TopBorderView(m.width, !m.inFullscreenPopup)
 
-	// Label line: usage stats right-aligned below the top border
-	labelLine := ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
+	// Label line: search bar replaces usage stats during search mode
+	var labelLine string
+	if m.state == StateSearching {
+		labelLine = m.renderSearchBar(innerWidth)
+	} else {
+		labelLine = ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
+	}
 
 	// Footer: always 1 line
 	footer := m.renderFooter(innerWidth)
@@ -44,11 +49,13 @@ func (m Model) View() string {
 	minimapDocked := false
 	var minimapView string
 	if m.shouldDockMinimap() {
+		m.minimap.SetDockWidth(innerWidth)
 		minimapView = m.minimap.View()
 		if minimapView != "" {
 			minimapDocked = true
 			contentHeight -= lipgloss.Height(minimapView)
 		}
+		m.minimap.SetDockWidth(0)
 	}
 
 	// List panel
@@ -283,6 +290,25 @@ func (m Model) renderSessionPanel() string {
 		lines = append(lines, line("CacheFresh", freshStr))
 	}
 
+	// Jump trail
+	lines = append(lines, ui.ItemDetailStyle.Render("--- jump trail ---"))
+	lines = append(lines, line("Cursor", fmt.Sprintf("%d/%d", m.jumpCursor, len(m.jumpTrail))))
+	for i, pid := range m.jumpTrail {
+		marker := "  "
+		if i == m.jumpCursor {
+			marker = "> "
+		}
+		// Show short pane ID suffix for readability
+		short := pid
+		if len(short) > 6 {
+			short = short[len(short)-6:]
+		}
+		lines = append(lines, ui.ItemDetailStyle.Render(fmt.Sprintf("%s[%d] %%%s", marker, i, short)))
+	}
+	if m.jumpCursor >= len(m.jumpTrail) {
+		lines = append(lines, ui.ItemDetailStyle.Render("> (head)"))
+	}
+
 	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
 }
 
@@ -428,6 +454,18 @@ func (m Model) renderHelpOverlay() string {
 	return ui.HelpOverlayStyle.Render(body)
 }
 
+func (m Model) renderSearchBar(width int) string {
+	filterView := m.search.View()
+	usageLabel := m.usageBar.LabelView()
+	usageLabelWidth := lipgloss.Width(usageLabel)
+	filterWidth := lipgloss.Width(filterView)
+	gap := width - filterWidth - usageLabelWidth
+	if gap < 2 {
+		return ui.BorderLabelStyle.Width(width).Render(filterView)
+	}
+	return filterView + strings.Repeat(" ", gap) + usageLabel
+}
+
 func (m Model) renderFooter(width int) string {
 	switch m.state {
 	case StatePalette:
@@ -436,17 +474,10 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateSearching:
-		filterView := m.search.View()
-		hint := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
+		h := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
 			ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" confirm  ") +
 			ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" clear")
-		hintWidth := lipgloss.Width(hint)
-		filterWidth := lipgloss.Width(filterView)
-		gap := width - filterWidth - hintWidth
-		if gap < 2 {
-			return filterView
-		}
-		return filterView + strings.Repeat(" ", gap) + hint
+		return ui.FooterStyle.Width(width).Render(h)
 	case StatePromptRelay:
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"

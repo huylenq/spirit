@@ -2,34 +2,50 @@ package ui
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 )
 
-// fuzzyMatch checks if all characters of patternLower appear in order in text (case-insensitive).
-// Returns the byte indices of matched characters and whether the match succeeded.
-func fuzzyMatch(text, patternLower string) ([]int, bool) {
-	if patternLower == "" {
-		return nil, true
+// fuzzyFindOne runs sahilm/fuzzy against a single text string.
+// Returns matched byte indices and quality score (-1 if no match).
+// The library penalizes by (numMatched - textByteLen) for ranking across
+// texts of different lengths. We remove that penalty to get a quality score
+// based purely on match-position bonuses (word boundary, consecutive, etc.).
+func fuzzyFindOne(text, pattern string) ([]int, int) {
+	if pattern == "" {
+		return nil, 0
 	}
 	if text == "" {
-		return nil, false
+		return nil, -1
 	}
 
-	lower := strings.ToLower(text)
-	var indices []int
-	pos := 0
-	for _, pr := range patternLower {
-		found := strings.IndexRune(lower[pos:], pr)
-		if found < 0 {
-			return nil, false
-		}
-		byteIdx := pos + found
-		indices = append(indices, byteIdx)
-		pos = byteIdx + utf8.RuneLen(pr)
+	matches := fuzzy.Find(pattern, []string{text})
+	if len(matches) == 0 {
+		return nil, -1
 	}
-	return indices, true
+
+	m := matches[0]
+	quality := m.Score + len(text) - len(m.MatchedIndexes)
+	return m.MatchedIndexes, quality
+}
+
+// fuzzyMatch returns matched byte indices and whether the match passes quality threshold.
+// Prefers word-boundary and consecutive matches; rejects scattered low-quality
+// subsequences that the old greedy algorithm would have accepted as false positives.
+func fuzzyMatch(text, pattern string) ([]int, bool) {
+	indices, quality := fuzzyFindOne(text, pattern)
+	return indices, quality >= 0
+}
+
+// fuzzyScore returns the quality score for a fuzzy match, or -1 if no match.
+// Higher scores indicate better match quality (word boundaries, consecutive, etc.).
+func fuzzyScore(text, pattern string) int {
+	_, quality := fuzzyFindOne(text, pattern)
+	if quality < 0 {
+		return -1
+	}
+	return quality
 }
 
 // highlightMatch renders text with fuzzy-matched characters bold+underlined.
