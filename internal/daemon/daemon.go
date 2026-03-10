@@ -549,7 +549,7 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 			continue
 		}
 		// Session is Done — deliver the first message only
-		if err := tmux.SendKeysLiteral(s.PaneID, msgs[0]); err != nil {
+		if err := sendMessage(s.PaneID, msgs[0]); err != nil {
 			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
 			continue
 		}
@@ -563,6 +563,23 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 			claude.WriteQueueMessages(sessionID, remaining) //nolint:errcheck
 		}
 	}
+}
+
+// sendMessage sends a message to a pane. If the message starts with "!",
+// it sends "!" as an interactive keystroke first (to trigger Claude's bash mode),
+// then sends the rest as literal text + Enter.
+func sendMessage(paneID, msg string) error {
+	if strings.HasPrefix(msg, "!") {
+		if err := tmux.SendKeys(paneID, "!"); err != nil {
+			return fmt.Errorf("send bang key: %w", err)
+		}
+		rest := msg[1:]
+		if rest == "" {
+			return nil
+		}
+		return tmux.SendKeysLiteral(paneID, rest)
+	}
+	return tmux.SendKeysLiteral(paneID, msg)
 }
 
 // resolvePendingPrompts delivers initial prompts to newly spawned sessions

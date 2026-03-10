@@ -145,6 +145,8 @@ type Model struct {
 	showHelp             bool      // toggle help overlay (? key)
 	lastClickPaneID      string    // pane clicked last (for double-click detection)
 	lastClickTime        time.Time // when the last minimap click happened
+	jumpTrail            []string  // pane IDs for jump history (like Vim's jumplist)
+	jumpCursor           int       // position in jumpTrail; len(jumpTrail) = at head
 	nonClaudePane        *ui.MinimapPaneInfo // focused non-Claude pane (minimap nav)
 	palette              ui.PaletteModel
 	commands             []Command
@@ -480,6 +482,68 @@ func sendBangKey(paneID string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+const maxJumpTrail = 100
+
+// recordJump saves the currently selected paneID to the jump trail.
+// Call before any programmatic jump (gg, G, spatial nav, clicks, snap-to-default, etc.).
+func (m *Model) recordJump() {
+	s, ok := m.list.SelectedItem()
+	if !ok {
+		return
+	}
+	paneID := s.PaneID
+
+	// If navigating history, truncate forward entries
+	if m.jumpCursor < len(m.jumpTrail) {
+		m.jumpTrail = m.jumpTrail[:m.jumpCursor]
+	}
+
+	// Deduplicate consecutive entries
+	if len(m.jumpTrail) > 0 && m.jumpTrail[len(m.jumpTrail)-1] == paneID {
+		return
+	}
+
+	m.jumpTrail = append(m.jumpTrail, paneID)
+	if len(m.jumpTrail) > maxJumpTrail {
+		m.jumpTrail = m.jumpTrail[len(m.jumpTrail)-maxJumpTrail:]
+	}
+	m.jumpCursor = len(m.jumpTrail)
+}
+
+// jumpBack navigates to the previous entry in the jump trail (ctrl+o).
+// Returns the target paneID, or "" if there's nowhere to go.
+func (m *Model) jumpBack() string {
+	if len(m.jumpTrail) == 0 {
+		return ""
+	}
+	// First time going back: save current position at the end
+	if m.jumpCursor >= len(m.jumpTrail) {
+		if s, ok := m.list.SelectedItem(); ok {
+			current := s.PaneID
+			if len(m.jumpTrail) == 0 || m.jumpTrail[len(m.jumpTrail)-1] != current {
+				m.jumpTrail = append(m.jumpTrail, current)
+			}
+			m.jumpCursor = len(m.jumpTrail) - 1
+		}
+	}
+	if m.jumpCursor <= 0 {
+		return ""
+	}
+	m.jumpCursor--
+	return m.jumpTrail[m.jumpCursor]
+}
+
+// jumpForward navigates to the next entry in the jump trail (ctrl+i).
+// Returns the target paneID, or "" if already at head.
+func (m *Model) jumpForward() string {
+	if m.jumpCursor >= len(m.jumpTrail)-1 {
+		m.jumpCursor = len(m.jumpTrail)
+		return ""
+	}
+	m.jumpCursor++
+	return m.jumpTrail[m.jumpCursor]
 }
 
 func (m Model) fetchRenameWindow(sessionName string, windowIndex int) tea.Cmd {

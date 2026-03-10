@@ -59,10 +59,22 @@ func (m *RelayModel) EnterBangMode() {
 }
 
 func (m *RelayModel) Confirm() string {
-	val := m.input.Value()
-	if m.bangMode {
-		val = "!" + val
+	bang := m.bangMode
+	val := m.teardown()
+	if bang {
+		return "!" + val
 	}
+	return val
+}
+
+// ConfirmRaw returns the input value without bang prefix (for send mode where ! was already sent).
+func (m *RelayModel) ConfirmRaw() string {
+	return m.teardown()
+}
+
+// teardown resets relay state and returns the input value.
+func (m *RelayModel) teardown() string {
+	val := m.input.Value()
 	m.bangMode = false
 	m.input.Prompt = m.origPrompt
 	m.active = false
@@ -76,6 +88,10 @@ func (m RelayModel) Active() bool {
 
 func (m RelayModel) Value() string {
 	return m.input.Value()
+}
+
+func (m RelayModel) IsBangMode() bool {
+	return m.bangMode
 }
 
 func (m RelayModel) View() string {

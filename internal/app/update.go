@@ -65,16 +65,11 @@ func copyToClipboard(text string) tea.Cmd {
 // sessionDisplayTitle returns the effective display title for a session,
 // matching the list panel's priority: custom title → headline → first message → "New session".
 func sessionDisplayTitle(s claude.ClaudeSession) string {
-	var title string
-	switch {
-	case s.CustomTitle != "":
-		title = s.CustomTitle
-	case s.Headline != "":
-		title = s.Headline
-	case s.FirstMessage != "":
-		title = strings.ReplaceAll(s.FirstMessage, "\n", " ")
-	default:
+	title := s.DisplayName()
+	if title == "" {
 		title = "New session"
+	} else {
+		title = strings.ReplaceAll(title, "\n", " ")
 	}
 	if runes := []rune(title); len(runes) > 80 {
 		title = string(runes[:79]) + "…"
@@ -173,27 +168,16 @@ func (m *Model) selectDefaultPane() bool {
 	return false
 }
 
-// snapToDefault selects the top user-turn session in the list (first in sort
-// order, skipping Later and skipPaneID). Falls back to the first agent-turn.
+// snapToDefault selects the user-turn session with the oldest LastChanged
+// (waiting longest), skipping Later and skipPaneID. Falls back to agent-turn.
 // Returns cmds from fetchForSelection for the newly selected session.
 func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
-	items := m.list.Items()
-	selected := false
-	for _, s := range items {
-		if s.PaneID != skipPaneID && s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
-			selected = m.list.SelectByPaneID(s.PaneID)
-			break
-		}
+	targetID := m.list.SnapTargetExcluding(skipPaneID)
+	if targetID == "" {
+		return nil
 	}
-	if !selected {
-		for _, s := range items {
-			if s.PaneID != skipPaneID && s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
-				selected = m.list.SelectByPaneID(s.PaneID)
-				break
-			}
-		}
-	}
-	if !selected {
+	m.recordJump()
+	if !m.list.SelectByPaneID(targetID) {
 		return nil
 	}
 	s, ok := m.list.SelectedItem()
@@ -485,7 +469,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 
 	case NewSessionCreatedMsg:
-		m.pendingSelectPaneID = msg.PaneID
+		if m.newSessionWasSession {
+			// Invoked from session level — stay on the original session
+			m.list.EnterSessionLevel()
+			m.list.SelectByPaneID(m.newSessionPrevPaneID)
+		} else {
+			// Invoked from project level — snap to the new session
+			m.pendingSelectPaneID = msg.PaneID
+		}
+		m.newSessionWasSession = false
 		m.flashMsg = "new session created"
 		m.flashIsError = false
 		m.flashExpiry = time.Now().Add(2 * time.Second)
@@ -709,7 +701,13 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.relay.Deactivate()
 		return m, nil
 	case key.Matches(msg, Keys.Enter):
-		val := m.relay.Confirm()
+		bangMode := m.relay.IsBangMode()
+		var val string
+		if bangMode {
+			val = m.relay.ConfirmRaw()
+		} else {
+			val = m.relay.Confirm()
+		}
 		m.state = StateNormal
 		if val == "" {
 			return m, nil
@@ -721,11 +719,11 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		// Bang mode: ! as first character sends ! to pane (bash mode) and stays in relay
+		// Bang mode: ! as first character sends ! keystroke to pane (bash mode) and stays in relay
 		if msg.String() == "!" && m.relay.Value() == "" {
 			m.relay.EnterBangMode()
 			if s, ok := m.list.SelectedItem(); ok {
-				return m, sendPromptRelay(s.PaneID, "!")
+				return m, sendBangKey(s.PaneID)
 			}
 			return m, nil
 		}
@@ -750,15 +748,14 @@ func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.queueRelay.Deactivate()
 		return m, nil
 	case key.Matches(msg, Keys.Enter):
-		// Enter always processes text input (appends if non-empty)
 		val := m.queueRelay.Confirm()
 		if val == "" {
-			// Empty submit does nothing
-			m.queueRelay.Activate() // re-focus input
+			m.state = StateNormal
+			m.queueRelay.Deactivate()
 			return m, nil
 		}
 		paneID, sessionID := s.PaneID, s.SessionID
-		m.queueRelay.Activate() // re-focus for next message
+		m.state = StateNormal
 		return m, func() tea.Msg {
 			if err := m.client.Queue(paneID, sessionID, val); err != nil {
 				return flashErrorMsg("queue failed: " + err.Error())
@@ -833,7 +830,7 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyEnter:
 		prompt := m.promptEditor.Confirm()
 		m.state = StateNormal
-		m.newSessionWasSession = false
+		// Keep newSessionWasSession alive — cleared in NewSessionCreatedMsg handler
 		return m, m.spawnNewSession(prompt)
 	default:
 		cmd := m.promptEditor.Update(msg)
@@ -963,6 +960,24 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 
+	case key.Matches(msg, Keys.JumpBack):
+		target := m.jumpBack()
+		if target != "" && m.list.SelectByPaneID(target) {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.JumpForward):
+		target := m.jumpForward()
+		if target != "" && m.list.SelectByPaneID(target) {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+		}
+		return m, nil
+
 	case m.showMinimap && key.Matches(msg, Keys.SpatialUp, Keys.SpatialDown, Keys.SpatialLeft, Keys.SpatialRight):
 		var dir ui.SpatialDir
 		dirName := ""
@@ -985,6 +1000,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if paneID == "" {
 			return m, nil
 		}
+		m.recordJump()
 		if isClaude && m.list.SelectByPaneID(paneID) {
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, false)...)
@@ -1000,6 +1016,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.NavLeft):
 		// h: enter project-level navigation
 		if m.list.SelectionLevel() == ui.LevelSession {
+			m.recordJump()
 			m.list.EnterProjectLevel()
 			if s, ok := m.list.SelectedProjectSession(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -1010,6 +1027,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.NavRight):
 		// l: exit project-level, enter session-level
 		if m.list.SelectionLevel() == ui.LevelProject {
+			m.recordJump()
 			m.list.EnterSessionLevel()
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -1046,6 +1064,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.GoBottom):
+		m.recordJump()
 		m.list.MoveToBottom()
 		if s, ok := m.list.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -1109,6 +1128,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 
 	case key.Matches(msg, Keys.Search):
+		m.recordJump()
 		// Exit project level when entering search
 		if m.list.SelectionLevel() == ui.LevelProject {
 			m.list.EnterSessionLevel()
@@ -1480,6 +1500,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if paneID == m.minimap.SelectedPaneID() {
 		return m, nil
 	}
+	m.recordJump()
 	m.minimap.UpdateSelected(paneID)
 	if isClaude && m.list.SelectByPaneID(paneID) {
 		if s, ok := m.list.SelectedItem(); ok {
@@ -1534,6 +1555,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.recordJump()
 	if m.list.SelectByPaneID(paneID) {
 		if s, ok := m.list.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
