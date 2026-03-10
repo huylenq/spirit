@@ -53,8 +53,9 @@ var (
 	// List items
 	ItemStyle = lipgloss.NewStyle()
 
-	SelectedBarStyle = lipgloss.NewStyle().Foreground(ColorAccent).Background(ColorSelectionBg) // accent bar on selection bg
-	SelectedBgStyle  = lipgloss.NewStyle().Background(ColorSelectionBg)
+	SelectedBarStyle  = lipgloss.NewStyle().Foreground(ColorAccent).Background(ColorSelectionBg) // accent bar on selection bg
+	SelectedBgStyle   = lipgloss.NewStyle().Background(ColorSelectionBg)
+	SnapTargetBarStyle = lipgloss.NewStyle().Foreground(ColorBorder) // hollow dimmed bar for next snap target
 
 	ItemDetailStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
@@ -113,7 +114,7 @@ var (
 	// Transcript overlay in preview
 	TranscriptOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(ColorAccent).
+				BorderForeground(ColorBorder).
 				Padding(0, 1)
 
 	TranscriptTitleStyle = lipgloss.NewStyle().

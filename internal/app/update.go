@@ -717,6 +717,17 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
+		// Bang mode: ! as first character sends ! immediately (bash mode)
+		if msg.String() == "!" && m.relay.Value() == "" {
+			m.state = StateNormal
+			m.relay.Deactivate()
+			if s, ok := m.list.SelectedItem(); ok {
+				cmds := []tea.Cmd{sendPromptRelay(s.PaneID, "!")}
+				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+				return m, tea.Batch(cmds...)
+			}
+			return m, nil
+		}
 		ti := m.relay.TextInput()
 		newTI, cmd := ti.Update(msg)
 		*ti = newTI
@@ -788,6 +799,11 @@ func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Forward to text input only when not highlighting an item
 		if m.queueCursor == -1 {
+			// Bang mode: ! as first character changes prompt icon
+			if msg.String() == "!" && m.queueRelay.Value() == "" {
+				m.queueRelay.EnterBangMode()
+				return m, nil
+			}
 			ti := m.queueRelay.TextInput()
 			newTI, cmd := ti.Update(msg)
 			*ti = newTI

@@ -3,8 +3,10 @@ package ui
 import "github.com/charmbracelet/bubbles/textinput"
 
 type RelayModel struct {
-	input  textinput.Model
-	active bool
+	input      textinput.Model
+	active     bool
+	bangMode   bool
+	origPrompt string
 }
 
 func NewRelayModel() RelayModel {
@@ -13,7 +15,7 @@ func NewRelayModel() RelayModel {
 	ti.Prompt = "❯ "
 	ti.PromptStyle = RelayPromptStyle
 	ti.CharLimit = 512
-	return RelayModel{input: ti}
+	return RelayModel{input: ti, origPrompt: "❯ "}
 }
 
 func NewQueueRelayModel() RelayModel {
@@ -22,17 +24,21 @@ func NewQueueRelayModel() RelayModel {
 	ti.Prompt = "❮ "
 	ti.PromptStyle = QueuePromptStyle
 	ti.CharLimit = 512
-	return RelayModel{input: ti}
+	return RelayModel{input: ti, origPrompt: "❮ "}
 }
 
 func (m *RelayModel) Activate() {
 	m.active = true
+	m.bangMode = false
+	m.input.Prompt = m.origPrompt
 	m.input.Focus()
 	m.input.SetValue("")
 }
 
 func (m *RelayModel) ActivateWithValue(value string) {
 	m.active = true
+	m.bangMode = false
+	m.input.Prompt = m.origPrompt
 	m.input.Focus()
 	m.input.SetValue(value)
 	m.input.CursorEnd()
@@ -40,12 +46,25 @@ func (m *RelayModel) ActivateWithValue(value string) {
 
 func (m *RelayModel) Deactivate() {
 	m.active = false
+	m.bangMode = false
+	m.input.Prompt = m.origPrompt
 	m.input.Blur()
 	m.input.SetValue("")
 }
 
+// EnterBangMode replaces the chevron prompt with "!" (keeping the current style).
+func (m *RelayModel) EnterBangMode() {
+	m.bangMode = true
+	m.input.Prompt = "! "
+}
+
 func (m *RelayModel) Confirm() string {
 	val := m.input.Value()
+	if m.bangMode {
+		val = "!" + val
+	}
+	m.bangMode = false
+	m.input.Prompt = m.origPrompt
 	m.active = false
 	m.input.Blur()
 	return val

@@ -318,6 +318,28 @@ func (m ListModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
+// SnapTargetPaneID returns the PaneID that snapToDefault would select if an
+// action were executed on the currently selected session. Returns "" if no
+// snap target exists. Mirrors the priority: first UserTurn, then AgentTurn,
+// skipping Later-bookmarked sessions and the current selection.
+func (m ListModel) SnapTargetPaneID() string {
+	var skipPaneID string
+	if m.cursor >= 0 && m.cursor < len(m.filtered) {
+		skipPaneID = m.filtered[m.cursor].PaneID
+	}
+	for _, s := range m.filtered {
+		if s.PaneID != skipPaneID && s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
+			return s.PaneID
+		}
+	}
+	for _, s := range m.filtered {
+		if s.PaneID != skipPaneID && s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
+			return s.PaneID
+		}
+	}
+	return ""
+}
+
 func (m *ListModel) applyNarrow() {
 	// Always maintain a sorted copy of all items for stable group rendering
 	m.allSorted = make([]claude.ClaudeSession, len(m.items))

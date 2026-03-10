@@ -343,7 +343,7 @@ func (m Model) spawnNewSession(prompt string) tea.Cmd {
 		if err != nil {
 			return flashErrorMsg("new window: " + err.Error())
 		}
-		tmux.SendKeysLiteral(paneID, "claude") //nolint:errcheck
+		tmux.SendKeysLiteral(paneID, "claude --dangerously-skip-permissions") //nolint:errcheck
 		if prompt != "" {
 			// Register pending prompt with daemon for delivery when session is ready
 			if err := m.client.PendingPrompt(paneID, prompt); err != nil {

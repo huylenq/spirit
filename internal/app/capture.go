@@ -35,7 +35,7 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	m.width = cols
 	m.height = rows
 	m.ready = true
-	m.showMinimap = false
+	// showMinimap loaded from prefs by NewModel — keep it
 	m.sessions = sessions
 	m.list.SetItems(sessions)
 	m.applyLayout()

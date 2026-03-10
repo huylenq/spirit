@@ -144,6 +144,13 @@ func HandleHook(hookType string) {
 		effects = append(effects, "session cleanup; files removed")
 
 	case "PreCompact":
+		nd.Status = StatusAgentTurn.String()
+		WriteStatus(sessionID, StatusAgentTurn)
+		effects = append(effects, "status → agent-turn")
+		// Clear transient states — compaction means Claude is actively working
+		RemoveWaiting(sessionID)
+		os.Remove(stopReasonFilePath(sessionID))
+		nd.IsWaiting = boolPtr(false)
 		count := ReadCompactCount(sessionID)
 		count++
 		WriteCompactCount(sessionID, count)

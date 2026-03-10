@@ -74,7 +74,9 @@ type windowGroup struct {
 var (
 	minimapBorderStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(ColorBorder)
+				BorderForeground(ColorBorder).
+				PaddingLeft(1).
+				PaddingRight(1)
 
 	minimapSessionStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted).
@@ -455,8 +457,8 @@ func (m MinimapModel) ViewSize() (width, height int) {
 	if len(windows) == 0 || innerW < 8 || gridH < 1 {
 		return 0, 0
 	}
-	// border (2) + session label (1) + window tab labels (1) + gridH rows
-	return innerW + 2, gridH + 4
+	// border (2) + padding (2) + session label (1) + window tab labels (1) + gridH rows
+	return innerW + 4, gridH + 4
 }
 
 // PaneAtGridCoord hit-tests a grid coordinate against computeGridRects.
@@ -578,10 +580,23 @@ func (m MinimapModel) View() string {
 		suffix = minimapTabStyle.Render(fmt.Sprintf("+%d", hiddenAfter))
 	}
 
-	// Build vertical separator between windows (grid rows only, skip label row)
-	sepLine := " " + lipgloss.NewStyle().Foreground(ColorBorder).Render("│") + " "
-	sep := "   \n" + strings.Repeat(sepLine+"\n", gridH)
-	sep = strings.TrimRight(sep, "\n")
+	// Build vertical separator between windows: 3-char centered stub
+	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2d3341"})
+	sepVisible := 2
+	if sepVisible > gridH {
+		sepVisible = gridH
+	}
+	topPad := (gridH - sepVisible) / 2
+	var sepLines []string
+	sepLines = append(sepLines, "   ") // label row blank
+	for r := 0; r < gridH; r++ {
+		if r >= topPad && r < topPad+sepVisible {
+			sepLines = append(sepLines, " "+sepStyle.Render("│")+" ")
+		} else {
+			sepLines = append(sepLines, "   ")
+		}
+	}
+	sep := strings.Join(sepLines, "\n")
 
 	parts := interleave(windowColumns, sep)
 	if prefix != "" {

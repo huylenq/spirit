@@ -633,86 +633,77 @@ func (m PreviewModel) View() string {
 
 	s := m.session
 
-	// Header: project name + branch + diff stats
-	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
-	title := avatar + " " + PreviewTitleStyle.Render(s.Project+"/")
-	if s.CustomTitle != "" {
-		title += " " + PreviewMetaStyle.Render(s.CustomTitle)
-	}
-	branch := ""
+	avatarColor := AvatarColor(s.AvatarColorIdx)
+
+	// Header line 1: project + diff stats + right-aligned git info
+	projectLabel := PreviewTitleStyle.Foreground(avatarColor).Render(s.Project + "/")
+	gitInfo := ""
 	if s.GitBranch != "" {
-		branch = PreviewMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
+		gitInfo = PreviewMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
 			s.TmuxSession + ":" + fmt.Sprintf("%d.%s", s.TmuxWindow, s.PaneID))
 	}
+	gitInfoWidth := lipgloss.Width(gitInfo)
+	projectWidth := lipgloss.Width(projectLabel)
 
-	// Per-file diff stats across two rows (title line + branch line), sorted by footprint
-	titleSuffix := ""
-	branchSuffix := ""
+	// Diff stats fill the gap between project and right-aligned git info
+	diffStatsStr := ""
 	if len(m.diffFiles) > 0 {
-		// Stats column aligned to the right of whichever label (title/branch) is wider
-		titleWidth := lipgloss.Width(title)
-		branchWidth := lipgloss.Width(branch)
-		statsCol := max(titleWidth, branchWidth) + 2
-		rowWidth := m.width - statsCol - 2
-
+		// Available width for diffs: total - project - gitInfo - gaps
+		rowWidth := m.width - projectWidth - gitInfoWidth - 6 // 2 gap left + 2 gap right + 2 padding
 		if rowWidth < 10 {
 			rowWidth = 10
 		}
 
-		// Render file entries into up to 2 rows
-		var rows [2][]string
-		var rowUsed [2]int
-		row := 0
+		var entries []string
+		used := 0
 		for i, fs := range m.diffFiles {
 			entry := fs.name + " "
 			addStr := fmt.Sprintf("+%d", fs.added)
 			rmStr := fmt.Sprintf("-%d", fs.removed)
 			plainWidth := lipgloss.Width(entry) + lipgloss.Width(addStr) + 1 + lipgloss.Width(rmStr)
-			if rowUsed[row] > 0 {
+			if used > 0 {
 				plainWidth += 3 // separator " │ "
 			}
-			if rowUsed[row]+plainWidth > rowWidth && len(rows[row]) > 0 {
-				if row == 0 {
-					row = 1
-					// Recalc width for fresh row
-					plainWidth = lipgloss.Width(entry) + lipgloss.Width(addStr) + 1 + lipgloss.Width(rmStr)
-				} else {
-					remaining := len(m.diffFiles) - i
-					if remaining > 0 {
-						rows[row] = append(rows[row], ItemDetailStyle.Render(fmt.Sprintf("…+%d", remaining)))
-					}
-					break
+			if used+plainWidth > rowWidth && len(entries) > 0 {
+				remaining := len(m.diffFiles) - i
+				if remaining > 0 {
+					entries = append(entries, ItemDetailStyle.Render(fmt.Sprintf("…+%d", remaining)))
 				}
+				break
 			}
 			rendered := ItemDetailStyle.Render(entry) + DiffAddedStyle.Render(addStr) + " " + StatWorkingStyle.Render(rmStr)
-			rows[row] = append(rows[row], rendered)
-			rowUsed[row] += plainWidth
+			entries = append(entries, rendered)
+			used += plainWidth
 		}
 
-		sep := ItemDetailStyle.Render(" │ ")
-		if len(rows[1]) > 0 {
-			// Two rows: first on title line, second on branch line
-			pad := statsCol - titleWidth
-			if pad < 2 {
-				pad = 2
-			}
-			titleSuffix = strings.Repeat(" ", pad) + strings.Join(rows[0], sep)
-			pad = statsCol - branchWidth
-			if pad < 2 {
-				pad = 2
-			}
-			branchSuffix = strings.Repeat(" ", pad) + strings.Join(rows[1], sep)
-		} else if len(rows[0]) > 0 {
-			// Single row: only on branch line
-			pad := statsCol - branchWidth
-			if pad < 2 {
-				pad = 2
-			}
-			branchSuffix = strings.Repeat(" ", pad) + strings.Join(rows[0], sep)
+		if len(entries) > 0 {
+			sep := ItemDetailStyle.Render(" │ ")
+			diffStatsStr = "  " + strings.Join(entries, sep)
 		}
 	}
 
-	header := title + titleSuffix + "\n" + branch + branchSuffix + "\n"
+	// Assemble line 1: project + diffs + gap + git info (right-aligned)
+	leftPart := projectLabel + diffStatsStr
+	leftWidth := lipgloss.Width(leftPart)
+	gap := m.width - leftWidth - gitInfoWidth - 2
+	if gap < 2 {
+		gap = 2
+	}
+	line1 := leftPart + strings.Repeat(" ", gap) + gitInfo
+
+	// Header line 2: avatar + session title (neutral, matching list item color)
+	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
+	sessionTitle := avatar
+	switch {
+	case s.CustomTitle != "":
+		sessionTitle += "  " + s.CustomTitle
+	case s.Headline != "":
+		sessionTitle += "  " + s.Headline
+	case s.FirstMessage != "":
+		sessionTitle += "  " + s.FirstMessage
+	}
+
+	header := line1 + "\n" + sessionTitle + "\n"
 
 	// Content viewport, optionally with transcript side panel
 	contentWidth := m.width - 4
@@ -788,8 +779,7 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 
 	var lines []string
 
-	avatarColor := AvatarColor(m.session.AvatarColorIdx)
-	titleLine := TranscriptTitleStyle.Foreground(avatarColor).Render(" " + IconInput + "  Your Messages")
+	titleLine := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {
@@ -821,7 +811,6 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 
 	content := strings.Join(lines, "\n")
 	return TranscriptOverlayStyle.
-		BorderForeground(avatarColor).
 		Width(width).
 		Height(height).
 		Render(content)
