@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,13 +28,16 @@ type projectEntry struct {
 
 // matches returns true if the session belongs to this project entry.
 func (pe projectEntry) matches(s claude.ClaudeSession) bool {
-	return s.Project == pe.Name && (pe.StatusOrder == -1 || sessionOrder(s) == pe.StatusOrder)
+	if pe.StatusOrder == -1 {
+		return s.Project == pe.Name && sessionOrder(s) != OrderLater
+	}
+	return s.Project == pe.Name && sessionOrder(s) == pe.StatusOrder
 }
 
-// selBg adds ColorSelectionBg background to st when selected, otherwise returns st unchanged.
-func selBg(st lipgloss.Style, selected bool) lipgloss.Style {
+// selBg adds avatar-tinted background to st when selected, otherwise returns st unchanged.
+func selBg(st lipgloss.Style, selected bool, colorIdx int) lipgloss.Style {
 	if selected {
-		return st.Background(ColorSelectionBg)
+		return st.Background(AvatarFillBg(colorIdx))
 	}
 	return st
 }
@@ -43,6 +47,7 @@ type ListModel struct {
 	filtered             []claude.ClaudeSession            // cursor-navigable matching items
 	allSorted            []claude.ClaudeSession            // all items sorted (for stable group rendering)
 	matchSet             map[string]bool                   // PaneIDs of narrow-matching items; nil = all match
+	matchScores          map[string]int                    // PaneID → best fuzzy score (only during search)
 	cursor               int
 	height               int
 	width                int
@@ -229,6 +234,8 @@ func (m *ListModel) EnterProjectLevel() {
 		order := -1
 		if !m.groupByProject {
 			order = sessionOrder(s)
+		} else if sessionOrder(s) == OrderLater {
+			order = OrderLater
 		}
 		for i, p := range m.projects {
 			if p.Name == s.Project && p.StatusOrder == order {
@@ -337,7 +344,7 @@ func (m ListModel) SnapTargetExcluding(skipPaneID string) string {
 	var bestUserTime, bestAgentTime time.Time
 
 	for _, s := range m.filtered {
-		if s.PaneID == skipPaneID || s.LaterBookmarkID != "" {
+		if s.PaneID == skipPaneID || s.LaterBookmarkID != "" || s.LastChanged.IsZero() {
 			continue
 		}
 		switch s.Status {
@@ -368,25 +375,50 @@ func (m *ListModel) applyNarrow() {
 		m.filtered = make([]claude.ClaudeSession, len(m.items))
 		copy(m.filtered, m.items)
 		m.matchSet = nil // nil = all match
+		m.matchScores = nil
 	} else {
 		f := strings.ToLower(m.narrow)
 		m.filtered = nil
 		m.matchSet = make(map[string]bool)
+		m.matchScores = make(map[string]int)
 		for _, s := range m.items {
-			if matchesNarrow(s.CustomTitle, f) || matchesNarrow(s.Headline, f) || matchesNarrow(s.FirstMessage, f) || matchesNarrow(s.LastUserMessage, f) {
+			best := bestNarrowScore(s, f)
+			if best >= 0 {
 				m.filtered = append(m.filtered, s)
 				m.matchSet[s.PaneID] = true
+				m.matchScores[s.PaneID] = best
 			}
 		}
+		sort.SliceStable(m.filtered, func(i, j int) bool {
+			return m.matchScores[m.filtered[i].PaneID] > m.matchScores[m.filtered[j].PaneID]
+		})
 	}
 	if m.groupByProject {
-		sortByProject(m.filtered)
 		sortByProject(m.allSorted)
 	} else {
-		sortByStatus(m.filtered)
 		sortByStatus(m.allSorted)
 	}
+	// When not searching, sort filtered same as allSorted
+	if m.narrow == "" {
+		if m.groupByProject {
+			sortByProject(m.filtered)
+		} else {
+			sortByStatus(m.filtered)
+		}
+	}
 	m.rebuildProjects()
+}
+
+// bestNarrowScore returns the best fuzzy score of query across the session's searchable fields.
+// Returns -1 if no field matches.
+func bestNarrowScore(s claude.ClaudeSession, query string) int {
+	best := -1
+	for _, text := range []string{s.CustomTitle, s.Headline, s.FirstMessage, s.LastUserMessage} {
+		if score := fuzzyScore(text, query); score > best {
+			best = score
+		}
+	}
+	return best
 }
 
 // rebuildProjects extracts project entries in display order from the filtered list.
@@ -410,6 +442,8 @@ func (m *ListModel) rebuildProjects() {
 		order := -1
 		if !m.groupByProject {
 			order = sessionOrder(s)
+		} else if sessionOrder(s) == OrderLater {
+			order = OrderLater
 		}
 		k := key{s.Project, order}
 		if !seen[k] {
@@ -433,13 +467,16 @@ func (m *ListModel) rebuildProjects() {
 }
 
 func sortByProject(sessions []claude.ClaudeSession) {
-	// Primary: project name alphabetically; secondary: session order; tertiary: newest created first
+	// Primary: Later sessions sink to bottom; secondary: project name alphabetically;
+	// tertiary: newest created first
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
-			if a.Project > b.Project ||
-				(a.Project == b.Project && sessionOrder(a) > sessionOrder(b)) ||
-				(a.Project == b.Project && sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
+			aLater := sessionOrder(a) == OrderLater
+			bLater := sessionOrder(b) == OrderLater
+			if (aLater && !bLater) ||
+				(aLater == bLater && a.Project > b.Project) ||
+				(aLater == bLater && a.Project == b.Project && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -541,54 +578,84 @@ func (m ListModel) View() string {
 	selectedProject, atProjectLevel := m.SelectedProject()
 
 	var lines []string
-	currentProject := ""
-	currentOrder := -1
 	m.selectedProjectRow = -1
 
-	for _, s := range m.allSorted {
-		// Group headers — always rendered for spatial stability during narrowing
-		if m.groupByProject {
-			if s.Project != currentProject {
-				currentProject = s.Project
-				if len(lines) > 0 {
-					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-				}
-				if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
-					m.selectedProjectRow = len(lines)
-					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
-				} else {
-					lines = append(lines, renderGroupHeader(s.Project))
-				}
-			}
-		} else {
-			order := sessionOrder(s)
-			if order != currentOrder {
-				currentOrder = order
-				currentProject = "" // reset project tracking for new status group
-				if len(lines) > 0 {
-					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-				}
-				lines = append(lines, renderStatusGroupHeader(order))
-			}
-			if s.Project != currentProject {
-				currentProject = s.Project
-				if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
-					m.selectedProjectRow = len(lines)
-					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
-				} else {
-					lines = append(lines, renderProjectSubHeader(s.Project))
-				}
-			}
+	if m.narrow != "" {
+		// Search mode: render from m.filtered directly (score-sorted, flat)
+		for _, s := range m.filtered {
+			isSelected := s.PaneID == selectedPaneID && !m.deselected
+			isSnapTarget := !isSelected && s.PaneID == snapTargetID
+			lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
 		}
+	} else {
+		currentProject := ""
+		currentOrder := -1
 
-		// Only render items that match the narrow (matchSet nil = all match)
-		if m.matchSet != nil && !m.matchSet[s.PaneID] {
-			continue
+		for _, s := range m.allSorted {
+			// Group headers — always rendered for spatial stability during narrowing
+			if m.groupByProject {
+				order := sessionOrder(s)
+				// Emit LATER header when entering the Later zone
+				if order == OrderLater && currentOrder != OrderLater {
+					currentOrder = OrderLater
+					currentProject = "" // reset to force project sub-header
+					if len(lines) > 0 {
+						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+					}
+					lines = append(lines, renderStatusGroupHeader(OrderLater))
+				}
+				if s.Project != currentProject {
+					currentProject = s.Project
+					if currentOrder == OrderLater {
+						// Project sub-header within Later section
+						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == OrderLater {
+							m.selectedProjectRow = len(lines)
+							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+						} else {
+							lines = append(lines, renderProjectSubHeader(s.Project))
+						}
+					} else {
+						if len(lines) > 0 {
+							lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+						}
+						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
+							m.selectedProjectRow = len(lines)
+							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+						} else {
+							lines = append(lines, renderGroupHeader(s.Project))
+						}
+					}
+				}
+			} else {
+				order := sessionOrder(s)
+				if order != currentOrder {
+					currentOrder = order
+					currentProject = "" // reset project tracking for new status group
+					if len(lines) > 0 {
+						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+					}
+					lines = append(lines, renderStatusGroupHeader(order))
+				}
+				if s.Project != currentProject {
+					currentProject = s.Project
+					if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
+						m.selectedProjectRow = len(lines)
+						lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+					} else {
+						lines = append(lines, renderProjectSubHeader(s.Project))
+					}
+				}
+			}
+
+			// Only render items that match the narrow (matchSet nil = all match)
+			if m.matchSet != nil && !m.matchSet[s.PaneID] {
+				continue
+			}
+
+			isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
+			isSnapTarget := !isSelected && s.PaneID == snapTargetID
+			lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
 		}
-
-		isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
-		isSnapTarget := !isSelected && s.PaneID == snapTargetID
-		lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
 	}
 
 	// Truncate to fit available height
@@ -643,10 +710,21 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)
 	hasQuery := query != ""
 
-	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected) }
+	// Avatar-colored selection styles (only allocated for the active state)
+	avatarColor := AvatarColor(s.AvatarColorIdx)
+	avatarBg := AvatarFillBg(s.AvatarColorIdx)
+	var selBgSt, barSt, snapBarSt lipgloss.Style
+	if isSelected {
+		selBgSt = lipgloss.NewStyle().Background(avatarBg)
+		barSt = lipgloss.NewStyle().Foreground(avatarColor).Background(avatarBg)
+	} else if isSnapTarget {
+		snapBarSt = lipgloss.NewStyle().Foreground(avatarColor)
+	}
+
+	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected, s.AvatarColorIdx) }
 	sp := func(s string) string {
 		if isSelected {
-			return SelectedBgStyle.Render(s)
+			return selBgSt.Render(s)
 		}
 		return s
 	}
@@ -699,7 +777,7 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 
 	var namePart, gapStr string
 	if isSelected {
-		bg := SelectedBgStyle
+		bg := selBgSt
 		var styledName string
 		if hasQuery && !isNewSession {
 			styledName = highlightMatch(displayName, query, bg)
@@ -707,9 +785,9 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 			styledName = bg.Render(displayName)
 		}
 		namePart = bg.Render("  ") +
-			SelectedBarStyle.Render("▌") +
+			barSt.Render("▌") +
 			bg.Render(" ") +
-			AvatarStyle(s.AvatarColorIdx).Background(ColorSelectionBg).Render(glyph + "  ") +
+			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph + "  ") +
 			styledName
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {
@@ -720,7 +798,7 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 			styledName = displayName
 		}
 		if isSnapTarget {
-			namePart = "  " + SnapTargetBarStyle.Render("▯") + " " + iconStr + styledName
+			namePart = "  " + snapBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
 			namePart = "    " + iconStr + styledName
 		}
@@ -732,19 +810,19 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	// selSubtitle wraps a subtitle content string with the selection bar at col 2.
 	// bar(1) + sp("  ")(2) + content(m.width-5) = m.width-2 total, matching the main line.
 	selSubtitle := func(style lipgloss.Style, content string) string {
-		return sp("  ") + SelectedBarStyle.Render("▌") +
+		return sp("  ") + barSt.Render("▌") +
 			withBg(style).Width(m.width - 5).Render(content)
 	}
 
 	// snapSubtitle wraps an unselected subtitle with the snap-target bar at col 2.
 	// Visually: "  │" + content — same width as "      " (6 spaces).
 	snapSubtitle := func(style lipgloss.Style, content string) string {
-		return "  " + SnapTargetBarStyle.Render("▯") + style.Render("   "+content)
+		return "  " + snapBarSt.Render("▯") + style.Render("   "+content)
 	}
 
 	if m.summaryLoadingPanes[s.PaneID] {
 		if isSelected {
-			line += "\n" + selSubtitle(SelectedBgStyle.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
+			line += "\n" + selSubtitle(selBgSt.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
 		} else if isSnapTarget {
 			line += "\n" + snapSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
 		} else {
@@ -755,26 +833,26 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	// Show queue badge with count
 	if len(s.QueuePending) > 0 {
 		queueBadge := fmt.Sprintf("%s %d", IconQueue, len(s.QueuePending))
-		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isSnapTarget, false)
+		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isSnapTarget, false, s.AvatarColorIdx)
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
-		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isSnapTarget, doHL)
+		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isSnapTarget, doHL, s.AvatarColorIdx)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
 		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isSnapTarget, true)
+			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isSnapTarget, true, s.AvatarColorIdx)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
 		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
-			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isSnapTarget, true)
+			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isSnapTarget, true, s.AvatarColorIdx)
 		}
 	}
 
@@ -812,15 +890,17 @@ func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
 
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSnapTarget, doHighlight bool) string {
+func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSnapTarget, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
 
 	if isSelected {
 		prefix := "   " + icon + " "
 		prefixWidth := lipgloss.Width(prefix)
-		baseStyle := ItemDetailStyle.Background(ColorSelectionBg)
-		bgStyle := lipgloss.NewStyle().Background(ColorSelectionBg)
+		fillBg := AvatarFillBg(avatarColorIdx)
+		baseStyle := ItemDetailStyle.Background(fillBg)
+		bgStyle := lipgloss.NewStyle().Background(fillBg)
+		localBarSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx)).Background(fillBg)
 
 		var content string
 		if doHighlight && query != "" {
@@ -834,16 +914,17 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSn
 		if padWidth < 0 {
 			padWidth = 0
 		}
-		return bgStyle.Render("  ") + SelectedBarStyle.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
+		return bgStyle.Render("  ") + localBarSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
 	// Unselected — with optional snap-target bar at col 2
 	if isSnapTarget {
+		localSnapSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx))
 		prefix := "   " + icon + " "
 		if doHighlight && query != "" {
-			return "  " + SnapTargetBarStyle.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
+			return "  " + localSnapSt.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 		}
-		return "  " + SnapTargetBarStyle.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
+		return "  " + localSnapSt.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
 	}
 	prefix := "      " + icon + " "
 	if doHighlight && query != "" {
@@ -855,22 +936,22 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSn
 // renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
 // at word boundaries. The first line gets the icon; the second is indented with
 // spaces matching the icon's width.
-func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isSnapTarget, doHighlight bool) string {
+func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isSnapTarget, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	if msgWidth < 1 {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
 	}
 
 	// Word-wrap at word boundary to split into two lines
 	line1, rest := wordWrapFirst(text, msgWidth)
 	if rest == "" {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
 	}
 
 	// Render first line, second line with blank icon of same width
-	first := m.renderSubtitleLine(line1, query, icon, isSelected, isSnapTarget, doHighlight)
+	first := m.renderSubtitleLine(line1, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
-	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isSnapTarget, doHighlight)
+	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
 	return first + "\n" + second
 }
 
@@ -902,7 +983,7 @@ func renderBadges(s claude.ClaudeSession) string {
 }
 
 func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
-	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected) }
+	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected, s.AvatarColorIdx) }
 	if s.CommitDonePending {
 		return bg(CommitDoneStyle).Render(commitDoneFrames[m.commitDoneFrame])
 	}
@@ -957,6 +1038,19 @@ func (m ListModel) PaneIDAtLine(line int) string {
 
 	query := strings.ToLower(m.narrow)
 	currentLine := 0
+
+	if m.narrow != "" {
+		// Search mode: flat list from m.filtered (score-sorted)
+		for _, s := range m.filtered {
+			lineCount := m.itemLineCount(s, query)
+			if line >= currentLine && line < currentLine+lineCount {
+				return s.PaneID
+			}
+			currentLine += lineCount
+		}
+		return ""
+	}
+
 	currentProject := ""
 	currentOrder := -1
 	anyLinesEmitted := false

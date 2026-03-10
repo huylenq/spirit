@@ -53,9 +53,7 @@ var (
 	// List items
 	ItemStyle = lipgloss.NewStyle()
 
-	SelectedBarStyle  = lipgloss.NewStyle().Foreground(ColorAccent).Background(ColorSelectionBg) // accent bar on selection bg
-	SelectedBgStyle   = lipgloss.NewStyle().Background(ColorSelectionBg)
-	SnapTargetBarStyle = lipgloss.NewStyle().Foreground(ColorBorder) // hollow dimmed bar for next snap target
+	SelectedBgStyle = lipgloss.NewStyle().Background(ColorSelectionBg)
 
 	ItemDetailStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
