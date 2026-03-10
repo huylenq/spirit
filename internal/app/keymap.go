@@ -10,7 +10,7 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.Enter, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
+		k.Up, k.NavLeft, k.Enter, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
 		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
@@ -94,6 +94,10 @@ type KeyMap struct {
 
 	// Command palette
 	Palette key.Binding
+
+	// Tree navigation (h/l for project/session level)
+	NavLeft  key.Binding
+	NavRight key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -317,5 +321,12 @@ var Keys = KeyMap{
 	Palette: key.NewBinding(
 		key.WithKeys(";"),
 		key.WithHelp(";", "commands"),
+	),
+	NavLeft: key.NewBinding(
+		key.WithKeys("h"),
+		key.WithHelp("h/l", "project/session"),
+	),
+	NavRight: key.NewBinding(
+		key.WithKeys("l"),
 	),
 }

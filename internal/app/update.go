@@ -173,10 +173,35 @@ func (m *Model) selectDefaultPane() bool {
 	return false
 }
 
-// snapToDefault calls selectDefaultPane and returns cmds to fetch
-// preview/transcript/summary for the newly selected session.
-func (m *Model) snapToDefault() []tea.Cmd {
-	if !m.selectDefaultPane() {
+// snapToDefault selects the top user-turn session in the list (first in sort
+// order, skipping Later and skipPaneID). Falls back to the first agent-turn.
+// Returns cmds to fetch preview/transcript/summary for the newly selected session.
+func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
+	items := m.list.Items()
+	moved := false
+	// First user-turn (not Later, not the just-acted-on pane) in sort order
+	for _, s := range items {
+		if s.PaneID == skipPaneID {
+			continue
+		}
+		if s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
+			moved = m.list.SelectByPaneID(s.PaneID)
+			break
+		}
+	}
+	// Fall back to first agent-turn
+	if !moved {
+		for _, s := range items {
+			if s.PaneID == skipPaneID {
+				continue
+			}
+			if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
+				moved = m.list.SelectByPaneID(s.PaneID)
+				break
+			}
+		}
+	}
+	if !moved {
 		return nil
 	}
 	s, ok := m.list.SelectedItem()
@@ -313,6 +338,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetSession(&s, msg.Content)
+		} else if m.nonClaudePaneID != "" && m.nonClaudePaneID == msg.PaneID {
+			m.preview.SetNonClaudePane(msg.PaneID, msg.Content)
 		}
 		return m, nil
 
@@ -478,20 +505,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MinimapReadyMsg:
 		paneStatuses := make(map[string]int)
-		paneAvatarColors := make(map[string]int)
+		paneAvatars := make(map[string]ui.PaneAvatarInfo)
 		for _, s := range m.sessions {
 			if s.LaterBookmarkID != "" {
 				paneStatuses[s.PaneID] = ui.PaneStatusLater
 			} else {
 				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
 			}
-			paneAvatarColors[s.PaneID] = s.AvatarColorIdx
+			paneAvatars[s.PaneID] = ui.PaneAvatarInfo{
+				ColorIdx:  s.AvatarColorIdx,
+				AnimalIdx: s.AvatarAnimalIdx,
+			}
 		}
 		selectedPaneID := ""
 		if s, ok := m.list.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
-		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatarColors, selectedPaneID, msg.SessionName)
+		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatars, selectedPaneID, msg.SessionName)
 		m.minimapSession = msg.SessionName
 		return m, nil
 
@@ -602,7 +632,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if s, ok := m.list.SelectedItem(); ok {
 				cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
-				cmds = append(cmds, m.snapToDefault()...)
+				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
 				return m, tea.Batch(cmds...)
 			}
 			return m, nil
@@ -630,26 +660,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Empty submit on a session with pending queue → cancel
 				if s.QueuePending != "" {
 					sessionID := s.SessionID
-					cmds := []tea.Cmd{func() tea.Msg {
+					return m, func() tea.Msg {
 						if err := m.client.CancelQueue(sessionID); err != nil {
 							return flashErrorMsg("cancel failed: " + err.Error())
 						}
 						return flashInfoMsg("queue cancelled")
-					}}
-					cmds = append(cmds, m.snapToDefault()...)
-					return m, tea.Batch(cmds...)
+					}
 				}
 				return m, nil
 			}
 			paneID, sessionID := s.PaneID, s.SessionID
-			cmds := []tea.Cmd{func() tea.Msg {
+			return m, func() tea.Msg {
 				if err := m.client.Queue(paneID, sessionID, val); err != nil {
 					return flashErrorMsg("queue failed: " + err.Error())
 				}
 				return flashInfoMsg("message queued")
-			}}
-			cmds = append(cmds, m.snapToDefault()...)
-			return m, tea.Batch(cmds...)
+			}
 		default:
 			ti := m.queueRelay.TextInput()
 			newTI, cmd := ti.Update(msg)
@@ -813,11 +839,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// h: enter project-level navigation
 			if m.list.SelectionLevel() == ui.LevelSession {
 				m.list.EnterProjectLevel()
-				// Show preview for first session in selected project
-				if proj, ok := m.list.SelectedProject(); ok {
-					if s, ok := m.list.FirstSessionInProject(proj); ok {
-						return m, tea.Batch(m.fetchForSelection(s, true)...)
-					}
+				if s, ok := m.list.SelectedProjectSession(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
 				}
 			}
 			return m, nil
@@ -835,10 +858,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Up):
 			if m.list.SelectionLevel() == ui.LevelProject {
 				m.list.MoveUpProject()
-				if proj, ok := m.list.SelectedProject(); ok {
-					if s, ok := m.list.FirstSessionInProject(proj); ok {
-						return m, tea.Batch(m.fetchForSelection(s, true)...)
-					}
+				if s, ok := m.list.SelectedProjectSession(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
 				}
 				return m, nil
 			}
@@ -851,10 +872,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Down):
 			if m.list.SelectionLevel() == ui.LevelProject {
 				m.list.MoveDownProject()
-				if proj, ok := m.list.SelectedProject(); ok {
-					if s, ok := m.list.FirstSessionInProject(proj); ok {
-						return m, tea.Batch(m.fetchForSelection(s, true)...)
-					}
+				if s, ok := m.list.SelectedProjectSession(); ok {
+					return m, tea.Batch(m.fetchForSelection(s, true)...)
 				}
 				return m, nil
 			}
@@ -1124,15 +1143,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// focusNonClaudePane deselects the list, clears the preview, and switches
-// tmux to the minimap's currently selected (non-Claude) pane.
+// focusNonClaudePane deselects the list, captures the non-Claude pane content
+// for preview, and switches tmux to the minimap's currently selected pane.
 func (m *Model) focusNonClaudePane() tea.Cmd {
 	m.list.Deselect()
-	m.preview.ClearSession()
-	if info, ok := m.minimap.SelectedPaneInfo(); ok {
-		return switchPaneQuiet(info.SessionName, info.WindowIndex, info.PaneIndex)
+	info, ok := m.minimap.SelectedPaneInfo()
+	if !ok {
+		m.preview.ClearSession()
+		return nil
 	}
-	return nil
+	m.nonClaudePaneID = info.PaneID
+	return tea.Batch(
+		capturePreview(info.PaneID),
+		switchPaneQuiet(info.SessionName, info.WindowIndex, info.PaneIndex),
+	)
 }
 
 // mousePanel identifies which UI panel a mouse coordinate falls in.
@@ -1207,10 +1231,8 @@ func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) 
 			} else {
 				m.list.MoveUpProject()
 			}
-			if proj, ok := m.list.SelectedProject(); ok {
-				if s, ok := m.list.FirstSessionInProject(proj); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
+			if s, ok := m.list.SelectedProjectSession(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		} else {
 			if dir > 0 {

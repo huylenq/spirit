@@ -18,6 +18,18 @@ const (
 	LevelProject
 )
 
+// projectEntry identifies a project header as it appears in the rendered list.
+// In status-group mode the same project name can appear under multiple status groups.
+type projectEntry struct {
+	Name        string
+	StatusOrder int // -1 in project-group mode; sessionOrder value in status-group mode
+}
+
+// matches returns true if the session belongs to this project entry.
+func (pe projectEntry) matches(s claude.ClaudeSession) bool {
+	return s.Project == pe.Name && (pe.StatusOrder == -1 || sessionOrder(s) == pe.StatusOrder)
+}
+
 // selBg adds ColorSelectionBg background to st when selected, otherwise returns st unchanged.
 func selBg(st lipgloss.Style, selected bool) lipgloss.Style {
 	if selected {
@@ -43,7 +55,7 @@ type ListModel struct {
 	deselected           bool // when true, SelectedItem() returns false (minimap on non-Claude pane)
 	selectionLevel       SelectionLevel
 	projectCursor        int
-	projects             []string // unique ordered project names from filtered list
+	projects             []projectEntry // project headers in display order
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
@@ -180,6 +192,98 @@ func (m *ListModel) MoveDown() {
 	}
 }
 
+// SelectionLevel returns the current navigation level.
+func (m ListModel) SelectionLevel() SelectionLevel {
+	return m.selectionLevel
+}
+
+// EnterProjectLevel switches to project-level navigation.
+// The project cursor is set to the project entry matching the currently selected session.
+func (m *ListModel) EnterProjectLevel() {
+	if len(m.projects) == 0 {
+		return
+	}
+	m.selectionLevel = LevelProject
+	// Derive project cursor from current session
+	if m.cursor >= 0 && m.cursor < len(m.filtered) {
+		s := m.filtered[m.cursor]
+		order := -1
+		if !m.groupByProject {
+			order = sessionOrder(s)
+		}
+		for i, p := range m.projects {
+			if p.Name == s.Project && p.StatusOrder == order {
+				m.projectCursor = i
+				return
+			}
+		}
+	}
+	m.projectCursor = 0
+}
+
+// EnterSessionLevel switches to session-level navigation.
+// The cursor moves to the first session matching the selected project entry.
+func (m *ListModel) EnterSessionLevel() {
+	if m.selectionLevel != LevelProject {
+		return
+	}
+	m.selectionLevel = LevelSession
+	if pe, ok := m.SelectedProject(); ok {
+		for i, s := range m.filtered {
+			if pe.matches(s) {
+				m.cursor = i
+				m.deselected = false
+				return
+			}
+		}
+	}
+}
+
+// MoveUpProject moves the project cursor up.
+func (m *ListModel) MoveUpProject() {
+	if m.projectCursor > 0 {
+		m.projectCursor--
+	}
+}
+
+// MoveDownProject moves the project cursor down.
+func (m *ListModel) MoveDownProject() {
+	if m.projectCursor < len(m.projects)-1 {
+		m.projectCursor++
+	}
+}
+
+// SelectedProject returns the currently selected project entry when at project level.
+func (m ListModel) SelectedProject() (projectEntry, bool) {
+	if m.selectionLevel != LevelProject || len(m.projects) == 0 {
+		return projectEntry{}, false
+	}
+	if m.projectCursor >= 0 && m.projectCursor < len(m.projects) {
+		return m.projects[m.projectCursor], true
+	}
+	return projectEntry{}, false
+}
+
+// FirstSessionInProject returns the first session matching a project entry.
+func (m ListModel) FirstSessionInProject(pe projectEntry) (claude.ClaudeSession, bool) {
+	for _, s := range m.filtered {
+		if pe.matches(s) {
+			return s, true
+		}
+	}
+	return claude.ClaudeSession{}, false
+}
+
+// SelectedProjectSession returns the first session in the currently selected project.
+// Convenience method collapsing SelectedProject + FirstSessionInProject.
+func (m ListModel) SelectedProjectSession() (claude.ClaudeSession, bool) {
+	pe, ok := m.SelectedProject()
+	if !ok {
+		return claude.ClaudeSession{}, false
+	}
+	return m.FirstSessionInProject(pe)
+}
+
 func (m ListModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
@@ -210,6 +314,50 @@ func (m *ListModel) applyNarrow() {
 	} else {
 		sortByStatus(m.filtered)
 		sortByStatus(m.allSorted)
+	}
+	m.rebuildProjects()
+}
+
+// rebuildProjects extracts project entries in display order from the filtered list.
+// In project-group mode: one entry per unique project name (StatusOrder=-1).
+// In status-group mode: one entry per (project, statusGroup) pair.
+func (m *ListModel) rebuildProjects() {
+	var prev projectEntry
+	havePrev := m.projectCursor >= 0 && m.projectCursor < len(m.projects)
+	if havePrev {
+		prev = m.projects[m.projectCursor]
+	}
+
+	type key struct {
+		name  string
+		order int
+	}
+	seen := make(map[key]bool)
+	m.projects = nil
+
+	for _, s := range m.filtered {
+		order := -1
+		if !m.groupByProject {
+			order = sessionOrder(s)
+		}
+		k := key{s.Project, order}
+		if !seen[k] {
+			seen[k] = true
+			m.projects = append(m.projects, projectEntry{Name: s.Project, StatusOrder: order})
+		}
+	}
+
+	// Restore project cursor by matching previous entry
+	if havePrev {
+		for i, p := range m.projects {
+			if p == prev {
+				m.projectCursor = i
+				return
+			}
+		}
+	}
+	if m.projectCursor >= len(m.projects) {
+		m.projectCursor = max(len(m.projects)-1, 0)
 	}
 }
 
@@ -315,6 +463,9 @@ func (m ListModel) View() string {
 		selectedPaneID = m.filtered[m.cursor].PaneID
 	}
 
+	// Project-level selection
+	selectedProject, atProjectLevel := m.SelectedProject()
+
 	var lines []string
 	currentProject := ""
 	currentOrder := -1
@@ -327,7 +478,11 @@ func (m ListModel) View() string {
 				if len(lines) > 0 {
 					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 				}
-				lines = append(lines, renderGroupHeader(s.Project))
+				if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
+					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+				} else {
+					lines = append(lines, renderGroupHeader(s.Project))
+				}
 			}
 		} else {
 			order := sessionOrder(s)
@@ -341,7 +496,11 @@ func (m ListModel) View() string {
 			}
 			if s.Project != currentProject {
 				currentProject = s.Project
-				lines = append(lines, renderProjectSubHeader(s.Project))
+				if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
+					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+				} else {
+					lines = append(lines, renderProjectSubHeader(s.Project))
+				}
 			}
 		}
 
@@ -350,7 +509,7 @@ func (m ListModel) View() string {
 			continue
 		}
 
-		isSelected := s.PaneID == selectedPaneID && !m.deselected
+		isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
 		lines = append(lines, m.renderItem(isSelected, s, dw, query))
 	}
 
@@ -364,6 +523,15 @@ func (m ListModel) View() string {
 
 func renderGroupHeader(project string) string {
 	return GroupHeaderProjectStyle.Render(IconFolder + " " + project)
+}
+
+// selectedProjectHeaderStyle is the highlight style for project headers at project-level nav.
+var selectedProjectHeaderStyle = GroupHeaderStyle.
+	Foreground(ColorAccent).
+	Background(ColorSelectionBg)
+
+func renderSelectedProjectHeader(project string, width int) string {
+	return selectedProjectHeaderStyle.Width(width).Render(IconFolder + " " + project)
 }
 
 func renderProjectSubHeader(project string) string {
