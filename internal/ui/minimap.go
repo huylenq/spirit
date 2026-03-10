@@ -19,6 +19,7 @@ type MinimapModel struct {
 	height         int
 	windowCols     int    // columns per window in the grid (default 40)
 	collapse       bool   // collapse single-pane windows to narrower columns
+	dockWidth      int    // when > 0, stretch outermost border to this width
 	spinnerView    string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
@@ -103,7 +104,7 @@ var (
 )
 
 const DefaultMinimapWindowCols = 40
-const collapsedWindowCols = 12 // narrower column for single-pane windows
+const collapsedWindowCols = 8 // narrower column for single-pane windows
 const collapsedGridH = 3       // minimal vertical rows for collapsed single-pane windows
 
 func NewMinimapModel() MinimapModel {
@@ -119,6 +120,15 @@ func (m *MinimapModel) SetCollapse(on bool) {
 	m.collapse = on
 }
 
+// SetDockWidth sets the forced outer width for docked mode.
+// When > 0, the outermost border stretches to this width instead of content-driven width.
+func (m *MinimapModel) SetDockWidth(w int) {
+	if w > 0 && w < 8 {
+		w = 8
+	}
+	m.dockWidth = w
+}
+
 // SetWindowCols sets the per-window column width for the minimap grid.
 func (m *MinimapModel) SetWindowCols(cols int) {
 	if cols < 15 {
@@ -128,7 +138,6 @@ func (m *MinimapModel) SetWindowCols(cols int) {
 }
 
 // computeLayout returns all windows, fixed per-window column/row counts, total innerW, and gridH.
-// Width is driven by content (windowCols per window), not a passed-in budget.
 // winRows[i] is the per-window grid height — collapsed single-pane windows get collapsedGridH.
 func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, winRows []int, innerW, gridH int) {
 	windows = m.groupByWindow()
@@ -587,6 +596,9 @@ func (m MinimapModel) View() string {
 	// Build vertical separator between windows: 3-char centered stub
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2d3341"})
 	sepVisible := 2
+	if m.collapse {
+		sepVisible = collapsedGridH // match collapsed box height for alignment
+	}
 	if sepVisible > gridH {
 		sepVisible = gridH
 	}
@@ -627,8 +639,25 @@ func (m MinimapModel) View() string {
 		gridStr,
 	)
 
+	// In docked mode, stretch border to fill container width;
+	// truncate inner content that overflows the budget.
+	borderW := innerW + 2 // +2 so padding doesn't eat into content
+	if m.dockWidth > 0 {
+		borderW = m.dockWidth - 2 // subtract left+right border chars
+		contentW := borderW - 2   // subtract left+right padding
+		if innerW > contentW {
+			lines := strings.Split(inner, "\n")
+			for i, line := range lines {
+				if ansi.StringWidth(line) > contentW {
+					lines[i] = ansi.Truncate(line, contentW, "")
+				}
+			}
+			inner = strings.Join(lines, "\n")
+		}
+	}
+
 	return minimapBorderStyle.
-		Width(innerW + 2). // +2 so padding doesn't eat into content
+		Width(borderW).
 		Render(inner)
 }
 
