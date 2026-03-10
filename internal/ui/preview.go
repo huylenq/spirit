@@ -84,14 +84,14 @@ func (m *PreviewModel) SetSize(w, h int) {
 		m.viewport = viewport.New(vpWidth, contentHeight)
 		m.ready = true
 		if m.content != "" {
-			m.viewport.SetContent(truncateLines(m.content, m.viewport.Width))
+			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), m.viewport.Width))
 			m.viewport.GotoBottom() // content arrived before size was known
 		}
 	} else {
 		m.viewport.Width = vpWidth
 		m.viewport.Height = contentHeight
 		if m.content != "" {
-			m.viewport.SetContent(truncateLines(m.content, m.viewport.Width))
+			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), m.viewport.Width))
 		}
 	}
 }
@@ -124,7 +124,7 @@ func (m *PreviewModel) SetNonClaudePane(paneID string, paneTitle string, content
 	}
 	m.content = content
 	if m.ready {
-		m.viewport.SetContent(truncateLines(content, m.viewport.Width))
+		m.viewport.SetContent(truncateLines(trimTrailingBlanks(content), m.viewport.Width))
 		if isNew {
 			m.viewport.GotoBottom()
 		}
@@ -145,7 +145,7 @@ func (m *PreviewModel) SetSession(s *claude.ClaudeSession, content string) {
 	m.content = content
 	m.recomputeOffsets()
 	if m.ready {
-		m.viewport.SetContent(truncateLines(content, m.viewport.Width))
+		m.viewport.SetContent(truncateLines(trimTrailingBlanks(content), m.viewport.Width))
 		if isNewSession {
 			m.viewport.GotoBottom()
 		}
@@ -369,6 +369,22 @@ func firstNRunes(s string, n int) string {
 		count++
 	}
 	return s
+}
+
+// trimTrailingBlanks removes trailing lines that are visually empty
+// (whitespace-only after stripping ANSI escape sequences).
+// This prevents GotoBottom() from scrolling past all content into empty space
+// when tmux captures include trailing blank lines for the full pane height.
+func trimTrailingBlanks(content string) string {
+	lines := strings.Split(content, "\n")
+	end := len(lines)
+	for end > 0 && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" {
+		end--
+	}
+	if end == len(lines) {
+		return content
+	}
+	return strings.Join(lines[:end], "\n")
 }
 
 // truncateLines clips each line to maxWidth, handling ANSI escape sequences correctly.
