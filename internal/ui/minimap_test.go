@@ -66,7 +66,7 @@ func simulateCellOwnership(m MinimapModel) (grid [][]string, totalCols, totalRow
 		return nil, 0, 0
 	}
 
-	visibleWindows, winCols, innerW, gridH := m.computeLayout()
+	visibleWindows, winCols, winRows, innerW, gridH := m.computeLayout()
 	if len(visibleWindows) == 0 || innerW < 8 || gridH < 1 {
 		return nil, 0, 0
 	}
@@ -91,11 +91,12 @@ func simulateCellOwnership(m MinimapModel) (grid [][]string, totalCols, totalRow
 	xOffset := 0
 	for i, w := range visibleWindows {
 		cols := winCols[i]
+		wGridH := winRows[i]
 		for _, p := range w.Panes {
 			x1 := int(math.Round(float64(p.Left) / float64(w.Width) * float64(cols)))
-			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(gridH)))
+			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(wGridH)))
 			x2 := int(math.Round(float64(p.Left+p.Width) / float64(w.Width) * float64(cols)))
-			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(gridH)))
+			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(wGridH)))
 			if x2-x1 < 3 {
 				x2 = x1 + 3
 			}
@@ -111,12 +112,8 @@ func simulateCellOwnership(m MinimapModel) (grid [][]string, totalCols, totalRow
 			if x2 > cols {
 				x2 = cols
 			}
-			if y2 > gridH {
-				y2 = gridH
-			}
-			// Collapsed single-pane: vertically center the box
-			if m.collapse && len(w.Panes) == 1 && gridH > 4 {
-				y1, y2 = collapseRect(gridH)
+			if y2 > wGridH {
+				y2 = wGridH
 			}
 			for r := y1; r < y2; r++ {
 				for c := x1; c < x2; c++ {

@@ -104,22 +104,7 @@ var (
 
 const DefaultMinimapWindowCols = 40
 const collapsedWindowCols = 12 // narrower column for single-pane windows
-
-// collapseRect computes the centered box coordinates for a single-pane
-// collapsed window. Returns adjusted y1, y2 with vertical centering.
-func collapseRect(rows int) (y1, y2 int) {
-	vMargin := max(1, rows/4)
-	boxH := rows - 2*vMargin
-	if boxH < 3 {
-		boxH = 3
-	}
-	y1 = (rows - boxH) / 2
-	y2 = y1 + boxH
-	if y2 > rows {
-		y2 = rows
-	}
-	return
-}
+const collapsedGridH = 3       // minimal vertical rows for collapsed single-pane windows
 
 func NewMinimapModel() MinimapModel {
 	return MinimapModel{windowCols: DefaultMinimapWindowCols}
@@ -142,9 +127,10 @@ func (m *MinimapModel) SetWindowCols(cols int) {
 	m.windowCols = cols
 }
 
-// computeLayout returns all windows, fixed per-window column counts, total innerW, and gridH.
+// computeLayout returns all windows, fixed per-window column/row counts, total innerW, and gridH.
 // Width is driven by content (windowCols per window), not a passed-in budget.
-func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, innerW, gridH int) {
+// winRows[i] is the per-window grid height — collapsed single-pane windows get collapsedGridH.
+func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, winRows []int, innerW, gridH int) {
 	windows = m.groupByWindow()
 	if len(windows) == 0 {
 		return
@@ -157,7 +143,13 @@ func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, inn
 	if gaps < 0 {
 		gaps = 0
 	}
+	innerH := m.height - 2
+	gridH = innerH - 1
+	if gridH < 1 {
+		gridH = 1
+	}
 	winCols = make([]int, len(windows))
+	winRows = make([]int, len(windows))
 	innerW = 0
 	for i, w := range windows {
 		if m.collapse && len(w.Panes) == 1 && collapsedWindowCols < cols {
@@ -165,14 +157,14 @@ func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, inn
 		} else {
 			winCols[i] = cols
 		}
+		if m.collapse && len(w.Panes) == 1 && gridH > collapsedGridH {
+			winRows[i] = collapsedGridH
+		} else {
+			winRows[i] = gridH
+		}
 		innerW += winCols[i]
 	}
 	innerW += gaps * 3
-	innerH := m.height - 2
-	gridH = innerH - 1
-	if gridH < 1 {
-		gridH = 1
-	}
 	return
 }
 
@@ -243,7 +235,7 @@ func (m MinimapModel) computeGridRects() []gridRect {
 		return nil
 	}
 
-	windows, winCols, innerW, gridH := m.computeLayout()
+	windows, winCols, winRows, innerW, gridH := m.computeLayout()
 	if len(windows) == 0 || innerW < 8 || gridH < 1 {
 		return nil
 	}
@@ -267,11 +259,12 @@ func (m MinimapModel) computeGridRects() []gridRect {
 	xOffset := 0
 	for i, w := range visibleWindows {
 		cols := winCols[i]
+		wGridH := winRows[i]
 		for _, p := range w.Panes {
 			x1 := int(math.Round(float64(p.Left) / float64(w.Width) * float64(cols)))
-			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(gridH)))
+			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(wGridH)))
 			x2 := int(math.Round(float64(p.Left+p.Width) / float64(w.Width) * float64(cols)))
-			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(gridH)))
+			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(wGridH)))
 			if x2-x1 < 3 {
 				x2 = x1 + 3
 			}
@@ -287,12 +280,8 @@ func (m MinimapModel) computeGridRects() []gridRect {
 			if x2 > cols {
 				x2 = cols
 			}
-			if y2 > gridH {
-				y2 = gridH
-			}
-			// Collapsed single-pane: vertically center the box
-			if m.collapse && len(w.Panes) == 1 && gridH > 4 {
-				y1, y2 = collapseRect(gridH)
+			if y2 > wGridH {
+				y2 = wGridH
 			}
 			for r := y1; r < y2; r++ {
 				for c := x1; c < x2; c++ {
@@ -453,7 +442,7 @@ func (m MinimapModel) ViewSize() (width, height int) {
 	if len(m.panes) == 0 || m.height < 5 {
 		return 0, 0
 	}
-	windows, _, innerW, gridH := m.computeLayout()
+	windows, _, _, innerW, gridH := m.computeLayout()
 	if len(windows) == 0 || innerW < 8 || gridH < 1 {
 		return 0, 0
 	}
@@ -527,7 +516,7 @@ func (m MinimapModel) View() string {
 		return ""
 	}
 
-	windows, winCols, innerW, gridH := m.computeLayout()
+	windows, winCols, winRows, innerW, gridH := m.computeLayout()
 	if len(windows) == 0 || innerW < 8 || gridH < 1 {
 		return ""
 	}
@@ -548,6 +537,7 @@ func (m MinimapModel) View() string {
 	var windowColumns []string
 	for i, w := range visibleWindows {
 		cols := winCols[i]
+		rows := winRows[i]
 
 		// Centered window index label — highlight if it contains the selected pane
 		labelText := truncateStr(fmt.Sprintf("%d:%s", w.Index, w.Name), cols)
@@ -565,8 +555,7 @@ func (m MinimapModel) View() string {
 		}
 		centeredLabel := strings.Repeat(" ", pad) + label
 
-		collapsed := m.collapse && len(w.Panes) == 1
-		grid := renderWindowGrid(w, cols, gridH, m.spinnerView, collapsed)
+		grid := renderWindowGrid(w, cols, rows, m.spinnerView)
 		windowColumns = append(windowColumns, centeredLabel+"\n"+grid)
 	}
 
@@ -693,7 +682,7 @@ func stylesForStatus(status int) paneStatusStyles {
 	return statusStyleDefault
 }
 
-func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string, collapse bool) string {
+func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string {
 	if w.Width == 0 || w.Height == 0 || cols < 3 || rows < 1 {
 		return strings.Repeat("\n", rows)
 	}
@@ -738,11 +727,6 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string, collaps
 		}
 		if y2 > rows {
 			y2 = rows
-		}
-
-		// Collapsed single-pane: vertically center the box
-		if collapse && len(w.Panes) == 1 && rows > 4 {
-			y1, y2 = collapseRect(rows)
 		}
 
 		if p.IsSelected {
