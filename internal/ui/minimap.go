@@ -17,6 +17,7 @@ type MinimapModel struct {
 	sessionName    string
 	selectedPaneID string
 	height         int
+	windowCols     int    // columns per window in the grid (default 40)
 	spinnerView    string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
@@ -98,31 +99,43 @@ var (
 					Bold(true)
 )
 
+const DefaultMinimapWindowCols = 40
+
 func NewMinimapModel() MinimapModel {
-	return MinimapModel{}
+	return MinimapModel{windowCols: DefaultMinimapWindowCols}
 }
 
 func (m *MinimapModel) SetSize(_, h int) {
 	m.height = h
 }
 
-const minimapWindowCols = 40
+// SetWindowCols sets the per-window column width for the minimap grid.
+func (m *MinimapModel) SetWindowCols(cols int) {
+	if cols < 15 {
+		cols = 15
+	}
+	m.windowCols = cols
+}
 
 // computeLayout returns all windows, fixed per-window column counts, total innerW, and gridH.
-// Width is driven by content (constant cols per window), not a passed-in budget.
+// Width is driven by content (windowCols per window), not a passed-in budget.
 func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, innerW, gridH int) {
 	windows = m.groupByWindow()
 	if len(windows) == 0 {
 		return
 	}
+	cols := m.windowCols
+	if cols == 0 {
+		cols = DefaultMinimapWindowCols
+	}
 	gaps := len(windows) - 1
 	if gaps < 0 {
 		gaps = 0
 	}
-	innerW = len(windows)*minimapWindowCols + gaps*3
+	innerW = len(windows)*cols + gaps*3
 	winCols = make([]int, len(windows))
 	for i := range winCols {
-		winCols[i] = minimapWindowCols
+		winCols[i] = cols
 	}
 	innerH := m.height - 2
 	gridH = innerH - 1

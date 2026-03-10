@@ -210,4 +210,14 @@ var (
 
 	PaletteSepStyle = lipgloss.NewStyle().
 			Foreground(ColorBorder)
+
+	// Prompt editor overlay (new session)
+	PromptEditorOverlayStyle = lipgloss.NewStyle().
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(ColorGreen).
+					Padding(1, 2)
+
+	PromptEditorTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorGreen)
 )

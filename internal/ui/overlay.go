@@ -60,6 +60,46 @@ func OverlayCentered(base, overlay string, baseWidth int) string {
 	return strings.Join(baseLines, "\n")
 }
 
+// OverlayAt composites the overlay string onto the base at a specific row and column.
+func OverlayAt(base, overlay string, row, col int) string {
+	if overlay == "" {
+		return base
+	}
+
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+
+	if row < 0 {
+		row = 0
+	}
+
+	for i, oLine := range overlayLines {
+		r := row + i
+		if r >= len(baseLines) {
+			break
+		}
+
+		oWidth := ansi.StringWidth(oLine)
+		endCol := col + oWidth
+
+		bLine := baseLines[r]
+		bWidth := ansi.StringWidth(bLine)
+
+		var left, right string
+		if col >= bWidth {
+			left = bLine + strings.Repeat(" ", col-bWidth)
+		} else {
+			left = ansi.Truncate(bLine, col, "")
+		}
+		if endCol < bWidth {
+			right = ansi.TruncateLeft(bLine, endCol, "")
+		}
+		baseLines[r] = left + oLine + right
+	}
+
+	return strings.Join(baseLines, "\n")
+}
+
 // OverlayBottomRight composites the overlay string onto the base at bottom-right.
 func OverlayBottomRight(base, overlay string, baseWidth int) string {
 	if overlay == "" {

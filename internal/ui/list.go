@@ -56,6 +56,7 @@ type ListModel struct {
 	selectionLevel       SelectionLevel
 	projectCursor        int
 	projects             []projectEntry // project headers in display order
+	selectedProjectRow   int            // line index of the selected project header (set during View)
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
@@ -192,9 +193,27 @@ func (m *ListModel) MoveDown() {
 	}
 }
 
+func (m *ListModel) MoveToTop() {
+	m.deselected = false
+	m.cursor = 0
+}
+
+func (m *ListModel) MoveToBottom() {
+	m.deselected = false
+	if len(m.filtered) > 0 {
+		m.cursor = len(m.filtered) - 1
+	}
+}
+
 // SelectionLevel returns the current navigation level.
 func (m ListModel) SelectionLevel() SelectionLevel {
 	return m.selectionLevel
+}
+
+// SelectedProjectRow returns the line index of the selected project header
+// within the list's rendered output. Returns -1 if no project is selected.
+func (m ListModel) SelectedProjectRow() int {
+	return m.selectedProjectRow
 }
 
 // EnterProjectLevel switches to project-level navigation.
@@ -282,6 +301,17 @@ func (m ListModel) SelectedProjectSession() (claude.ClaudeSession, bool) {
 		return claude.ClaudeSession{}, false
 	}
 	return m.FirstSessionInProject(pe)
+}
+
+// SessionsInProject returns all sessions matching a project entry.
+func (m ListModel) SessionsInProject(pe projectEntry) []claude.ClaudeSession {
+	var result []claude.ClaudeSession
+	for _, s := range m.filtered {
+		if pe.matches(s) {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 func (m ListModel) Items() []claude.ClaudeSession {
@@ -469,6 +499,7 @@ func (m ListModel) View() string {
 	var lines []string
 	currentProject := ""
 	currentOrder := -1
+	m.selectedProjectRow = -1
 
 	for _, s := range m.allSorted {
 		// Group headers — always rendered for spatial stability during narrowing
@@ -479,6 +510,7 @@ func (m ListModel) View() string {
 					lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 				}
 				if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
+					m.selectedProjectRow = len(lines)
 					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
 				} else {
 					lines = append(lines, renderGroupHeader(s.Project))
@@ -497,6 +529,7 @@ func (m ListModel) View() string {
 			if s.Project != currentProject {
 				currentProject = s.Project
 				if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
+					m.selectedProjectRow = len(lines)
 					lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
 				} else {
 					lines = append(lines, renderProjectSubHeader(s.Project))
@@ -667,10 +700,10 @@ func (m ListModel) renderItem(isSelected bool, s claude.ClaudeSession, dw diffCo
 		}
 	}
 
-	// Show queued message as a subtitle line
-	if s.QueuePending != "" {
-		rawMsg := strings.ReplaceAll(s.QueuePending, "\n", " ")
-		line += "\n" + m.renderSubtitleLine(rawMsg, query, IconQueue, isSelected, false)
+	// Show queue badge with count
+	if len(s.QueuePending) > 0 {
+		queueBadge := fmt.Sprintf("%s %d", IconQueue, len(s.QueuePending))
+		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, false)
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
@@ -919,7 +952,7 @@ func (m ListModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		count++
 	}
 
-	if s.QueuePending != "" {
+	if len(s.QueuePending) > 0 {
 		count++
 	}
 

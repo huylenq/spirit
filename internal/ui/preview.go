@@ -716,6 +716,9 @@ func (m PreviewModel) View() string {
 	if m.relayView != "" {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
+	// Use the session's avatar color for the preview border
+	contentStyle := PreviewContentStyle.BorderForeground(AvatarColor(s.AvatarColorIdx))
+
 	var contentBox string
 	if !m.hideTranscript && (len(m.userMessages) > 0 || m.summary != nil) {
 		transcriptWidth := contentWidth * 40 / 100
@@ -732,9 +735,9 @@ func (m PreviewModel) View() string {
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", transcriptPanel)
 		// Hard clip the entire joined output so nothing overflows the content border
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
-		contentBox = PreviewContentStyle.Width(contentWidth).Render(joinedClip)
+		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
-		contentBox = PreviewContentStyle.Width(contentWidth).Render(vpRaw)
+		contentBox = contentStyle.Width(contentWidth).Render(vpRaw)
 	}
 
 	// Hook events overlay on top of content
@@ -781,7 +784,8 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 
 	var lines []string
 
-	titleLine := TranscriptTitleStyle.Render(" " + IconInput + "  Your Messages")
+	avatarColor := AvatarColor(m.session.AvatarColorIdx)
+	titleLine := TranscriptTitleStyle.Foreground(avatarColor).Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {
@@ -813,6 +817,7 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 
 	content := strings.Join(lines, "\n")
 	return TranscriptOverlayStyle.
+		BorderForeground(avatarColor).
 		Width(width).
 		Height(height).
 		Render(content)
@@ -880,7 +885,7 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 					if rendered >= visLines {
 						break
 					}
-					highlighted := highlightJSON(jsonLine)
+					highlighted := HighlightJSON(jsonLine)
 					lines = append(lines, clipStyle.Render("  │ "+highlighted))
 					rendered++
 				}
@@ -1016,7 +1021,7 @@ func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
 					if rendered >= visLines {
 						break
 					}
-					highlighted := highlightJSON(jsonLine)
+					highlighted := HighlightJSON(jsonLine)
 					lines = append(lines, clipStyle.Render("  │ "+highlighted))
 					rendered++
 				}
@@ -1057,8 +1062,8 @@ func styleEntrySummary(entry claude.TranscriptEntry) string {
 	return ItemDetailStyle.Render(entry.Summary)
 }
 
-// highlightJSON applies simple syntax highlighting to a JSON line.
-func highlightJSON(line string) string {
+// HighlightJSON applies simple syntax highlighting to a JSON line.
+func HighlightJSON(line string) string {
 	var result strings.Builder
 	i := 0
 	runes := []rune(line)
