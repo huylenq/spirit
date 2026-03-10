@@ -320,24 +320,43 @@ func (m ListModel) Items() []claude.ClaudeSession {
 
 // SnapTargetPaneID returns the PaneID that snapToDefault would select if an
 // action were executed on the currently selected session. Returns "" if no
-// snap target exists. Mirrors the priority: first UserTurn, then AgentTurn,
-// skipping Later-bookmarked sessions and the current selection.
+// snap target exists.
 func (m ListModel) SnapTargetPaneID() string {
 	var skipPaneID string
 	if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		skipPaneID = m.filtered[m.cursor].PaneID
 	}
+	return m.SnapTargetExcluding(skipPaneID)
+}
+
+// SnapTargetExcluding finds the best snap-to-default target, skipping skipPaneID.
+// Priority: user-turn with oldest LastChanged (waiting longest), then agent-turn
+// with oldest LastChanged. Excludes Later-bookmarked sessions.
+func (m ListModel) SnapTargetExcluding(skipPaneID string) string {
+	var bestUser, bestAgent string
+	var bestUserTime, bestAgentTime time.Time
+
 	for _, s := range m.filtered {
-		if s.PaneID != skipPaneID && s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
-			return s.PaneID
+		if s.PaneID == skipPaneID || s.LaterBookmarkID != "" {
+			continue
+		}
+		switch s.Status {
+		case claude.StatusUserTurn:
+			if bestUser == "" || s.LastChanged.Before(bestUserTime) {
+				bestUser = s.PaneID
+				bestUserTime = s.LastChanged
+			}
+		case claude.StatusAgentTurn:
+			if bestAgent == "" || s.LastChanged.Before(bestAgentTime) {
+				bestAgent = s.PaneID
+				bestAgentTime = s.LastChanged
+			}
 		}
 	}
-	for _, s := range m.filtered {
-		if s.PaneID != skipPaneID && s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
-			return s.PaneID
-		}
+	if bestUser != "" {
+		return bestUser
 	}
-	return ""
+	return bestAgent
 }
 
 func (m *ListModel) applyNarrow() {
@@ -613,20 +632,15 @@ func renderStatusGroupHeader(order int) string {
 func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
 	// Display name priority: custom title → headline → first message → (new session)
-	var displayName string
-	if s.CustomTitle != "" {
-		displayName = strings.ReplaceAll(s.CustomTitle, "\n", " ")
-	} else if s.Headline != "" {
-		displayName = strings.ReplaceAll(s.Headline, "\n", " ")
-	} else if s.FirstMessage != "" {
-		displayName = strings.ReplaceAll(s.FirstMessage, "\n", " ")
-	} else {
+	displayName := s.DisplayName()
+	isNewSession := displayName == ""
+	if isNewSession {
 		displayName = lipgloss.NewStyle().Italic(true).Render("(New session)")
+	} else {
+		displayName = strings.ReplaceAll(displayName, "\n", " ")
 	}
 
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)
-
-	isNewSession := s.CustomTitle == "" && s.Headline == "" && s.FirstMessage == ""
 	hasQuery := query != ""
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected) }

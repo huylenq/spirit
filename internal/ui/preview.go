@@ -395,7 +395,7 @@ func truncateLines(content string, maxWidth int) string {
 	lines := strings.Split(content, "\n")
 	style := lipgloss.NewStyle().MaxWidth(maxWidth)
 	for i, line := range lines {
-		lines[i] = style.Render(line)
+		lines[i] = style.Render(line) + "\033[m"
 	}
 	return strings.Join(lines, "\n")
 }
@@ -694,13 +694,8 @@ func (m PreviewModel) View() string {
 	// Header line 2: avatar + session title (neutral, matching list item color)
 	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
 	sessionTitle := avatar
-	switch {
-	case s.CustomTitle != "":
-		sessionTitle += "  " + s.CustomTitle
-	case s.Headline != "":
-		sessionTitle += "  " + s.Headline
-	case s.FirstMessage != "":
-		sessionTitle += "  " + s.FirstMessage
+	if name := s.DisplayName(); name != "" {
+		sessionTitle += "  " + name
 	}
 
 	header := line1 + "\n" + sessionTitle + "\n"
@@ -712,7 +707,7 @@ func (m PreviewModel) View() string {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
 	// Use the session's avatar color for the preview border
-	contentStyle := PreviewContentStyle.BorderForeground(AvatarColor(s.AvatarColorIdx))
+	contentStyle := PreviewContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
 	if !m.hideTranscript && (len(m.userMessages) > 0 || m.summary != nil) {

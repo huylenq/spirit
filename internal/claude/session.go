@@ -90,6 +90,21 @@ type ClaudeSession struct {
 	AvatarColorIdx     int    // index into avatarColors slice
 }
 
+// DisplayName returns the session's display name using the standard priority:
+// CustomTitle → Headline → FirstMessage. Returns "" if none are set.
+func (s ClaudeSession) DisplayName() string {
+	switch {
+	case s.CustomTitle != "":
+		return s.CustomTitle
+	case s.Headline != "":
+		return s.Headline
+	case s.FirstMessage != "":
+		return s.FirstMessage
+	default:
+		return ""
+	}
+}
+
 // LaterBookmark is the persistent on-disk record for a bookmarked session.
 type LaterBookmark struct {
 	ID           string    `json:"id"`

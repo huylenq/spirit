@@ -47,13 +47,7 @@ func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 	}
 
 	// Display name (same priority as TUI)
-	name := s.CustomTitle
-	if name == "" {
-		name = s.Headline
-	}
-	if name == "" {
-		name = s.FirstMessage
-	}
+	name := s.DisplayName()
 	if name == "" {
 		name = "(New session)"
 	}
