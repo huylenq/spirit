@@ -955,13 +955,9 @@ func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, 
 }
 
 // hasBadges returns true if the session has any outcome badges to display.
-// Cheaper than renderBadges — no string allocation, just field checks.
+// Delegates to renderBadges to avoid condition drift between the two.
 func hasBadges(s claude.ClaudeSession) bool {
-	return (s.LastActionCommit && s.Status == claude.StatusUserTurn) ||
-		(s.StopReason != "" && s.Status == claude.StatusUserTurn) ||
-		s.SkillName != "" ||
-		s.ProblemType != "" ||
-		s.CompactCount > 0
+	return renderBadges(s) != ""
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
@@ -971,11 +967,10 @@ func renderBadges(s claude.ClaudeSession) string {
 	if s.LastActionCommit && s.Status == claude.StatusUserTurn {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
 	}
-	// Skill badge shows during both agent-turn and user-turn — unlike outcome
-	// badges (committed, stopReason) it's context about what was triggered,
-	// not a result. Cleared on next non-skill prompt.
-	if s.SkillName != "" {
-		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+s.SkillName))
+	// Skill badge: outcome indicator, shown after skill completes (user-turn).
+	// Cleared on next non-skill prompt.
+	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
+		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+skillBadgeLabel(s.SkillName)))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
 		badges = append(badges, StatDoneStyle.Render(s.StopReason))
@@ -990,6 +985,20 @@ func renderBadges(s claude.ClaudeSession) string {
 		return ""
 	}
 	return strings.Join(badges, "  ")
+}
+
+// skillBadgeLabel maps a raw skill command name to a human-friendly past-tense label.
+var skillBadgeLabels = map[string]string{
+	"simplify": "simplified",
+	"review":   "reviewed",
+	"commit-commands:commit": "committed",
+}
+
+func skillBadgeLabel(name string) string {
+	if label, ok := skillBadgeLabels[name]; ok {
+		return label
+	}
+	return name
 }
 
 // problemTypeBadge renders a color-coded pill for the synthesized problem type.
