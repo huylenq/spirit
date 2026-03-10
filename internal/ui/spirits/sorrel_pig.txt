@@ -1,0 +1,40 @@
+  .:. .:. .:. .:. .:. .:. .:. .:. SORREL PIG .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:.                                
+  .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:.                               
+  .:.                                                                                    .:.                            
+  .:.   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                              
+  .:.  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                              
+  .:.   vvv SORREL vvv PLANTS vvv GARDEN vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                             
+  .:.  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                              
+  .:.   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                              
+  .:.  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                              
+  .:.   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                              
+  .:.  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                              
+  .:.   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                              
+  .:.  vvv vvv vvv  ___...-------...___ vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                             
+  .:.   vvv vvv  .-'                   `-. vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vvv vvv .'    .-------.            `. vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                            
+  .:.   vvv  .'     /  .---.  \      ___    `. vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vvv .'      |  | o o |  |   .`   `.    `. vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                             
+  .:.   v /        |  | === |  |  | () () |     \  vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vv|         |   \___/   |  |  .--. |      | vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.   v|         \           /  |  `--' |      | vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vv \         `-.     .-'    \     /      / vvv vvv vvv vvv vvv vvv vvv vvv vvv   .:.                             
+  .:.   vv \           `---'  .-.   `---'      / vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                             
+  .:.  vvv  \                ( @ )           .'  vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                            
+  .:.   vvv  `.               `-'          .'  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vvv vvv `-.                      .-'  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                             
+  .:.   vvv vvv   `-.                .-'  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv   .:.                             
+  .:.  vvv vvv vvv   `-..________.-'   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv      .:.                             
+  .:.   vvv vvv vvv  /  |        |  \  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vvv vvv vvv  / / |        | \ \ vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv      .:.                             
+  .:.   vvv vvv vvv/ /  |        |  \ \ vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                             
+  .:.  vvv vvv vvv|_/   |        |   \_| vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                             
+  .:.   vvv vvv vvv     | SORREL |     vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv  .:.                             
+  .:.  vvv vvv vvv vvv  |________|  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                             
+  .:.   vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv    .:.                              
+  .:.  vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv vvv     .:.                              
+  .:.                                                                                    .:.                            
+  .:.   ~ SORREL ~ PIG ~ ROOTS ~ HAPPILY ~ AMONG ~ THE ~ TANGY ~ SORREL ~ PLANTS ~      .:.                             
+  .:.                                                                                    .:.                            
+  .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:.                               
+  .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:. .:.                               
