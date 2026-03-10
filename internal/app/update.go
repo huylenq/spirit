@@ -175,44 +175,32 @@ func (m *Model) selectDefaultPane() bool {
 
 // snapToDefault selects the top user-turn session in the list (first in sort
 // order, skipping Later and skipPaneID). Falls back to the first agent-turn.
-// Returns cmds to fetch preview/transcript/summary for the newly selected session.
+// Returns cmds from fetchForSelection for the newly selected session.
 func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
 	items := m.list.Items()
-	moved := false
-	// First user-turn (not Later, not the just-acted-on pane) in sort order
+	selected := false
 	for _, s := range items {
-		if s.PaneID == skipPaneID {
-			continue
-		}
-		if s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
-			moved = m.list.SelectByPaneID(s.PaneID)
+		if s.PaneID != skipPaneID && s.Status == claude.StatusUserTurn && s.LaterBookmarkID == "" {
+			selected = m.list.SelectByPaneID(s.PaneID)
 			break
 		}
 	}
-	// Fall back to first agent-turn
-	if !moved {
+	if !selected {
 		for _, s := range items {
-			if s.PaneID == skipPaneID {
-				continue
-			}
-			if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
-				moved = m.list.SelectByPaneID(s.PaneID)
+			if s.PaneID != skipPaneID && s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
+				selected = m.list.SelectByPaneID(s.PaneID)
 				break
 			}
 		}
 	}
-	if !moved {
+	if !selected {
 		return nil
 	}
 	s, ok := m.list.SelectedItem()
 	if !ok {
 		return nil
 	}
-	return []tea.Cmd{
-		capturePreview(s.PaneID),
-		m.fetchTranscript(s.PaneID, s.SessionID),
-		m.fetchCachedSummary(s.PaneID, s.SessionID),
-	}
+	return m.fetchForSelection(s, true)
 }
 
 // tryInitialSelection auto-selects a pane on launch.
@@ -1064,12 +1052,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
 				}
 				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-				return m, func() tea.Msg {
+				cmds := []tea.Cmd{func() tea.Msg {
 					if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
 						return flashErrorMsg("commit failed: " + err.Error())
 					}
 					return flashInfoMsg("commit started")
-				}
+				}}
+				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 
@@ -1082,12 +1072,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
 				}
 				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-				return m, func() tea.Msg {
+				cmds := []tea.Cmd{func() tea.Msg {
 					if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
 						return flashErrorMsg("commit+done failed: " + err.Error())
 					}
 					return flashInfoMsg("commit+done started")
-				}
+				}}
+				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 
