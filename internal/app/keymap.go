@@ -13,6 +13,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
 		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
+		k.JumpBack,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -57,6 +58,10 @@ type KeyMap struct {
 	// Preview half-page scroll (ctrl+d / ctrl+u)
 	ScrollDown key.Binding
 	ScrollUp   key.Binding
+
+	// Preview single-line scroll (ctrl+e / ctrl+y)
+	LineDown key.Binding
+	LineUp   key.Binding
 
 	// Preview full-page scroll (ctrl+f / ctrl+b)
 	PageDown key.Binding
@@ -103,6 +108,10 @@ type KeyMap struct {
 
 	// New session (project level)
 	NewSession key.Binding
+
+	// Jump trail navigation (like Vim's jumplist)
+	JumpBack    key.Binding
+	JumpForward key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -281,6 +290,13 @@ var Keys = KeyMap{
 	ScrollUp: key.NewBinding(
 		key.WithKeys("ctrl+u"),
 	),
+	LineDown: key.NewBinding(
+		key.WithKeys("ctrl+e"),
+		key.WithHelp("ctrl+e/y", "line"),
+	),
+	LineUp: key.NewBinding(
+		key.WithKeys("ctrl+y"),
+	),
 	PageDown: key.NewBinding(
 		key.WithKeys("ctrl+f"),
 		key.WithHelp("ctrl+f/b", "page"),
@@ -347,5 +363,12 @@ var Keys = KeyMap{
 	NewSession: key.NewBinding(
 		key.WithKeys("a"),
 		key.WithHelp("a", "new session"),
+	),
+	JumpBack: key.NewBinding(
+		key.WithKeys("ctrl+o"),
+		key.WithHelp("ctrl+o/i", "jump back/fwd"),
+	),
+	JumpForward: key.NewBinding(
+		key.WithKeys("ctrl+i"),
 	),
 }
