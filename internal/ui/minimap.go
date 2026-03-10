@@ -260,8 +260,8 @@ func (m MinimapModel) computeGridRects() []gridRect {
 		cols := winCols[i]
 		wGridH := winRows[i]
 		for _, p := range w.Panes {
-			x1 := int(math.Round(float64(p.Left) / float64(w.Width) * float64(cols)))
-			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(wGridH)))
+			x1 := scaleEdge(p.Left, w.Width, cols)
+			y1 := scaleEdge(p.Top, w.Height, wGridH)
 			x2 := int(math.Round(float64(p.Left+p.Width) / float64(w.Width) * float64(cols)))
 			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(wGridH)))
 			if x2-x1 < 3 {
@@ -723,6 +723,17 @@ var statusStyleDefault = paneStatusStyles{
 	FillBg:      lipgloss.AdaptiveColor{Light: "#f1f2f4", Dark: "#1e2230"}, // gray tint
 }
 
+// scaleEdge scales a pane coordinate (left or top) to grid cells.
+// For non-edge panes (coord > 0), subtracts 1 to compensate for the tmux
+// separator row/column between adjacent panes, eliminating rounding gaps.
+func scaleEdge(coord, windowDim, gridDim int) int {
+	adj := coord
+	if adj > 0 {
+		adj--
+	}
+	return int(math.Round(float64(adj) / float64(windowDim) * float64(gridDim)))
+}
+
 func stylesForStatus(status int) paneStatusStyles {
 	if s, ok := statusStyleMap[status]; ok {
 		return s
@@ -749,9 +760,9 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 	var selPane *selPaneInfo
 
 	for _, p := range w.Panes {
-		// Scale pane coordinates to grid
-		x1 := int(math.Round(float64(p.Left) / float64(w.Width) * float64(cols)))
-		y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(rows)))
+		// Scale pane coordinates to grid (scaleEdge adjusts for tmux separators)
+		x1 := scaleEdge(p.Left, w.Width, cols)
+		y1 := scaleEdge(p.Top, w.Height, rows)
 		x2 := int(math.Round(float64(p.Left+p.Width) / float64(w.Width) * float64(cols)))
 		y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(rows)))
 

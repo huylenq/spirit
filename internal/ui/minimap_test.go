@@ -93,8 +93,8 @@ func simulateCellOwnership(m MinimapModel) (grid [][]string, totalCols, totalRow
 		cols := winCols[i]
 		wGridH := winRows[i]
 		for _, p := range w.Panes {
-			x1 := int(math.Round(float64(p.Left) / float64(w.Width) * float64(cols)))
-			y1 := int(math.Round(float64(p.Top) / float64(w.Height) * float64(wGridH)))
+			x1 := scaleEdge(p.Left, w.Width, cols)
+			y1 := scaleEdge(p.Top, w.Height, wGridH)
 			x2 := int(math.Round(float64(p.Left+p.Width) / float64(w.Width) * float64(cols)))
 			y2 := int(math.Round(float64(p.Top+p.Height) / float64(w.Height) * float64(wGridH)))
 			if x2-x1 < 3 {
