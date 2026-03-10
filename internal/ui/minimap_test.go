@@ -765,7 +765,7 @@ func TestSelectedPaneInfo(t *testing.T) {
 
 	// Non-existent selection
 	m3 := NewMinimapModel()
-	m3.SetData(geom, statuses, "%99", "main")
+	m3.SetData(geom, statuses, map[string]PaneAvatarInfo{}, "%99", "main")
 	_, ok3 := m3.SelectedPaneInfo()
 	if ok3 {
 		t.Error("SelectedPaneInfo should return false for non-existent pane %99")
