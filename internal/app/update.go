@@ -753,22 +753,20 @@ func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return flashInfoMsg("message queued")
 		}
-	case msg.String() == "up", msg.String() == "ctrl+p":
-		// Navigate up through queue items
+	case msg.String() == "down", msg.String() == "ctrl+j":
+		// Navigate down into queue items (inline input is above the queue list)
 		if m.queueCursor == -1 && queueLen > 0 {
-			m.queueCursor = queueLen - 1
-		} else if m.queueCursor > 0 {
-			m.queueCursor--
+			m.queueCursor = 0
+		} else if m.queueCursor >= 0 && m.queueCursor < queueLen-1 {
+			m.queueCursor++
 		}
 		return m, nil
-	case msg.String() == "down", msg.String() == "ctrl+n":
-		// Navigate down through queue items
-		if m.queueCursor >= 0 {
-			if m.queueCursor < queueLen-1 {
-				m.queueCursor++
-			} else {
-				m.queueCursor = -1 // back to text input
-			}
+	case msg.String() == "up", msg.String() == "ctrl+k":
+		// Navigate up through queue items, back to input at top
+		if m.queueCursor > 0 {
+			m.queueCursor--
+		} else if m.queueCursor == 0 {
+			m.queueCursor = -1 // back to text input
 		}
 		return m, nil
 	case msg.String() == "ctrl+d":

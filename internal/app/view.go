@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
@@ -65,6 +66,8 @@ func (m Model) View() string {
 	switch m.state {
 	case StatePromptRelay:
 		m.preview.SetRelayView(m.relay.View())
+	case StateQueueRelay:
+		m.preview.SetRelayView(m.queueRelay.View())
 	default:
 		m.preview.SetRelayView("")
 	}
@@ -73,7 +76,7 @@ func (m Model) View() string {
 	var queueView string
 	var queueHeight int
 	if s, ok := m.list.SelectedItem(); ok {
-		showQueue := len(s.QueuePending) > 0 || m.state == StateQueueRelay
+		showQueue := len(s.QueuePending) > 0
 		if showQueue {
 			queueView = m.renderQueueSection(s, previewWidth)
 			queueHeight = lipgloss.Height(queueView)
@@ -311,22 +314,14 @@ func (m Model) renderQueueSection(s claude.ClaudeSession, width int) string {
 			break
 		}
 		prefix := fmt.Sprintf("  %d. ", i+1)
-		truncated := msg
 		maxMsgWidth := innerWidth - lipgloss.Width(prefix)
-		if maxMsgWidth > 0 && lipgloss.Width(truncated) > maxMsgWidth {
-			truncated = truncated[:maxMsgWidth-1] + "…"
-		}
+		truncated := ansi.Truncate(msg, maxMsgWidth, "…")
 		if inQueueMode && i == m.queueCursor {
 			// Highlighted item
 			lines = append(lines, ui.SelectedBgStyle.Render(prefix+truncated+strings.Repeat(" ", max(innerWidth-lipgloss.Width(prefix+truncated), 0))))
 		} else {
 			lines = append(lines, ui.ItemDetailStyle.Render(prefix+truncated))
 		}
-	}
-
-	// Text input (only in queue mode)
-	if inQueueMode {
-		lines = append(lines, m.queueRelay.View())
 	}
 
 	return strings.Join(lines, "\n")
