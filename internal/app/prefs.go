@@ -71,3 +71,20 @@ func savePrefInt(key string, val int) {
 	prefs[key] = strconv.Itoa(val)
 	savePrefs(prefs)
 }
+
+func loadPrefString(key, defaultVal string) string {
+	prefs := loadPrefs()
+	if v, ok := prefs[key]; ok && v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func savePrefString(key, val string) {
+	prefs := loadPrefs()
+	if prefs == nil {
+		prefs = map[string]string{}
+	}
+	prefs[key] = val
+	savePrefs(prefs)
+}

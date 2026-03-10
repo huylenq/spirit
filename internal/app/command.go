@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
 // Command represents a single dispatchable action for the command palette.
@@ -67,13 +68,10 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 }
 
 func (m Model) execQueue() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok {
+	if _, ok := m.list.SelectedItem(); ok {
 		m.state = StateQueueRelay
-		if s.QueuePending != "" {
-			m.queueRelay.ActivateWithValue(s.QueuePending)
-		} else {
-			m.queueRelay.Activate()
-		}
+		m.queueCursor = -1 // start with text input focused
+		m.queueRelay.Activate()
 	}
 	return m, nil
 }
@@ -274,9 +272,86 @@ func (m Model) execCopySessionID() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execGoTop() (Model, tea.Cmd) {
+	m.list.MoveToTop()
+	if s, ok := m.list.SelectedItem(); ok {
+		return m, tea.Batch(m.fetchForSelection(s, true)...)
+	}
+	return m, nil
+}
+
 func (m Model) execCaptureView() (Model, tea.Cmd) {
 	text := ansi.Strip(m.View())
 	return m, copyToClipboard(text)
+}
+
+func (m Model) execNewSession() (Model, tea.Cmd) {
+	// Save session-level state for restore on cancel, then switch to project level
+	m.newSessionWasSession = m.list.SelectionLevel() == ui.LevelSession
+	if m.newSessionWasSession {
+		if s, ok := m.list.SelectedItem(); ok {
+			m.newSessionPrevPaneID = s.PaneID
+		}
+		m.list.EnterProjectLevel()
+	}
+
+	pe, ok := m.list.SelectedProject()
+	if !ok {
+		return m, nil
+	}
+
+	sessions := m.list.SessionsInProject(pe)
+
+	var cwd, tmuxSession string
+	for _, s := range sessions {
+		if cwd == "" && s.CWD != "" {
+			cwd = s.CWD
+		}
+		if s.TmuxSession != "" && tmuxSession == "" {
+			tmuxSession = s.TmuxSession
+		}
+	}
+
+	if cwd == "" {
+		return m, func() tea.Msg { return flashErrorMsg("no working directory for project") }
+	}
+
+	// Heuristic: use first live session's tmux session; fallback to origPane
+	if tmuxSession == "" {
+		if m.origPane.Captured {
+			tmuxSession = m.origPane.Session
+		} else {
+			return m, func() tea.Msg { return flashErrorMsg("no tmux session detected") }
+		}
+	}
+
+	// Open prompt editor overlay instead of immediately creating the window
+	m.state = StateNewSessionPrompt
+	m.newSessionProject = pe.Name
+	m.newSessionCWD = cwd
+	m.newSessionTmuxSess = tmuxSession
+	m.promptEditor.Activate()
+	return m, nil
+}
+
+// spawnNewSession creates the tmux window, launches claude, and optionally
+// registers a pending prompt with the daemon for delivery once the session is ready.
+func (m Model) spawnNewSession(prompt string) tea.Cmd {
+	cwd, tmuxSession := m.newSessionCWD, m.newSessionTmuxSess
+	return func() tea.Msg {
+		paneID, err := tmux.NewWindow(tmuxSession, cwd)
+		if err != nil {
+			return flashErrorMsg("new window: " + err.Error())
+		}
+		tmux.SendKeysLiteral(paneID, "claude") //nolint:errcheck
+		if prompt != "" {
+			// Register pending prompt with daemon for delivery when session is ready
+			if err := m.client.PendingPrompt(paneID, prompt); err != nil {
+				return flashErrorMsg("register prompt: " + err.Error())
+			}
+		}
+		return NewSessionCreatedMsg{PaneID: paneID}
+	}
 }
 
 func (m Model) execToggleDiffs() (Model, tea.Cmd) {

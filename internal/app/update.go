@@ -306,6 +306,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.Sessions
 		m.list.SetItems(m.sessions)
 		m.tryInitialSelection()
+		// Auto-select newly created session once it appears
+		if m.pendingSelectPaneID != "" {
+			m.list.EnterSessionLevel() // switch from project → session level
+			if m.list.SelectByPaneID(m.pendingSelectPaneID) {
+				m.pendingSelectPaneID = ""
+			}
+		}
 		var cmds []tea.Cmd
 		// Update usage bar
 		if msg.Usage != nil {
@@ -457,6 +464,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashMsg = ""
 			m.flashIsError = false
 			m.flashExpiry = time.Time{}
+			if m.state == StateMinimapSettings {
+				m.state = StateNormal
+				savePrefInt("minimapMaxH", m.minimapMaxH)
+			}
 		}
 		return m, nil
 
@@ -472,6 +483,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flashIsError = false
 		m.flashExpiry = time.Now().Add(3 * time.Second)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+
+	case NewSessionCreatedMsg:
+		m.pendingSelectPaneID = msg.PaneID
+		m.flashMsg = "new session created"
+		m.flashIsError = false
+		m.flashExpiry = time.Now().Add(2 * time.Second)
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 
 	case PaneKilledMsg:
 		title := m.killTargetTitle
@@ -530,6 +548,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatars, selectedPaneID, msg.SessionName)
 		m.minimapSession = msg.SessionName
+		m.applyLayout()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -565,585 +584,714 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
-
 	case StateSearching:
-		switch {
-		case key.Matches(msg, Keys.Escape), key.Matches(msg, Keys.Enter):
-			m.search.Confirm()
-			m.state = StateNormal
-			// Remember selection, clear filter, re-select (search & jump)
-			var selectedPaneID string
-			if s, ok := m.list.SelectedItem(); ok {
-				selectedPaneID = s.PaneID
-			}
-			m.list.ClearNarrow()
-			m.list.SelectByPaneID(selectedPaneID)
-			return m, nil
-		case key.Matches(msg, Keys.MsgNext):
-			m.list.MoveDown()
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
-			}
-			return m, nil
-		case key.Matches(msg, Keys.MsgPrev):
-			m.list.MoveUp()
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
-			}
-			return m, nil
-		default:
-			// Forward to textinput
-			ti := m.search.TextInput()
-			newTI, cmd := ti.Update(msg)
-			*ti = newTI
-			m.list.SetNarrow(m.search.Value())
-			// Update preview for new selection
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
-			}
-			return m, cmd
-		}
-
+		return m.handleKeySearching(msg)
 	case StateKillConfirm:
-		switch msg.String() {
-		case "y":
-			return m, killPaneCmd(m.killTargetPaneID, m.killTargetSessionID, m.killTargetPID, m.killTargetBookmarkID)
-		case "n", "esc":
-			m.state = StateNormal
-			m.killTargetPaneID = ""
-			m.killTargetSessionID = ""
-			m.killTargetPID = 0
-			m.killTargetTitle = ""
-			m.killTargetBookmarkID = ""
-			return m, nil
-		default:
-			return m, nil
-		}
-
+		return m.handleKeyKillConfirm(msg)
+	case StateMinimapSettings:
+		return m.handleKeyMinimapSettings(msg)
 	case StatePromptRelay:
-		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.state = StateNormal
-			m.relay.Deactivate()
-			return m, nil
-		case key.Matches(msg, Keys.Enter):
-			val := m.relay.Confirm()
-			m.state = StateNormal
-			if val == "" {
-				return m, nil
-			}
-			if s, ok := m.list.SelectedItem(); ok {
-				cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
-				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
-				return m, tea.Batch(cmds...)
-			}
-			return m, nil
-		default:
-			ti := m.relay.TextInput()
-			newTI, cmd := ti.Update(msg)
-			*ti = newTI
-			return m, cmd
-		}
-
+		return m.handleKeyPromptRelay(msg)
 	case StateQueueRelay:
-		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.state = StateNormal
-			m.queueRelay.Deactivate()
+		return m.handleKeyQueueRelay(msg)
+	case StateNewSessionPrompt:
+		return m.handleKeyNewSession(msg)
+	case StatePalette:
+		return m.handleKeyPalette(msg)
+	default:
+		return m.handleKeyNormal(msg)
+	}
+}
+
+func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape), key.Matches(msg, Keys.Enter):
+		m.search.Confirm()
+		m.state = StateNormal
+		// Remember selection, clear filter, re-select (search & jump)
+		var selectedPaneID string
+		if s, ok := m.list.SelectedItem(); ok {
+			selectedPaneID = s.PaneID
+		}
+		m.list.ClearNarrow()
+		m.list.SelectByPaneID(selectedPaneID)
+		return m, nil
+	case key.Matches(msg, Keys.MsgNext):
+		m.list.MoveDown()
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+		}
+		return m, nil
+	case key.Matches(msg, Keys.MsgPrev):
+		m.list.MoveUp()
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+		}
+		return m, nil
+	default:
+		// Forward to textinput
+		ti := m.search.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		m.list.SetNarrow(m.search.Value())
+		// Update preview for new selection
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+		}
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyKillConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		return m, killPaneCmd(m.killTargetPaneID, m.killTargetSessionID, m.killTargetPID, m.killTargetBookmarkID)
+	case "n", "esc":
+		m.state = StateNormal
+		m.killTargetPaneID = ""
+		m.killTargetSessionID = ""
+		m.killTargetPID = 0
+		m.killTargetTitle = ""
+		m.killTargetBookmarkID = ""
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
+func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "M":
+		m.minimapMode = nextMinimapMode(m.minimapMode)
+		savePrefString("minimapMode", m.minimapMode)
+		m.applyLayout()
+	case "+", "=":
+		if m.minimapMaxH < 30 {
+			m.minimapMaxH++
+			m.applyLayout()
+		}
+	case "-":
+		if m.minimapMaxH > 5 {
+			m.minimapMaxH--
+			m.applyLayout()
+		}
+	default:
+		// Exit and persist scale, then re-dispatch so the key isn't swallowed
+		m.state = StateNormal
+		m.flashMsg = ""
+		m.flashExpiry = time.Time{}
+		savePrefInt("minimapMaxH", m.minimapMaxH)
+		return m.handleKey(msg)
+	}
+	return m, m.flashMinimapSettings()
+}
+
+// flashMinimapSettings shows the current minimap mode+scale in the flash bar with a 3s timeout.
+func (m *Model) flashMinimapSettings() tea.Cmd {
+	m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH)
+	m.flashIsError = false
+	m.flashExpiry = time.Now().Add(3 * time.Second)
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+}
+
+func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.relay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		val := m.relay.Confirm()
+		m.state = StateNormal
+		if val == "" {
 			return m, nil
-		case key.Matches(msg, Keys.Enter):
-			val := m.queueRelay.Confirm()
-			m.state = StateNormal
-			s, ok := m.list.SelectedItem()
-			if !ok {
-				return m, nil
+		}
+		if s, ok := m.list.SelectedItem(); ok {
+			cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
+			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+	default:
+		ti := m.relay.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s, ok := m.list.SelectedItem()
+	if !ok {
+		m.state = StateNormal
+		m.queueRelay.Deactivate()
+		return m, nil
+	}
+	queueLen := len(s.QueuePending)
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.queueRelay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		// Enter always processes text input (appends if non-empty)
+		val := m.queueRelay.Confirm()
+		if val == "" {
+			// Empty submit does nothing
+			m.queueRelay.Activate() // re-focus input
+			return m, nil
+		}
+		paneID, sessionID := s.PaneID, s.SessionID
+		m.queueRelay.Activate() // re-focus for next message
+		return m, func() tea.Msg {
+			if err := m.client.Queue(paneID, sessionID, val); err != nil {
+				return flashErrorMsg("queue failed: " + err.Error())
 			}
-			if val == "" {
-				// Empty submit on a session with pending queue → cancel
-				if s.QueuePending != "" {
-					sessionID := s.SessionID
-					return m, func() tea.Msg {
-						if err := m.client.CancelQueue(sessionID); err != nil {
-							return flashErrorMsg("cancel failed: " + err.Error())
-						}
-						return flashInfoMsg("queue cancelled")
-					}
-				}
-				return m, nil
+			return flashInfoMsg("message queued")
+		}
+	case msg.String() == "up", msg.String() == "ctrl+p":
+		// Navigate up through queue items
+		if m.queueCursor == -1 && queueLen > 0 {
+			m.queueCursor = queueLen - 1
+		} else if m.queueCursor > 0 {
+			m.queueCursor--
+		}
+		return m, nil
+	case msg.String() == "down", msg.String() == "ctrl+n":
+		// Navigate down through queue items
+		if m.queueCursor >= 0 {
+			if m.queueCursor < queueLen-1 {
+				m.queueCursor++
+			} else {
+				m.queueCursor = -1 // back to text input
 			}
-			paneID, sessionID := s.PaneID, s.SessionID
+		}
+		return m, nil
+	case msg.String() == "ctrl+d":
+		// Remove highlighted item
+		if m.queueCursor >= 0 && m.queueCursor < queueLen {
+			sessionID, idx := s.SessionID, m.queueCursor
+			// Adjust cursor after removal
+			if m.queueCursor >= queueLen-1 {
+				m.queueCursor = queueLen - 2 // -1 if was last item
+			}
 			return m, func() tea.Msg {
-				if err := m.client.Queue(paneID, sessionID, val); err != nil {
-					return flashErrorMsg("queue failed: " + err.Error())
+				if err := m.client.CancelQueueItem(sessionID, idx); err != nil {
+					return flashErrorMsg("remove failed: " + err.Error())
 				}
-				return flashInfoMsg("message queued")
+				return flashInfoMsg("item removed")
 			}
-		default:
+		}
+		return m, nil
+	default:
+		// Forward to text input only when not highlighting an item
+		if m.queueCursor == -1 {
 			ti := m.queueRelay.TextInput()
 			newTI, cmd := ti.Update(msg)
 			*ti = newTI
 			return m, cmd
 		}
+		return m, nil
+	}
+}
 
-	case StatePalette:
+func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.promptEditor.Deactivate()
+		// Restore previous session-level selection if we came from there
+		if m.newSessionWasSession {
+			m.list.EnterSessionLevel()
+			m.list.SelectByPaneID(m.newSessionPrevPaneID)
+			m.newSessionWasSession = false
+		}
+		return m, nil
+	case msg.Type == tea.KeyEnter && msg.Alt:
+		// Alt+Enter: insert newline
+		cmd := m.promptEditor.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+		return m, cmd
+	case msg.Type == tea.KeyEnter:
+		prompt := m.promptEditor.Confirm()
+		m.state = StateNormal
+		m.newSessionWasSession = false
+		return m, m.spawnNewSession(prompt)
+	default:
+		cmd := m.promptEditor.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.palette.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		idx, ok := m.palette.SelectedIndex()
+		m.state = StateNormal
+		m.palette.Deactivate()
+		if !ok {
+			return m, nil
+		}
+		command := m.commands[idx]
+		if command.Enabled != nil && !command.Enabled(&m) {
+			return m, nil
+		}
+		m, c := command.Execute(&m)
+		return m, c
+	case msg.String() == "up", key.Matches(msg, Keys.MsgPrev):
+		m.palette.MoveUp()
+		return m, nil
+	case msg.String() == "down", key.Matches(msg, Keys.MsgNext):
+		m.palette.MoveDown()
+		return m, nil
+	default:
+		ti := m.palette.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		m.palette.Narrow()
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// When help overlay is open, only ? and esc dismiss it; swallow everything else
+	if m.showHelp {
 		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.state = StateNormal
-			m.palette.Deactivate()
+		case key.Matches(msg, Keys.Help), key.Matches(msg, Keys.Escape):
+			m.showHelp = false
 			return m, nil
-		case key.Matches(msg, Keys.Enter):
-			idx, ok := m.palette.SelectedIndex()
-			m.state = StateNormal
-			m.palette.Deactivate()
-			if !ok {
-				return m, nil
-			}
-			command := m.commands[idx]
-			if command.Enabled != nil && !command.Enabled(&m) {
-				return m, nil
-			}
-			m, c := command.Execute(&m)
-			return m, c
-		case msg.String() == "up", key.Matches(msg, Keys.MsgPrev):
-			m.palette.MoveUp()
-			return m, nil
-		case msg.String() == "down", key.Matches(msg, Keys.MsgNext):
-			m.palette.MoveDown()
-			return m, nil
-		default:
-			ti := m.palette.TextInput()
-			newTI, cmd := ti.Update(msg)
-			*ti = newTI
-			m.palette.Narrow()
-			return m, cmd
-		}
-
-	default: // StateNormal
-		// When help overlay is open, only ? and esc dismiss it; swallow everything else
-		if m.showHelp {
-			switch {
-			case key.Matches(msg, Keys.Help), key.Matches(msg, Keys.Escape):
-				m.showHelp = false
-				return m, nil
-			case key.Matches(msg, Keys.Palette):
-				m.showHelp = false
-				// fall through to palette handling below
-			default:
-				return m, nil
-			}
-		}
-
-		// Handle multi-key chord sequences
-		if m.pendingChord != "" {
-			seq := m.pendingChord + msg.String()
-			if chord, ok := ChordExact(seq); ok {
-				m.pendingChord = ""
-				return m.executeChord(chord)
-			}
-			if len(ChordsWithPrefix(seq)) > 0 {
-				m.pendingChord = seq
-				return m, nil
-			}
-			// Not a valid chord continuation — cancel and fall through
-			m.pendingChord = ""
-		}
-
-		// Check if this key starts any chord
-		if len(ChordsWithPrefix(msg.String())) > 0 {
-			m.pendingChord = msg.String()
-			return m, nil
-		}
-
-		switch {
 		case key.Matches(msg, Keys.Palette):
-			items := make([]ui.PaletteItem, len(m.commands))
-			for i, cmd := range m.commands {
-				enabled := true
-				if cmd.Enabled != nil {
-					enabled = cmd.Enabled(&m)
-				}
-				items[i] = ui.PaletteItem{
-					Name:    cmd.Name,
-					Hotkey:  cmd.Hotkey,
-					Enabled: enabled,
-					Index:   i,
-				}
-			}
-			m.state = StatePalette
-			m.palette.Activate(items)
+			m.showHelp = false
+			// fall through to palette handling below
+		default:
 			return m, nil
+		}
+	}
 
-		case key.Matches(msg, Keys.Escape) && (m.showHooks || m.showRawTranscript || m.showDiffs):
-			m.showHooks = false
-			m.showRawTranscript = false
-			m.showDiffs = false
-			m.preview.SetShowHooks(false)
-			m.preview.SetShowRawTranscript(false)
-			m.preview.SetShowDiffs(false)
+	// Handle multi-key chord sequences
+	if m.pendingChord != "" {
+		seq := m.pendingChord + msg.String()
+		if chord, ok := ChordExact(seq); ok {
+			m.pendingChord = ""
+			return m.executeChord(chord)
+		}
+		if len(ChordsWithPrefix(seq)) > 0 {
+			m.pendingChord = seq
 			return m, nil
+		}
+		// Not a valid chord continuation — cancel and fall through
+		m.pendingChord = ""
+	}
 
-		case m.showHooks && msg.String() == "f":
-			m.preview.CycleHookFilter()
-			return m, nil
+	// Check if this key starts any chord
+	if len(ChordsWithPrefix(msg.String())) > 0 {
+		m.pendingChord = msg.String()
+		return m, nil
+	}
 
-		case m.showRawTranscript && msg.String() == "e":
-			if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
-				return m, openTranscriptInEditor(m.origPane.Session, s.SessionID)
+	switch {
+	case key.Matches(msg, Keys.Palette):
+		items := make([]ui.PaletteItem, len(m.commands))
+		for i, cmd := range m.commands {
+			enabled := true
+			if cmd.Enabled != nil {
+				enabled = cmd.Enabled(&m)
 			}
-			return m, nil
+			items[i] = ui.PaletteItem{
+				Name:    cmd.Name,
+				Hotkey:  cmd.Hotkey,
+				Enabled: enabled,
+				Index:   i,
+			}
+		}
+		m.state = StatePalette
+		m.palette.Activate(items)
+		return m, nil
 
-		case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
-			// At project level, esc drops back to session level instead of quitting
-			if key.Matches(msg, Keys.Escape) && m.list.SelectionLevel() == ui.LevelProject {
-				m.list.EnterSessionLevel()
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-				return m, nil
-			}
-			if m.origPane.Captured {
-				tmux.SwitchToPaneQuiet(m.origPane.Session, m.origPane.Window, m.origPane.Pane)
-			}
-			return m, tea.Quit
+	case key.Matches(msg, Keys.Escape) && (m.showHooks || m.showRawTranscript || m.showDiffs):
+		m.showHooks = false
+		m.showRawTranscript = false
+		m.showDiffs = false
+		m.preview.SetShowHooks(false)
+		m.preview.SetShowRawTranscript(false)
+		m.preview.SetShowDiffs(false)
+		return m, nil
 
-		case m.showMinimap && key.Matches(msg, Keys.SpatialUp, Keys.SpatialDown, Keys.SpatialLeft, Keys.SpatialRight):
-			var dir ui.SpatialDir
-			dirName := ""
-			switch {
-			case key.Matches(msg, Keys.SpatialUp):
-				dir = ui.DirUp
-				dirName = "Up"
-			case key.Matches(msg, Keys.SpatialDown):
-				dir = ui.DirDown
-				dirName = "Down"
-			case key.Matches(msg, Keys.SpatialLeft):
-				dir = ui.DirLeft
-				dirName = "Left"
-			case key.Matches(msg, Keys.SpatialRight):
-				dir = ui.DirRight
-				dirName = "Right"
-			}
-			m.minimap.LastNavDebug = "key=" + msg.String() + " dir=" + dirName
-			paneID, isClaude := m.minimap.NavigateSpatial(dir)
-			if paneID == "" {
-				return m, nil
-			}
-			if isClaude && m.list.SelectByPaneID(paneID) {
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, false)...)
-				}
-			} else if !isClaude {
-				return m, m.focusNonClaudePane()
-			}
-			return m, nil
+	case m.showHooks && msg.String() == "f":
+		m.preview.CycleHookFilter()
+		return m, nil
 
-		case key.Matches(msg, Keys.NavLeft):
-			// h: enter project-level navigation
-			if m.list.SelectionLevel() == ui.LevelSession {
-				m.list.EnterProjectLevel()
-				if s, ok := m.list.SelectedProjectSession(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-			}
-			return m, nil
+	case m.showRawTranscript && msg.String() == "e":
+		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
+			return m, openTranscriptInEditor(m.origPane.Session, s.SessionID)
+		}
+		return m, nil
 
-		case key.Matches(msg, Keys.NavRight):
-			// l: exit project-level, enter session-level
-			if m.list.SelectionLevel() == ui.LevelProject {
-				m.list.EnterSessionLevel()
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Up):
-			if m.list.SelectionLevel() == ui.LevelProject {
-				m.list.MoveUpProject()
-				if s, ok := m.list.SelectedProjectSession(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-				return m, nil
-			}
-			m.list.MoveUp()
+	case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
+		// At project level, esc drops back to session level instead of quitting
+		if key.Matches(msg, Keys.Escape) && m.list.SelectionLevel() == ui.LevelProject {
+			m.list.EnterSessionLevel()
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
+		}
+		if m.origPane.Captured {
+			tmux.SwitchToPaneQuiet(m.origPane.Session, m.origPane.Window, m.origPane.Pane)
+		}
+		return m, tea.Quit
 
-		case key.Matches(msg, Keys.Down):
-			if m.list.SelectionLevel() == ui.LevelProject {
-				m.list.MoveDownProject()
-				if s, ok := m.list.SelectedProjectSession(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-				return m, nil
+	case m.showMinimap && key.Matches(msg, Keys.SpatialUp, Keys.SpatialDown, Keys.SpatialLeft, Keys.SpatialRight):
+		var dir ui.SpatialDir
+		dirName := ""
+		switch {
+		case key.Matches(msg, Keys.SpatialUp):
+			dir = ui.DirUp
+			dirName = "Up"
+		case key.Matches(msg, Keys.SpatialDown):
+			dir = ui.DirDown
+			dirName = "Down"
+		case key.Matches(msg, Keys.SpatialLeft):
+			dir = ui.DirLeft
+			dirName = "Left"
+		case key.Matches(msg, Keys.SpatialRight):
+			dir = ui.DirRight
+			dirName = "Right"
+		}
+		m.minimap.LastNavDebug = "key=" + msg.String() + " dir=" + dirName
+		paneID, isClaude := m.minimap.NavigateSpatial(dir)
+		if paneID == "" {
+			return m, nil
+		}
+		if isClaude && m.list.SelectByPaneID(paneID) {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, false)...)
 			}
-			m.list.MoveDown()
+		} else if !isClaude {
+			return m, m.focusNonClaudePane()
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.NewSession):
+		return m.execNewSession()
+
+	case key.Matches(msg, Keys.NavLeft):
+		// h: enter project-level navigation
+		if m.list.SelectionLevel() == ui.LevelSession {
+			m.list.EnterProjectLevel()
+			if s, ok := m.list.SelectedProjectSession(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.NavRight):
+		// l: exit project-level, enter session-level
+		if m.list.SelectionLevel() == ui.LevelProject {
+			m.list.EnterSessionLevel()
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Up):
+		if m.list.SelectionLevel() == ui.LevelProject {
+			m.list.MoveUpProject()
+			if s, ok := m.list.SelectedProjectSession(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+			return m, nil
+		}
+		m.list.MoveUp()
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(m.fetchForSelection(s, true)...)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Down):
+		if m.list.SelectionLevel() == ui.LevelProject {
+			m.list.MoveDownProject()
+			if s, ok := m.list.SelectedProjectSession(); ok {
+				return m, tea.Batch(m.fetchForSelection(s, true)...)
+			}
+			return m, nil
+		}
+		m.list.MoveDown()
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(m.fetchForSelection(s, true)...)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.GoBottom):
+		m.list.MoveToBottom()
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, tea.Batch(m.fetchForSelection(s, true)...)
+		}
+		return m, nil
+
+	case (m.showRawTranscript || m.showHooks) && msg.String() == " ":
+		m.preview.ToggleExpand()
+		return m, nil
+
+	case key.Matches(msg, Keys.Enter):
+		// Project level: enter drops into session level (same as l)
+		if m.list.SelectionLevel() == ui.LevelProject {
+			m.list.EnterSessionLevel()
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
-
-		case (m.showRawTranscript || m.showHooks) && msg.String() == " ":
-			m.preview.ToggleExpand()
+		}
+		if m.showDiffs {
+			m.preview.ToggleDiffExpand()
 			return m, nil
-
-		case key.Matches(msg, Keys.Enter):
-			// Project level: enter drops into session level (same as l)
-			if m.list.SelectionLevel() == ui.LevelProject {
-				m.list.EnterSessionLevel()
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(m.fetchForSelection(s, true)...)
-				}
-				return m, nil
-			}
-			if m.showDiffs {
-				m.preview.ToggleDiffExpand()
-				return m, nil
-			}
-			// Minimap: Enter on non-Claude pane → switch to it directly
-			if m.showMinimap {
-				if info, ok := m.minimap.SelectedPaneInfo(); ok && !info.IsClaude {
-					tmux.SwitchToPane(info.SessionName, info.WindowIndex, info.PaneIndex, info.PaneID)
-					return m, tea.Quit
-				}
-			}
-			if s, ok := m.list.SelectedItem(); ok {
-				if s.IsPhantom {
-					// Dead Later → create new window + remove bookmark
-					bookmarkID, cwd := s.LaterBookmarkID, s.CWD
-					tmuxSession := m.origPane.Session
-					return m, func() tea.Msg {
-						if err := m.client.OpenLater(bookmarkID, cwd, tmuxSession); err != nil {
-							return flashErrorMsg("open failed: " + err.Error())
-						}
-						return tea.QuitMsg{}
-					}
-				}
-				// Live Later → auto-remove bookmark before switching
-				if s.LaterBookmarkID != "" {
-					m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
-				}
-				tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
+		}
+		// Minimap: Enter on non-Claude pane → switch to it directly
+		if m.showMinimap {
+			if info, ok := m.minimap.SelectedPaneInfo(); ok && !info.IsClaude {
+				tmux.SwitchToPane(info.SessionName, info.WindowIndex, info.PaneIndex, info.PaneID)
 				return m, tea.Quit
 			}
-			return m, nil
-
-		case key.Matches(msg, Keys.PromptRelay):
-			if _, ok := m.list.SelectedItem(); ok {
-				m.state = StatePromptRelay
-				m.relay.Activate()
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Queue):
-			if s, ok := m.list.SelectedItem(); ok {
-				m.state = StateQueueRelay
-				if s.QueuePending != "" {
-					m.queueRelay.ActivateWithValue(s.QueuePending)
-				} else {
-					m.queueRelay.Activate()
-				}
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Search):
-			// Exit project level when entering search
-			if m.list.SelectionLevel() == ui.LevelProject {
-				m.list.EnterSessionLevel()
-			}
-			m.state = StateSearching
-			m.search.Activate()
-			return m, nil
-
-		case key.Matches(msg, Keys.Later):
-			return m.execLater()
-
-		case key.Matches(msg, Keys.LaterKill):
-			return m.execLaterKill()
-
-		case key.Matches(msg, Keys.Transcript):
-			m.hideTranscript = !m.hideTranscript
-			m.preview.SetHideTranscript(m.hideTranscript)
-			return m, nil
-
-		case key.Matches(msg, Keys.GroupMode):
-			newMode := !m.list.GroupByProject()
-			m.list.SetGroupByProject(newMode)
-			savePrefBool("groupByProject", newMode)
-			return m, nil
-
-		case key.Matches(msg, Keys.Minimap):
-			m.showMinimap = !m.showMinimap
-			savePrefBool("minimap", m.showMinimap)
-			if m.showMinimap {
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, m.fetchMinimapData(s.TmuxSession)
-				}
-			} else {
-				// Toggling off: restore list selection in case we were on a non-Claude pane
-				m.list.Reselect()
-				if s, ok := m.list.SelectedItem(); ok {
-					return m, tea.Batch(
-						capturePreview(s.PaneID),
-						m.fetchTranscript(s.PaneID, s.SessionID),
-						m.fetchCachedSummary(s.PaneID, s.SessionID),
-					)
-				}
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Synthesize):
-			if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
-				m.list.SetSummaryLoading(s.PaneID, true)
-				return m, m.fetchSynthesize(s.PaneID, s.SessionID)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.SynthesizeAll):
-			var latestPaneID string
-			var latestTime time.Time
-			for _, sess := range m.sessions {
-				if sess.LastChanged.After(latestTime) {
-					latestTime = sess.LastChanged
-					latestPaneID = sess.PaneID
-				}
-			}
-			for _, sess := range m.sessions {
-				if sess.PaneID != latestPaneID && sess.SessionID != "" {
-					m.list.SetSummaryLoading(sess.PaneID, true)
-				}
-			}
-			return m, m.fetchSynthesizeAll(latestPaneID)
-
-		case key.Matches(msg, Keys.Rename):
-			if s, ok := m.list.SelectedItem(); ok && !m.renaming {
-				m.renaming = true
-				return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Kill):
-			if s, ok := m.list.SelectedItem(); ok {
-				if s.IsPhantom && s.LaterBookmarkID != "" {
-					// Phantom Later — no pane to kill, just remove bookmark
-					bookmarkID := s.LaterBookmarkID
-					return m, func() tea.Msg {
-						claude.RemoveLaterBookmark(bookmarkID)
-						return PaneKilledMsg{}
-					}
-				}
-				m.state = StateKillConfirm
-				m.killTargetPaneID = s.PaneID
-				m.killTargetSessionID = s.SessionID
-				m.killTargetPID = s.PID
-				m.killTargetTitle = sessionDisplayTitle(s)
-				m.killTargetBookmarkID = s.LaterBookmarkID
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Commit):
-			if s, ok := m.list.SelectedItem(); ok {
-				if s.Status != claude.StatusUserTurn {
-					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-				}
-				if s.CommitDonePending {
-					return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
-				}
-				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-				cmds := []tea.Cmd{func() tea.Msg {
-					if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
-						return flashErrorMsg("commit failed: " + err.Error())
-					}
-					return flashInfoMsg("commit started")
-				}}
-				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
-				return m, tea.Batch(cmds...)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.CommitAndDone):
-			if s, ok := m.list.SelectedItem(); ok {
-				if s.Status != claude.StatusUserTurn {
-					return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-				}
-				if s.CommitDonePending {
-					return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
-				}
-				paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-				cmds := []tea.Cmd{func() tea.Msg {
-					if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
-						return flashErrorMsg("commit+done failed: " + err.Error())
-					}
-					return flashInfoMsg("commit+done started")
-				}}
-				cmds = append(cmds, m.snapToDefault(s.PaneID)...)
-				return m, tea.Batch(cmds...)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.Debug):
-			return m.execDebug()
-
-		case key.Matches(msg, Keys.Help):
-			m.showHelp = true
-			return m, nil
-
-		case key.Matches(msg, Keys.Fullscreen):
-			return m, reopenPopup(m.binaryPath, m.inFullscreenPopup)
-
-		case key.Matches(msg, Keys.ListShrink):
-			m.listWidthPct = max(m.listWidthPct-5, 10)
-			m.applyLayout()
-			savePrefInt("listWidthPct", m.listWidthPct)
-			return m, nil
-
-		case key.Matches(msg, Keys.ListGrow):
-			m.listWidthPct = min(m.listWidthPct+5, 60)
-			m.applyLayout()
-			savePrefInt("listWidthPct", m.listWidthPct)
-			return m, nil
-
-		case key.Matches(msg, Keys.Refresh):
-			// In daemon mode, sessions are pushed — but we can still force a preview refresh
-			if s, ok := m.list.SelectedItem(); ok {
-				return m, capturePreview(s.PaneID)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.ScrollDown):
-			m.preview.ScrollDown()
-			return m, nil
-
-		case key.Matches(msg, Keys.ScrollUp):
-			m.preview.ScrollUp()
-			return m, nil
-
-		case key.Matches(msg, Keys.PageDown):
-			m.preview.ScrollPageDown()
-			return m, nil
-
-		case key.Matches(msg, Keys.PageUp):
-			m.preview.ScrollPageUp()
-			return m, nil
-
-		case key.Matches(msg, Keys.MsgNext):
-			if m.showHooks || m.showRawTranscript || m.showDiffs {
-				m.preview.ScrollLines(1)
-			} else {
-				m.preview.NavigateMsg(1)
-			}
-			return m, nil
-
-		case key.Matches(msg, Keys.MsgPrev):
-			if m.showHooks || m.showRawTranscript || m.showDiffs {
-				m.preview.ScrollLines(-1)
-			} else {
-				m.preview.NavigateMsg(-1)
-			}
-			return m, nil
 		}
+		if s, ok := m.list.SelectedItem(); ok {
+			if s.IsPhantom {
+				// Dead Later → create new window + remove bookmark
+				bookmarkID, cwd := s.LaterBookmarkID, s.CWD
+				tmuxSession := m.origPane.Session
+				return m, func() tea.Msg {
+					if err := m.client.OpenLater(bookmarkID, cwd, tmuxSession); err != nil {
+						return flashErrorMsg("open failed: " + err.Error())
+					}
+					return tea.QuitMsg{}
+				}
+			}
+			// Live Later → auto-remove bookmark before switching
+			if s.LaterBookmarkID != "" {
+				m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
+			}
+			tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
+			return m, tea.Quit
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.PromptRelay):
+		if _, ok := m.list.SelectedItem(); ok {
+			m.state = StatePromptRelay
+			m.relay.Activate()
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Queue):
+		return m.execQueue()
+
+
+	case key.Matches(msg, Keys.Search):
+		// Exit project level when entering search
+		if m.list.SelectionLevel() == ui.LevelProject {
+			m.list.EnterSessionLevel()
+		}
+		m.state = StateSearching
+		m.search.Activate()
+		return m, nil
+
+	case key.Matches(msg, Keys.Later):
+		return m.execLater()
+
+	case key.Matches(msg, Keys.LaterKill):
+		return m.execLaterKill()
+
+	case key.Matches(msg, Keys.Transcript):
+		m.hideTranscript = !m.hideTranscript
+		m.preview.SetHideTranscript(m.hideTranscript)
+		return m, nil
+
+	case key.Matches(msg, Keys.GroupMode):
+		newMode := !m.list.GroupByProject()
+		m.list.SetGroupByProject(newMode)
+		savePrefBool("groupByProject", newMode)
+		return m, nil
+
+	case key.Matches(msg, Keys.Minimap):
+		m.showMinimap = !m.showMinimap
+		savePrefBool("minimap", m.showMinimap)
+		m.applyLayout()
+		if m.showMinimap {
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, m.fetchMinimapData(s.TmuxSession)
+			}
+		} else {
+			// Toggling off: restore list selection in case we were on a non-Claude pane
+			m.list.Reselect()
+			if s, ok := m.list.SelectedItem(); ok {
+				return m, tea.Batch(
+					capturePreview(s.PaneID),
+					m.fetchTranscript(s.PaneID, s.SessionID),
+					m.fetchCachedSummary(s.PaneID, s.SessionID),
+				)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.MinimapMode):
+		m.state = StateMinimapSettings
+		m.flashMsg = minimapModeFlash(m.minimapMode, m.minimapMaxH)
+		m.flashIsError = false
+		m.flashExpiry = time.Now().Add(3 * time.Second)
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
+
+	case key.Matches(msg, Keys.Synthesize):
+		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
+			m.list.SetSummaryLoading(s.PaneID, true)
+			return m, m.fetchSynthesize(s.PaneID, s.SessionID)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.SynthesizeAll):
+		var latestPaneID string
+		var latestTime time.Time
+		for _, sess := range m.sessions {
+			if sess.LastChanged.After(latestTime) {
+				latestTime = sess.LastChanged
+				latestPaneID = sess.PaneID
+			}
+		}
+		for _, sess := range m.sessions {
+			if sess.PaneID != latestPaneID && sess.SessionID != "" {
+				m.list.SetSummaryLoading(sess.PaneID, true)
+			}
+		}
+		return m, m.fetchSynthesizeAll(latestPaneID)
+
+	case key.Matches(msg, Keys.Rename):
+		if s, ok := m.list.SelectedItem(); ok && !m.renaming {
+			m.renaming = true
+			return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Kill):
+		if s, ok := m.list.SelectedItem(); ok {
+			if s.IsPhantom && s.LaterBookmarkID != "" {
+				// Phantom Later — no pane to kill, just remove bookmark
+				bookmarkID := s.LaterBookmarkID
+				return m, func() tea.Msg {
+					claude.RemoveLaterBookmark(bookmarkID)
+					return PaneKilledMsg{}
+				}
+			}
+			m.state = StateKillConfirm
+			m.killTargetPaneID = s.PaneID
+			m.killTargetSessionID = s.SessionID
+			m.killTargetPID = s.PID
+			m.killTargetTitle = sessionDisplayTitle(s)
+			m.killTargetBookmarkID = s.LaterBookmarkID
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Commit):
+		if s, ok := m.list.SelectedItem(); ok {
+			if s.Status != claude.StatusUserTurn {
+				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+			}
+			if s.CommitDonePending {
+				return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
+			}
+			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
+			cmds := []tea.Cmd{func() tea.Msg {
+				if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
+					return flashErrorMsg("commit failed: " + err.Error())
+				}
+				return flashInfoMsg("commit started")
+			}}
+			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.CommitAndDone):
+		if s, ok := m.list.SelectedItem(); ok {
+			if s.Status != claude.StatusUserTurn {
+				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+			}
+			if s.CommitDonePending {
+				return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
+			}
+			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
+			cmds := []tea.Cmd{func() tea.Msg {
+				if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
+					return flashErrorMsg("commit+done failed: " + err.Error())
+				}
+				return flashInfoMsg("commit+done started")
+			}}
+			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Debug):
+		return m.execDebug()
+
+	case key.Matches(msg, Keys.Help):
+		m.showHelp = true
+		return m, nil
+
+	case key.Matches(msg, Keys.Fullscreen):
+		return m, reopenPopup(m.binaryPath, m.inFullscreenPopup)
+
+	case key.Matches(msg, Keys.ListShrink):
+		m.listWidthPct = max(m.listWidthPct-5, 10)
+		m.applyLayout()
+		savePrefInt("listWidthPct", m.listWidthPct)
+		return m, nil
+
+	case key.Matches(msg, Keys.ListGrow):
+		m.listWidthPct = min(m.listWidthPct+5, 60)
+		m.applyLayout()
+		savePrefInt("listWidthPct", m.listWidthPct)
+		return m, nil
+
+	case key.Matches(msg, Keys.Refresh):
+		// In daemon mode, sessions are pushed — but we can still force a preview refresh
+		if s, ok := m.list.SelectedItem(); ok {
+			return m, capturePreview(s.PaneID)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.ScrollDown):
+		m.preview.ScrollDown()
+		return m, nil
+
+	case key.Matches(msg, Keys.ScrollUp):
+		m.preview.ScrollUp()
+		return m, nil
+
+	case key.Matches(msg, Keys.PageDown):
+		m.preview.ScrollPageDown()
+		return m, nil
+
+	case key.Matches(msg, Keys.PageUp):
+		m.preview.ScrollPageUp()
+		return m, nil
+
+	case key.Matches(msg, Keys.MsgNext):
+		if m.showHooks || m.showRawTranscript || m.showDiffs {
+			m.preview.ScrollLines(1)
+		} else {
+			m.preview.NavigateMsg(1)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.MsgPrev):
+		if m.showHooks || m.showRawTranscript || m.showDiffs {
+			m.preview.ScrollLines(-1)
+		} else {
+			m.preview.NavigateMsg(-1)
+		}
+		return m, nil
 	}
 
 	return m, nil

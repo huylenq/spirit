@@ -10,8 +10,8 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.NavLeft, k.Enter, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
-		k.Refresh, k.GroupMode, k.Synthesize, k.SynthesizeAll,
+		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
+		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -41,7 +41,9 @@ type KeyMap struct {
 	Escape  key.Binding
 
 	Minimap      key.Binding
+	MinimapMode  key.Binding
 	GroupMode    key.Binding
+	GoBottom     key.Binding
 	Synthesize    key.Binding
 	SynthesizeAll key.Binding
 	Rename       key.Binding
@@ -98,6 +100,9 @@ type KeyMap struct {
 	// Tree navigation (h/l for project/session level)
 	NavLeft  key.Binding
 	NavRight key.Binding
+
+	// New session (project level)
+	NewSession key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -148,6 +153,7 @@ var Chords = []Chord{
 	{Keys: "gd", Help: "diffs"},
 	{Keys: "gh", Help: "hooks"},
 	{Keys: "gt", Help: "transcript json"},
+	{Keys: "gg", Help: "top"},
 }
 
 func init() {
@@ -157,6 +163,7 @@ func init() {
 		"gd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
 		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
 		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
+		"gg": func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
 	}
 	for i := range Chords {
 		Chords[i].Execute = executors[Chords[i].Keys]
@@ -223,9 +230,17 @@ var Keys = KeyMap{
 		key.WithKeys("m"),
 		key.WithHelp("m", "minimap"),
 	),
+	MinimapMode: key.NewBinding(
+		key.WithKeys("M"),
+		key.WithHelp("M", "minimap mode"),
+	),
 	GroupMode: key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "group"),
+	),
+	GoBottom: key.NewBinding(
 		key.WithKeys("G"),
-		key.WithHelp("G", "group"),
+		key.WithHelp("G", "bottom"),
 	),
 	Synthesize: key.NewBinding(
 		key.WithKeys("s"),
@@ -328,5 +343,9 @@ var Keys = KeyMap{
 	),
 	NavRight: key.NewBinding(
 		key.WithKeys("l"),
+	),
+	NewSession: key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "new session"),
 	),
 }

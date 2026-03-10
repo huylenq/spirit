@@ -62,6 +62,15 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitAndDone() },
 		},
 
+		{
+			Name: "New session", Hotkey: "a",
+			Enabled: func(m *Model) bool {
+				_, ok := m.list.SelectedProject()
+				return ok
+			},
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
+		},
+
 		// --- Global actions ---
 		{
 			Name: "Search", Hotkey: "/",

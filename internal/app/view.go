@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -20,10 +21,7 @@ func (m Model) View() string {
 		return ui.EmptyStyle.Render("Reconnecting to daemon... (" + m.err.Error() + ")")
 	}
 
-	innerWidth := m.width
-	if !m.inFullscreenPopup {
-		innerWidth -= 2 // inside left/right border chars
-	}
+	innerWidth := m.innerWidth()
 
 	// Top border: usage bar as the frame's top edge
 	// With corners when bordered, without corners in fullscreen
@@ -41,8 +39,19 @@ func (m Model) View() string {
 		contentHeight -= 1
 	}
 
+	// If minimap should be docked, render it first to reserve vertical space
+	minimapDocked := false
+	var minimapView string
+	if m.shouldDockMinimap() {
+		minimapView = m.minimap.View()
+		if minimapView != "" {
+			minimapDocked = true
+			contentHeight -= lipgloss.Height(minimapView)
+		}
+	}
+
 	// List panel
-	listWidth := max(innerWidth*m.listWidthPct/100, 20)
+	listWidth := m.listPanelWidth()
 	previewWidth := innerWidth - listWidth
 
 	listContent := m.list.View()
@@ -56,25 +65,42 @@ func (m Model) View() string {
 	switch m.state {
 	case StatePromptRelay:
 		m.preview.SetRelayView(m.relay.View())
-	case StateQueueRelay:
-		m.preview.SetRelayView(m.queueRelay.View())
 	default:
 		m.preview.SetRelayView("")
 	}
 
-	// Preview panel
+	// Queue section below preview (always visible when items pending, interactive in queue mode)
+	var queueView string
+	var queueHeight int
+	if s, ok := m.list.SelectedItem(); ok {
+		showQueue := len(s.QueuePending) > 0 || m.state == StateQueueRelay
+		if showQueue {
+			queueView = m.renderQueueSection(s, previewWidth)
+			queueHeight = lipgloss.Height(queueView)
+		}
+	}
+
+	// Preview panel (reduced height when queue section visible)
+	previewH := contentHeight - queueHeight
 	previewContent := m.preview.View()
 	previewPanel := ui.PreviewPanelStyle.
 		Width(previewWidth).
-		Height(contentHeight).
-		MaxHeight(contentHeight).
+		Height(previewH).
+		MaxHeight(previewH).
 		Render(previewContent)
 
-	// Main content: list | preview
-	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, previewPanel)
+	// Combine preview + queue section in right column
+	rightColumn := previewPanel
+	if queueView != "" {
+		rightColumn = previewPanel + "\n" + queueView
+	}
 
-	// Overlay minimap at bottom-left if enabled
-	if m.showMinimap {
+	// Main content: list | right column (preview + optional queue)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, rightColumn)
+
+	// Minimap: docked at bottom in fullscreen (inserted into layout below),
+	// overlaid in normal mode
+	if !minimapDocked && m.showMinimap {
 		minimapStr := m.minimap.View()
 		if minimapStr != "" {
 			if debugMinimap {
@@ -108,6 +134,19 @@ func (m Model) View() string {
 		content = ui.OverlayCentered(content, m.palette.View(innerWidth), innerWidth)
 	}
 
+	// New session prompt editor overlay — positioned right next to the project name label
+	if m.state == StateNewSessionPrompt {
+		// Column: right after "📁 project-name" text + padding + small gap
+		labelWidth := lipgloss.Width(ui.IconFolder+" "+m.newSessionProject) + 3 // 1 left pad + 1 right pad + 1 gap
+		overlayWidth := min(innerWidth-labelWidth, 72)
+		overlayView := m.promptEditor.View(m.newSessionProject, overlayWidth)
+		row := m.list.SelectedProjectRow()
+		if row < 0 {
+			row = 0
+		}
+		content = ui.OverlayAt(content, overlayView, row, labelWidth)
+	}
+
 	if m.flashMsg != "" {
 		style := ui.FlashInfoStyle
 		if m.flashIsError {
@@ -119,7 +158,12 @@ func (m Model) View() string {
 	}
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization
-	inner := labelLine + "\n" + content + "\n" + footer
+	var inner string
+	if minimapDocked {
+		inner = labelLine + "\n" + content + "\n" + minimapView + "\n" + footer
+	} else {
+		inner = labelLine + "\n" + content + "\n" + footer
+	}
 
 	if m.inFullscreenPopup {
 		return topBorder + "\n" + inner
@@ -206,18 +250,23 @@ func (m Model) renderSessionPanel() string {
 		lines = append(lines, ui.ItemDetailStyle.Render("(no usage data yet)"))
 	}
 
-	// Summary cache info
+	// Synthesize cache info
 	if s.SessionID != "" {
 		cached := claude.ReadCachedSummary(s.SessionID)
 		sMod, tMod, fresh := claude.SummaryCacheInfo(s.SessionID)
-		lines = append(lines, ui.ItemDetailStyle.Render("--- summary cache ---"))
+		lines = append(lines, ui.ItemDetailStyle.Render("--- synthesize result cache ---"))
 		if cached != nil {
-			lines = append(lines, line("Objective", debugTruncate(cached.Objective, 40)))
-			lines = append(lines, line("CacheHL", debugTruncate(cached.Headline, 40)))
-			lines = append(lines, line("ProblemType", cached.ProblemType))
-			lines = append(lines, line("InputWords", fmt.Sprintf("%d", cached.InputWords)))
+			const jsonWrap = 50
+			data, _ := json.MarshalIndent(cached, "", "  ")
+			for _, jsonLine := range strings.Split(string(data), "\n") {
+				for len(jsonLine) > jsonWrap {
+					lines = append(lines, ui.HighlightJSON(jsonLine[:jsonWrap]))
+					jsonLine = "    " + jsonLine[jsonWrap:] // indent continuation
+				}
+				lines = append(lines, ui.HighlightJSON(jsonLine))
+			}
 		} else {
-			lines = append(lines, ui.ItemDetailStyle.Render("(no cached summary)"))
+			lines = append(lines, ui.ItemDetailStyle.Render("(no cached synthesize)"))
 		}
 		freshStr := "stale"
 		if fresh {
@@ -226,7 +275,7 @@ func (m Model) renderSessionPanel() string {
 		if sMod == "" {
 			freshStr = "n/a"
 		}
-		lines = append(lines, line("SummaryMod", sMod))
+		lines = append(lines, line("SynthMod", sMod))
 		lines = append(lines, line("TranscriptMod", tMod))
 		lines = append(lines, line("CacheFresh", freshStr))
 	}
@@ -239,6 +288,48 @@ func debugTruncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// renderQueueSection renders the queue items below the preview panel.
+// Always visible when items are pending; interactive when in StateQueueRelay.
+func (m Model) renderQueueSection(s claude.ClaudeSession, width int) string {
+	items := s.QueuePending
+	inQueueMode := m.state == StateQueueRelay
+	innerWidth := width - 2 // padding
+
+	var lines []string
+
+	// Header
+	header := fmt.Sprintf("❮ queued (%d)", len(items))
+	lines = append(lines, ui.QueuePromptStyle.Render(header))
+
+	// Items (capped at ~30% of preview height, scrollable later if needed)
+	maxItems := max((m.height-6)*30/100, 3)
+	for i, msg := range items {
+		if i >= maxItems {
+			lines = append(lines, ui.ItemDetailStyle.Render(fmt.Sprintf("  …+%d more", len(items)-maxItems)))
+			break
+		}
+		prefix := fmt.Sprintf("  %d. ", i+1)
+		truncated := msg
+		maxMsgWidth := innerWidth - lipgloss.Width(prefix)
+		if maxMsgWidth > 0 && lipgloss.Width(truncated) > maxMsgWidth {
+			truncated = truncated[:maxMsgWidth-1] + "…"
+		}
+		if inQueueMode && i == m.queueCursor {
+			// Highlighted item
+			lines = append(lines, ui.SelectedBgStyle.Render(prefix+truncated+strings.Repeat(" ", max(innerWidth-lipgloss.Width(prefix+truncated), 0))))
+		} else {
+			lines = append(lines, ui.ItemDetailStyle.Render(prefix+truncated))
+		}
+	}
+
+	// Text input (only in queue mode)
+	if inQueueMode {
+		lines = append(lines, m.queueRelay.View())
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // hint formats a single key hint for the footer bar.
@@ -328,6 +419,7 @@ func (m Model) renderHelpOverlay() string {
 	col3Parts := []string{
 		toggles,
 		hint("m", "minimap"),
+		hint("M", "minimap settings"),
 		hint("g", "group by project"),
 		hint("t", "toggle transcript"),
 		hint("z", "fullscreen toggle"),
@@ -364,8 +456,15 @@ func (m Model) renderFooter(width int) string {
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
+	case StateNewSessionPrompt:
+		h := ui.FooterKeyStyle.Render("enter") + " send  " +
+			ui.FooterKeyStyle.Render("alt+enter") + " newline  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateQueueRelay:
-		h := ui.FooterKeyStyle.Render("enter") + " queue  " +
+		h := ui.FooterKeyStyle.Render("enter") + " append  " +
+			ui.FooterKeyStyle.Render("↑↓") + " select  " +
+			ui.FooterKeyStyle.Render("ctrl+d") + " remove  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateKillConfirm:
@@ -375,6 +474,11 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"
 		return ui.FooterStyle.Width(width).Render(prompt)
+	case StateMinimapSettings:
+		h := ui.FooterKeyStyle.Render("M") + " cycle  " +
+			ui.FooterKeyStyle.Render("+/-") + " scale  " +
+			ui.FooterKeyStyle.Render("esc") + " close"
+		return ui.FooterStyle.Width(width).Render(h)
 	default:
 		hints := m.renderNormalFooterHints()
 		if m.renaming {

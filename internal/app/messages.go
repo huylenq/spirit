@@ -102,6 +102,11 @@ type OriginalPaneCapturedMsg struct {
 	Err     error
 }
 
+// NewSessionCreatedMsg is sent when a new tmux window+session is spawned via "a".
+type NewSessionCreatedMsg struct {
+	PaneID string
+}
+
 // PaneKilledMsg is sent after attempting to kill a session and close its pane.
 type PaneKilledMsg struct {
 	Err error

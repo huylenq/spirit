@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -27,7 +28,51 @@ const (
 	StatePromptRelay
 	StateQueueRelay
 	StatePalette
+	StateNewSessionPrompt
+	StateMinimapSettings
 )
+
+const defaultMinimapMaxH = 14
+
+// Minimap display modes (cycled with M key).
+const (
+	MinimapAuto   = "auto"   // docked in fullscreen, overlay in normal
+	MinimapDocked = "docked" // always docked at bottom
+	MinimapFloat  = "float"  // always overlay
+	MinimapSmart  = "smart"  // docked when minimap wider than list panel
+)
+
+var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart}
+
+// minimapModeFlash returns a styled string showing all modes with the active one highlighted,
+// plus a scale indicator showing the current max height.
+func minimapModeFlash(active string, maxH int) string {
+	var parts []string
+	for _, mode := range minimapModes {
+		if mode == active {
+			parts = append(parts, ui.FooterKeyStyle.Render(mode))
+		} else {
+			parts = append(parts, ui.FooterDimStyle.Render(mode))
+		}
+	}
+	scale := "  " + ui.FooterKeyStyle.Render("+/-") + " " + ui.FooterKeyStyle.Render(fmt.Sprintf("%d", maxH))
+	return "minimap: " + strings.Join(parts, ui.FooterDimStyle.Render(" · ")) + scale
+}
+
+func nextMinimapMode(mode string) string {
+	switch mode {
+	case MinimapAuto:
+		return MinimapDocked
+	case MinimapDocked:
+		return MinimapFloat
+	case MinimapFloat:
+		return MinimapSmart
+	case MinimapSmart:
+		return MinimapAuto
+	default:
+		return MinimapAuto
+	}
+}
 
 // originalPane stores the tmux pane that was active when the TUI launched,
 // so we can restore it on ESC/quit.
@@ -55,6 +100,8 @@ type Model struct {
 	showDiffs         bool
 	hideTranscript    bool
 	showMinimap       bool
+	minimapMode       string // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
+	minimapMaxH       int    // max minimap height (persisted pref, default 14)
 	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
 	binaryPath        string // cached os.Executable() result
 	minimapSession    string // tmux session currently shown in minimap
@@ -78,6 +125,14 @@ type Model struct {
 	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
 	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
+	pendingSelectPaneID  string // pane to auto-select once it appears in the session list
+	promptEditor         ui.PromptEditorModel
+	newSessionProject    string // project name for the new session being created
+	newSessionCWD        string // working directory for the new session
+	newSessionTmuxSess   string // tmux session for the new window
+	newSessionPrevPaneID string // session to restore if prompt is cancelled from session level
+	newSessionWasSession bool   // true if `a` was pressed from session level
+	queueCursor          int       // -1 = text input focused, >= 0 = highlighted item index
 	debugMode            bool      // toggle debug overlay (D key)
 	globalEffects        []claude.GlobalHookEffect // latest handled effects across all sessions
 	showHelp             bool      // toggle help overlay (? key)
@@ -104,7 +159,10 @@ func NewModel(client *daemon.Client) Model {
 		palette:           ui.NewPaletteModel(),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),
+		promptEditor:      ui.NewPromptEditorModel(),
 		showMinimap:       loadPrefBool("minimap"),
+		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
+		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
 		listWidthPct:      loadPrefInt("listWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
@@ -114,19 +172,61 @@ func NewModel(client *daemon.Client) Model {
 	}
 }
 
+// innerWidth returns the usable content width (total width minus side borders when not fullscreen).
+func (m Model) innerWidth() int {
+	w := m.width
+	if !m.inFullscreenPopup {
+		w -= 2
+	}
+	return w
+}
+
+// listPanelWidth returns the computed list panel width from the current layout.
+func (m Model) listPanelWidth() int {
+	return max(m.innerWidth()*m.listWidthPct/100, 20)
+}
+
+// shouldDockMinimap returns true when the minimap should be docked at the bottom
+// (reducing content height) rather than overlaid on top of the content.
+func (m Model) shouldDockMinimap() bool {
+	if !m.showMinimap {
+		return false
+	}
+	switch m.minimapMode {
+	case MinimapDocked:
+		return true
+	case MinimapFloat:
+		return false
+	case MinimapSmart:
+		mmW, _ := m.minimap.ViewSize()
+		return mmW > 0 && mmW > m.listPanelWidth()
+	default: // MinimapAuto
+		return m.inFullscreenPopup
+	}
+}
+
 // applyLayout recomputes and applies component sizes from m.width, m.height, m.listWidthPct.
 func (m *Model) applyLayout() {
-	innerWidth := m.width
+	innerW := m.innerWidth()
 	contentHeight := m.height - 3 // top border + label + footer
 	if !m.inFullscreenPopup {
-		innerWidth -= 2 // left/right border chars
 		contentHeight -= 1 // bottom border
 	}
-	listWidth := max(innerWidth*m.listWidthPct/100, 20)
-	m.list.SetSize(listWidth-1, contentHeight)
-	m.preview.SetSize(innerWidth-listWidth, contentHeight)
-	minimapH := min(contentHeight/2, 14)
+	minimapH := min(contentHeight/2, m.minimapMaxH)
 	m.minimap.SetSize(0, minimapH)
+	// Scale window cols proportionally to height, preserving the default 40:14 aspect ratio
+	m.minimap.SetWindowCols(m.minimapMaxH * ui.DefaultMinimapWindowCols / defaultMinimapMaxH)
+
+	// When docked, subtract minimap height so panels shrink to make room
+	if m.shouldDockMinimap() {
+		if _, mmViewH := m.minimap.ViewSize(); mmViewH > 0 {
+			contentHeight -= mmViewH
+		}
+	}
+
+	listWidth := m.listPanelWidth()
+	m.list.SetSize(listWidth-1, contentHeight)
+	m.preview.SetSize(innerW-listWidth, contentHeight)
 }
 
 func (m Model) Init() tea.Cmd {
