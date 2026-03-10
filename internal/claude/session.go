@@ -80,7 +80,7 @@ type ClaudeSession struct {
 	CustomTitle string // user-set name via /rename in Claude Code
 	PermissionMode   string // "plan", "bypassPermissions", etc. (empty = unknown)
 	LastActionCommit bool   // last tool call was git commit
-	StopReason       string // from Stop hook reason field (cleared on next Working)
+	StopReason       string // from Stop hook reason field (cleared on next agent-turn)
 	IsWaiting        bool   // true when Notification(permission_prompt|elicitation_dialog)
 	CompactCount     int    // number of PreCompact events fired
 	CommitDonePending  bool   // daemon is waiting for commit-and-done to resolve

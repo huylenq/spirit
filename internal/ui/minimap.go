@@ -25,7 +25,7 @@ type MinimapModel struct {
 const (
 	PaneStatusNone      = 0 // not a Claude pane
 	PaneStatusAgentTurn = 1
-	PaneStatusUserTurn  = 2 // "your turn"
+	PaneStatusUserTurn  = 2 // "user-turn"
 	PaneStatusLater     = 3 // bookmarked pane
 )
 
@@ -659,7 +659,7 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 
 		tl, tr, bl, br, hz, vt := "┌", "┐", "└", "┘", "─", "│"
 
-		// Center icon for claude panes: spinner (working) or flag (your turn)
+		// Center icon for claude panes: spinner (agent-turn) or flag (user-turn)
 		centerR := (y1 + y2 - 1) / 2
 		centerC := (x1 + x2 - 1) / 2
 

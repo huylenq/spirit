@@ -25,7 +25,7 @@ type subscriber struct {
 type commitDoneEntry struct {
 	PaneID     string
 	PID        int
-	SawWorking bool      // true once the session has transitioned to Working
+	SawWorking bool      // true once the session has transitioned to agent-turn
 	KillOnDone bool      // true for C (commit+done), false for c (commit only)
 	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
 }
@@ -433,22 +433,22 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			continue
 		}
 		if s.Status == claude.StatusAgentTurn {
-			// Mark that we've seen the session start working
+			// Mark that we've seen the session enter agent-turn
 			if !entry.SawWorking {
 				entry.SawWorking = true
 				d.commitDonePanes[sessionID] = entry
-				log.Printf("commit-done: session %s now working", sessionID)
+				log.Printf("commit-done: session %s now agent-turn", sessionID)
 			}
 			continue
 		}
 		if s.Status != claude.StatusUserTurn {
 			continue
 		}
-		// Session is Done — but only resolve if it went through Working first
+		// Session is user-turn — but only resolve if it went through agent-turn first
 		if !entry.SawWorking {
-			// Expire if the session never started working (e.g. user interrupted the prompt)
+			// Expire if the session never reached agent-turn (e.g. user interrupted the prompt)
 			if time.Since(entry.CreatedAt) > 30*time.Second {
-				log.Printf("commit-done: session %s timed out waiting for working state, removing", sessionID)
+				log.Printf("commit-done: session %s timed out waiting for agent-turn, removing", sessionID)
 				delete(d.commitDonePanes, sessionID)
 			}
 			continue

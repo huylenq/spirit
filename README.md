@@ -80,9 +80,9 @@ The tmux plugin (`cmc.tmux`) binds:
 
 The plugin uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) to track status:
 
-- `PreToolUse` — sets status to "working" when Claude runs tools
-- `UserPromptSubmit` — sets status to "working" and captures the user's prompt
-- `Stop` — sets status to "done" when Claude finishes
+- `PreToolUse` — sets status to "agent-turn" when Claude runs tools
+- `UserPromptSubmit` — sets status to "agent-turn" and captures the user's prompt
+- `Stop` — sets status to "user-turn" when Claude finishes
 
 Status files are stored in `~/.cache/cmc/`. A background daemon polls tmux panes every second and pushes updates to connected TUI clients over a Unix socket.
 
