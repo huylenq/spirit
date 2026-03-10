@@ -33,7 +33,11 @@ func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 	t.RawSetString("is_waiting", lua.LBool(s.IsWaiting))
 	t.RawSetString("compact_count", lua.LNumber(s.CompactCount))
 	t.RawSetString("commit_done_pending", lua.LBool(s.CommitDonePending))
-	t.RawSetString("queue_pending", lua.LString(s.QueuePending))
+	queueTable := L.NewTable()
+	for _, msg := range s.QueuePending {
+		queueTable.Append(lua.LString(msg))
+	}
+	t.RawSetString("queue_pending", queueTable)
 
 	if !s.CreatedAt.IsZero() {
 		t.RawSetString("created_at", lua.LNumber(s.CreatedAt.Unix()))

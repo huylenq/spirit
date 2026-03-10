@@ -117,11 +117,14 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqQueue:
 		return d.handleQueue(req.Data)
 
-	case ReqCancelQueue:
-		return d.handleCancelQueue(req.Data)
+	case ReqCancelQueueItem:
+		return d.handleCancelQueueItem(req.Data)
 
 	case ReqDiffHunks:
 		return d.handleDiffHunks(req.Data)
+
+	case ReqPendingPrompt:
+		return d.handlePendingPrompt(req.Data)
 
 	case ReqRegisterOrchestrator:
 		return d.handleRegisterOrchestrator(req.Data)
@@ -610,31 +613,62 @@ func (d *Daemon) handleQueue(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	if err := claude.WriteQueueMessage(req.SessionID, req.Message); err != nil {
+	d.queueMu.Lock()
+	d.queuePanes[req.SessionID] = append(d.queuePanes[req.SessionID], req.Message)
+	msgs := d.queuePanes[req.SessionID]
+	d.queueMu.Unlock()
+	if err := claude.WriteQueueMessages(req.SessionID, msgs); err != nil {
 		r := errResponse("write queue: " + err.Error())
 		return &r
 	}
-	d.queueMu.Lock()
-	d.queuePanes[req.SessionID] = req.Message
-	d.queueMu.Unlock()
 	d.nudge()
-	log.Printf("queue: registered session %s", req.SessionID)
+	log.Printf("queue: appended to session %s (%d total)", req.SessionID, len(msgs))
 	r := resultResponse("ok")
 	return &r
 }
 
-func (d *Daemon) handleCancelQueue(data json.RawMessage) *Response {
-	var req SessionIDData
+func (d *Daemon) handleCancelQueueItem(data json.RawMessage) *Response {
+	var req CancelQueueItemData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
 	d.queueMu.Lock()
-	delete(d.queuePanes, req.SessionID)
+	msgs := d.queuePanes[req.SessionID]
+	if req.Index < 0 || req.Index >= len(msgs) {
+		d.queueMu.Unlock()
+		r := errResponse("index out of range")
+		return &r
+	}
+	msgs = append(msgs[:req.Index], msgs[req.Index+1:]...)
+	if len(msgs) == 0 {
+		delete(d.queuePanes, req.SessionID)
+	} else {
+		d.queuePanes[req.SessionID] = msgs
+	}
 	d.queueMu.Unlock()
-	claude.RemoveQueueMessage(req.SessionID)
+	if len(msgs) == 0 {
+		claude.RemoveQueueMessage(req.SessionID)
+	} else {
+		claude.WriteQueueMessages(req.SessionID, msgs) //nolint:errcheck
+	}
 	d.nudge()
-	log.Printf("queue: cancelled session %s", req.SessionID)
+	log.Printf("queue: removed item %d from session %s (%d remaining)", req.Index, req.SessionID, len(msgs))
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handlePendingPrompt(data json.RawMessage) *Response {
+	var req PendingPromptData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.pendingPromptMu.Lock()
+	d.pendingPromptPanes[req.PaneID] = pendingPromptEntry{Prompt: req.Prompt, CreatedAt: time.Now()}
+	d.pendingPromptMu.Unlock()
+	d.nudge()
+	log.Printf("pending-prompt: registered pane %s", req.PaneID)
 	r := resultResponse("ok")
 	return &r
 }
@@ -765,9 +799,9 @@ func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 	}
 
 	// Launch claude in the new pane
-	launchCmd := "claude"
+	launchCmd := "claude --dangerously-skip-permissions"
 	if req.Message != "" {
-		launchCmd = "claude -p " + shellQuote(req.Message)
+		launchCmd = "claude --dangerously-skip-permissions " + shellQuote(req.Message)
 	}
 	if err := tmux.SendKeysLiteral(paneID, launchCmd); err != nil {
 		r := errResponse("send claude: " + err.Error())

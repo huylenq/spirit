@@ -309,9 +309,9 @@ func (c *Client) Queue(paneID, sessionID, message string) error {
 	return c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, SessionID: sessionID, Message: message})}, nil)
 }
 
-// CancelQueue removes a pending queued message for a session.
-func (c *Client) CancelQueue(sessionID string) error {
-	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+// CancelQueueItem removes a single queued message by index for a session.
+func (c *Client) CancelQueueItem(sessionID string, index int) error {
+	return c.rpcInto(Request{Type: ReqCancelQueueItem, Data: marshalData(CancelQueueItemData{SessionID: sessionID, Index: index})}, nil)
 }
 
 // Sessions fetches all sessions filtered by orchestrator exclusion and optional status.
@@ -336,6 +336,11 @@ func (c *Client) Spawn(cwd, tmuxSession, message string) (SpawnResultData, error
 // Kill terminates a session (SIGTERM + kill pane + cleanup).
 func (c *Client) Kill(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqKill, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+}
+
+// PendingPrompt registers a prompt to be delivered to a pane once its claude session is ready.
+func (c *Client) PendingPrompt(paneID, prompt string) error {
+	return c.rpcInto(Request{Type: ReqPendingPrompt, Data: marshalData(PendingPromptData{PaneID: paneID, Prompt: prompt})}, nil)
 }
 
 // RegisterOrchestrator marks a session ID for exclusion from eval sessions().

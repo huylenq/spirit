@@ -190,16 +190,37 @@ func queueFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".queue")
 }
 
-func ReadQueueMessage(sessionID string) string {
+func ReadQueueMessages(sessionID string) []string {
 	data, err := os.ReadFile(queueFilePath(sessionID))
 	if err != nil {
-		return ""
+		return nil
 	}
-	return strings.TrimSpace(string(data))
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return nil
+	}
+	// JSON array format
+	if strings.HasPrefix(text, "[") {
+		var msgs []string
+		if err := json.Unmarshal([]byte(text), &msgs); err != nil {
+			return nil
+		}
+		return msgs
+	}
+	// Legacy: plain text single message
+	return []string{text}
 }
 
-func WriteQueueMessage(sessionID, message string) error {
-	return os.WriteFile(queueFilePath(sessionID), []byte(message), 0o644)
+func WriteQueueMessages(sessionID string, messages []string) error {
+	if len(messages) == 0 {
+		RemoveQueueMessage(sessionID)
+		return nil
+	}
+	data, err := json.Marshal(messages)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(queueFilePath(sessionID), data, 0o644)
 }
 
 func RemoveQueueMessage(sessionID string) {

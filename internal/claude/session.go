@@ -85,7 +85,7 @@ type ClaudeSession struct {
 	CompactCount     int    // number of PreCompact events fired
 	CommitDonePending  bool   // daemon is waiting for commit-and-done to resolve
 	SynthesizePending  bool   // daemon has in-flight synthesis for this pane
-	QueuePending       string // daemon-annotated: message queued for delivery when Done
+	QueuePending       []string // daemon-annotated: messages queued for delivery when Done (FIFO)
 	AvatarAnimalIdx    int    // index into avatarAnimals slice
 	AvatarColorIdx     int    // index into avatarColors slice
 }

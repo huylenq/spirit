@@ -44,11 +44,12 @@ const (
 	ReqCommitDone       = "commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 	ReqQueue            = "queue"
-	ReqCancelQueue      = "cancel_queue"
+	ReqCancelQueueItem  = "cancel_queue_item"
 	ReqRawTranscript    = "raw_transcript"
 	ReqDiffHunks        = "diffhunks"
 	ReqAllHookEffects   = "allhookeffects"
 
+	ReqPendingPrompt          = "pending_prompt"
 	ReqRegisterOrchestrator   = "register_orchestrator"
 	ReqUnregisterOrchestrator = "unregister_orchestrator"
 	ReqSessions               = "sessions"
@@ -138,6 +139,16 @@ type QueueData struct {
 	PaneID    string `json:"paneID"`
 	SessionID string `json:"sessionID"`
 	Message   string `json:"message"`
+}
+
+type CancelQueueItemData struct {
+	SessionID string `json:"sessionID"`
+	Index     int    `json:"index"`
+}
+
+type PendingPromptData struct {
+	PaneID string `json:"paneID"`
+	Prompt string `json:"prompt"`
 }
 
 // --- Response data payloads ---

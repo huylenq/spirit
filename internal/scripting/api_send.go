@@ -74,11 +74,12 @@ func luaQueue(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// cancel_queue(id)
+// cancel_queue(id, index) — index is 1-based (Lua convention)
 func luaCancelQueue(client *daemon.Client) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		if err := client.CancelQueue(id); err != nil {
+		idx := L.CheckInt(2) - 1 // convert from 1-based Lua to 0-based Go
+		if err := client.CancelQueueItem(id, idx); err != nil {
 			L.RaiseError("cancel_queue: %v", err)
 			return 0
 		}
