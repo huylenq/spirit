@@ -211,6 +211,7 @@ func (m *Model) tryInitialSelection() bool {
 		return false
 	}
 	m.initialSelectionDone = true
+	m.recordJump() // record cursor-0 default so ctrl+i can return to the auto-selected target
 
 	if m.rotateNext {
 		return m.selectDefaultPane()
@@ -1138,7 +1139,17 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Later):
-		return m.execLater()
+		if s, ok := m.list.SelectedItem(); ok {
+			if s.LaterBookmarkID != "" {
+				// Toggle off (unlater): stay on current item
+				return m.execLater()
+			}
+			// Mark as later: execute + snap to next session
+			model, cmd := m.execLater()
+			cmds := append([]tea.Cmd{cmd}, model.snapToDefault(s.PaneID)...)
+			return model, tea.Batch(cmds...)
+		}
+		return m, nil
 
 	case key.Matches(msg, Keys.LaterKill):
 		return m.execLaterKill()
