@@ -144,6 +144,11 @@ func (m Model) View() string {
 		content = ui.OverlayCentered(content, m.palette.View(innerWidth), innerWidth)
 	}
 
+	// Preferences editor overlay centered
+	if m.state == StatePrefsEditor {
+		content = ui.OverlayCentered(content, m.prefsEditor.View(innerWidth), innerWidth)
+	}
+
 	// New session prompt editor overlay — positioned right next to the project name label
 	if m.state == StateNewSessionPrompt {
 		// Column: right after "📁 project-name" text + padding + small gap
@@ -291,19 +296,24 @@ func (m Model) renderSessionPanel() string {
 	}
 
 	// Jump trail
+	sessionByPane := make(map[string]claude.ClaudeSession)
+	for _, sess := range m.sessions {
+		sessionByPane[sess.PaneID] = sess
+	}
 	lines = append(lines, ui.ItemDetailStyle.Render("--- jump trail ---"))
 	lines = append(lines, line("Cursor", fmt.Sprintf("%d/%d", m.jumpCursor, len(m.jumpTrail))))
 	for i, pid := range m.jumpTrail {
-		marker := "  "
+		marker := ui.ItemDetailStyle.Render("  ")
 		if i == m.jumpCursor {
-			marker = "> "
+			marker = ui.ItemDetailStyle.Render("> ")
 		}
-		// Show short pane ID suffix for readability
-		short := pid
-		if len(short) > 6 {
-			short = short[len(short)-6:]
+		var avatar string
+		if sess, ok := sessionByPane[pid]; ok {
+			avatar = ui.AvatarStyle(sess.AvatarColorIdx).Render(ui.AvatarGlyph(sess.AvatarAnimalIdx))
+		} else {
+			avatar = ui.ItemDetailStyle.Render("?")
 		}
-		lines = append(lines, ui.ItemDetailStyle.Render(fmt.Sprintf("%s[%d] %%%s", marker, i, short)))
+		lines = append(lines, marker+ui.ItemDetailStyle.Render(fmt.Sprintf("[%d] ", i))+avatar)
 	}
 	if m.jumpCursor >= len(m.jumpTrail) {
 		lines = append(lines, ui.ItemDetailStyle.Render("> (head)"))
@@ -441,6 +451,7 @@ func (m Model) renderHelpOverlay() string {
 		toggles,
 		hint("m", "minimap"),
 		hint("M", "minimap settings"),
+		hint("P", "preferences"),
 		hint("g", "group by project"),
 		hint("t", "toggle transcript"),
 		hint("z", "fullscreen toggle"),
@@ -473,6 +484,11 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("↑/↓") + " navigate  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
+	case StatePrefsEditor:
+		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
+			ui.FooterKeyStyle.Render("tab") + " complete  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateSearching:
 		h := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
 			ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" confirm  ") +
@@ -484,8 +500,11 @@ func (m Model) renderFooter(width int) string {
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateNewSessionPrompt:
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
-			ui.FooterKeyStyle.Render("alt+enter") + " newline  " +
-			ui.FooterKeyStyle.Render("esc") + " cancel"
+			ui.FooterKeyStyle.Render("esc") + " cancel  " +
+			ui.FooterDimStyle.Render("alt+") +
+			ui.FooterKeyStyle.Render("o") + "pus " +
+			ui.FooterKeyStyle.Render("s") + "onnet " +
+			ui.FooterKeyStyle.Render("h") + "aiku"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateQueueRelay:
 		h := ui.FooterKeyStyle.Render("enter") + " append  " +

@@ -30,6 +30,7 @@ const (
 	StatePalette
 	StateNewSessionPrompt
 	StateMinimapSettings
+	StatePrefsEditor
 )
 
 const defaultMinimapMaxH = 14
@@ -149,6 +150,7 @@ type Model struct {
 	jumpCursor           int       // position in jumpTrail; len(jumpTrail) = at head
 	nonClaudePane        *ui.MinimapPaneInfo // focused non-Claude pane (minimap nav)
 	palette              ui.PaletteModel
+	prefsEditor          ui.PrefsEditorModel
 	commands             []Command
 }
 
@@ -166,6 +168,7 @@ func NewModel(client *daemon.Client) Model {
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
 		palette:           ui.NewPaletteModel(),
+		prefsEditor:       ui.NewPrefsEditorModel(prefRegistryKeys(), prefRegistryLabels()),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),
 		promptEditor:      ui.NewPromptEditorModel(),

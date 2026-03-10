@@ -125,6 +125,8 @@ type NudgeData struct {
 	IsWaiting       *bool  `json:"isWaiting,omitempty"`
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
+	SkillName       string `json:"skillName,omitempty"`
+	SkillSet        bool   `json:"skillSet,omitempty"`
 	Compacted       bool   `json:"compacted,omitempty"`
 	Remove          bool   `json:"remove,omitempty"`
 }

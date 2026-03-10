@@ -219,4 +219,14 @@ var (
 	PromptEditorTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorGreen)
+
+	// Preferences editor overlay
+	PrefsEditorOverlayStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorAccent).
+				Padding(1, 2)
+
+	PrefsEditorTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorAccent)
 )

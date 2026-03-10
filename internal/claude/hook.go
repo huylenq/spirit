@@ -81,6 +81,21 @@ func HandleHook(hookType string) {
 			nd.LastUserMessage = input.Prompt
 			effects = append(effects, "captured prompt")
 		}
+		// Detect slash-command skill invocation
+		if skill, ok := strings.CutPrefix(input.Prompt, "/"); ok {
+			// Extract just the command name (before any space/args)
+			if idx := strings.IndexByte(skill, ' '); idx >= 0 {
+				skill = skill[:idx]
+			}
+			WriteSkillName(sessionID, skill)
+			nd.SkillName = skill
+			nd.SkillSet = true
+			effects = append(effects, "skill:"+skill)
+		} else {
+			RemoveSkillName(sessionID)
+			nd.SkillName = ""
+			nd.SkillSet = true
+		}
 		// Clear transient states — user has responded, session is active again
 		RemoveWaiting(sessionID)
 		os.Remove(stopReasonFilePath(sessionID))
@@ -167,7 +182,7 @@ func HandleHook(hookType string) {
 
 	// Nudge daemon first so we can annotate the log with dedup status
 	shouldNudge := nd.Status != "" || nd.StopReason != "" || nd.IsWaiting != nil ||
-		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.Compacted || nd.Remove
+		nd.IsGitCommit != nil || nd.IsFileEdit != nil || nd.SkillSet || nd.Compacted || nd.Remove
 	if shouldNudge {
 		if nudgeDaemon(nd) {
 			effect += HookEffectDedupSuffix
@@ -266,6 +281,8 @@ type nudgeData struct {
 	IsWaiting       *bool  `json:"isWaiting,omitempty"`
 	IsGitCommit     *bool  `json:"isGitCommit,omitempty"`
 	IsFileEdit      *bool  `json:"isFileEdit,omitempty"`
+	SkillName       string `json:"skillName,omitempty"`
+	SkillSet        bool   `json:"skillSet,omitempty"` // true when SkillName was explicitly set (even to "")
 	Compacted       bool   `json:"compacted,omitempty"`
 	Remove          bool   `json:"remove,omitempty"`
 }

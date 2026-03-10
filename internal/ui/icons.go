@@ -26,4 +26,6 @@ const (
 	// Diff overlay icons
 	IconNewFile  = "\uf067" // nf-fa-plus — new file (Write only)
 	IconModified = "\uf040" // nf-fa-pencil — modified file (has Edit)
+	// Badge icons
+	IconSkill = "\uf0ad" // nf-fa-wrench — skill invocation badge
 )

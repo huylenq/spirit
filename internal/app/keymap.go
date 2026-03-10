@@ -112,6 +112,9 @@ type KeyMap struct {
 	// Jump trail navigation (like Vim's jumplist)
 	JumpBack    key.Binding
 	JumpForward key.Binding
+
+	// Preferences editor
+	Prefs key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -370,5 +373,9 @@ var Keys = KeyMap{
 	),
 	JumpForward: key.NewBinding(
 		key.WithKeys("ctrl+i"),
+	),
+	Prefs: key.NewBinding(
+		key.WithKeys("P"),
+		key.WithHelp("P", "preferences"),
 	),
 }

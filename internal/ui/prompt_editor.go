@@ -8,8 +8,9 @@ import (
 
 // PromptEditorModel wraps a textarea for multiline prompt input (new session).
 type PromptEditorModel struct {
-	input  textarea.Model
-	active bool
+	input         textarea.Model
+	active        bool
+	selectedModel string // "" = default (no --model flag)
 }
 
 func NewPromptEditorModel() PromptEditorModel {
@@ -27,12 +28,14 @@ func (m *PromptEditorModel) Activate() {
 	m.active = true
 	m.input.SetValue("")
 	m.input.Focus()
+	m.selectedModel = ""
 }
 
 func (m *PromptEditorModel) Deactivate() {
 	m.active = false
 	m.input.Blur()
 	m.input.SetValue("")
+	m.selectedModel = ""
 }
 
 func (m *PromptEditorModel) Confirm() string {
@@ -61,6 +64,17 @@ func (m *PromptEditorModel) SetSize(w, h int) {
 	m.input.SetHeight(h)
 }
 
+// SetModel sets the model (toggle: same value clears it back to default).
+func (m *PromptEditorModel) SetModel(model string) {
+	if m.selectedModel == model {
+		m.selectedModel = ""
+	} else {
+		m.selectedModel = model
+	}
+}
+
+func (m PromptEditorModel) SelectedModel() string { return m.selectedModel }
+
 // View returns the styled overlay for the prompt editor.
 func (m *PromptEditorModel) View(title string, width int) string {
 	if !m.active {
@@ -74,10 +88,29 @@ func (m *PromptEditorModel) View(title string, width int) string {
 	}
 
 	header := PromptEditorTitleStyle.Render("New session: " + title)
+	if m.selectedModel != "" {
+		header += "  " + lipgloss.NewStyle().Foreground(ColorMuted).Render("["+m.selectedModel+"]")
+	}
+
 	body := m.input.View()
-	hint := FooterDimStyle.Render("enter") + " send  " +
-		FooterDimStyle.Render("alt+enter") + " newline  " +
-		FooterDimStyle.Render("esc") + " cancel"
+
+	// Key labels match the overlay's green title/border color
+	k := lipgloss.NewStyle().Foreground(ColorGreen)
+	dim := FooterDimStyle
+
+	// Compact model hint: "alt+ Opus · Sonnet · Haiku" with key letter green
+	renderModel := func(name string) string {
+		if name == m.selectedModel {
+			return lipgloss.NewStyle().Bold(true).Foreground(ColorGreen).Render(name)
+		}
+		return k.Render(string(name[0])) + dim.Render(name[1:])
+	}
+	sep := dim.Render(" · ")
+	modelHint := k.Render("alt+ ") +
+		renderModel("opus") + sep + renderModel("sonnet") + sep + renderModel("haiku")
+
+	hint := k.Render("enter") + dim.Render(" send  ") +
+		k.Render("esc") + dim.Render(" cancel") + "\n" + modelHint
 
 	content := header + "\n\n" + body + "\n\n" + hint
 

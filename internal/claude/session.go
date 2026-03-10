@@ -77,10 +77,12 @@ type ClaudeSession struct {
 	// Headline: derived from the summary cache (always available after synthesis).
 	//   Used as fallback when /rename hasn't been processed yet.
 	Headline    string // brief one-liner from cached summary
+	ProblemType string // bug, feature, refactoring, etc. from cached summary
 	CustomTitle string // user-set name via /rename in Claude Code
 	PermissionMode   string // "plan", "bypassPermissions", etc. (empty = unknown)
 	LastActionCommit bool   // last tool call was git commit
 	StopReason       string // from Stop hook reason field (cleared on next agent-turn)
+	SkillName        string // slash-command skill invoked (e.g. "simplify"); cleared on next non-skill prompt
 	IsWaiting        bool   // true when Notification(permission_prompt|elicitation_dialog)
 	CompactCount     int    // number of PreCompact events fired
 	CommitDonePending  bool   // daemon is waiting for commit-and-done to resolve
@@ -113,6 +115,7 @@ type LaterBookmark struct {
 	CWD          string    `json:"cwd"`
 	GitBranch    string    `json:"gitBranch"`
 	Headline     string    `json:"headline"`
+	ProblemType  string    `json:"problemType"`
 	CustomTitle  string    `json:"customTitle"`
 	FirstMessage string    `json:"firstMessage"`
 	SessionID    string    `json:"sessionID"`

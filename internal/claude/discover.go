@@ -213,8 +213,13 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		} else {
 			s.LastUserMessage = ReadLastUserMessage(sessionID)
 		}
-		if cached := ReadCachedSummary(sessionID); cached != nil && cached.Headline != "" {
-			s.Headline = cached.Headline
+		if cached := ReadCachedSummary(sessionID); cached != nil {
+			if cached.Headline != "" {
+				s.Headline = cached.Headline
+			}
+			if cached.ProblemType != "" {
+				s.ProblemType = cached.ProblemType
+			}
 		}
 		s.CustomTitle = ReadCustomTitle(sessionID)
 		s.FirstMessage = ReadFirstUserMessage(sessionID)
@@ -228,6 +233,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 
 		// Hook-derived fields from status files
 		s.StopReason = ReadStopReason(sessionID)
+		s.SkillName = ReadSkillName(sessionID)
 		s.IsWaiting = ReadWaiting(sessionID)
 		s.CompactCount = ReadCompactCount(sessionID)
 	}

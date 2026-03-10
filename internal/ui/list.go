@@ -325,21 +325,20 @@ func (m ListModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
-// SnapTargetPaneID returns the PaneID that snapToDefault would select if an
-// action were executed on the currently selected session. Returns "" if no
-// snap target exists.
-func (m ListModel) SnapTargetPaneID() string {
+// SnapTargetFromCursor returns the snap target, skipping the currently selected
+// session. Returns "" if no target exists.
+func (m ListModel) SnapTargetFromCursor() string {
 	var skipPaneID string
 	if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		skipPaneID = m.filtered[m.cursor].PaneID
 	}
-	return m.SnapTargetExcluding(skipPaneID)
+	return m.SnapTarget(skipPaneID)
 }
 
-// SnapTargetExcluding finds the best snap-to-default target, skipping skipPaneID.
+// SnapTarget finds the best snap-to-default target, skipping skipPaneID.
 // Priority: user-turn with oldest LastChanged (waiting longest), then agent-turn
 // with oldest LastChanged. Excludes Later-bookmarked sessions.
-func (m ListModel) SnapTargetExcluding(skipPaneID string) string {
+func (m ListModel) SnapTarget(skipPaneID string) string {
 	var bestUser, bestAgent string
 	var bestUserTime, bestAgentTime time.Time
 
@@ -572,7 +571,7 @@ func (m ListModel) View() string {
 	}
 
 	// Pre-calculate snap-to-default target
-	snapTargetID := m.SnapTargetPaneID()
+	snapTargetID := m.SnapTargetFromCursor()
 
 	// Project-level selection
 	selectedProject, atProjectLevel := m.SelectedProject()
@@ -960,7 +959,8 @@ func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, 
 func hasBadges(s claude.ClaudeSession) bool {
 	return (s.LastActionCommit && s.Status == claude.StatusUserTurn) ||
 		(s.StopReason != "" && s.Status == claude.StatusUserTurn) ||
-		(s.SkillName != "" && s.Status == claude.StatusUserTurn) ||
+		s.SkillName != "" ||
+		s.ProblemType != "" ||
 		s.CompactCount > 0
 }
 
@@ -971,11 +971,17 @@ func renderBadges(s claude.ClaudeSession) string {
 	if s.LastActionCommit && s.Status == claude.StatusUserTurn {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
 	}
-	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
-		badges = append(badges, StatDoneStyle.Render("/"+s.SkillName))
+	// Skill badge shows during both agent-turn and user-turn — unlike outcome
+	// badges (committed, stopReason) it's context about what was triggered,
+	// not a result. Cleared on next non-skill prompt.
+	if s.SkillName != "" {
+		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+s.SkillName))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
 		badges = append(badges, StatDoneStyle.Render(s.StopReason))
+	}
+	if s.ProblemType != "" {
+		badges = append(badges, problemTypeBadge(s.ProblemType))
 	}
 	if s.CompactCount > 0 {
 		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
@@ -984,6 +990,44 @@ func renderBadges(s claude.ClaudeSession) string {
 		return ""
 	}
 	return strings.Join(badges, "  ")
+}
+
+// problemTypeBadge renders a color-coded pill for the synthesized problem type.
+func problemTypeBadge(pt string) string {
+	var fg, bg lipgloss.AdaptiveColor
+	switch pt {
+	case "bug":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#fca5a5"}
+		bg = lipgloss.AdaptiveColor{Light: "#dc2626", Dark: "#450a0a"}
+	case "debug":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#fdba74"}
+		bg = lipgloss.AdaptiveColor{Light: "#ea580c", Dark: "#431407"}
+	case "feature":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#6ee7b7"}
+		bg = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#022c22"}
+	case "refactoring":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#93c5fd"}
+		bg = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#172554"}
+	case "test":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#67e8f9"}
+		bg = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#083344"}
+	case "docs":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#c4b5fd"}
+		bg = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#2e1065"}
+	case "exploration":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#d8b4fe"}
+		bg = lipgloss.AdaptiveColor{Light: "#a855f7", Dark: "#3b0764"}
+	case "performance":
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#fcd34d"}
+		bg = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#422006"}
+	default: // chore and unknown
+		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#d1d5db"}
+		bg = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#1f2937"}
+	}
+	return lipgloss.NewStyle().
+		Foreground(fg).
+		Background(bg).
+		Render(" " + pt + " ")
 }
 
 func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {

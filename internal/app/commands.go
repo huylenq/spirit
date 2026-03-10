@@ -112,6 +112,10 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execDebug() },
 		},
 		{
+			Name: "Preferences", Hotkey: "P",
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execPrefsEditor() },
+		},
+		{
 			Name: "Help", Hotkey: "?",
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execHelp() },
 		},

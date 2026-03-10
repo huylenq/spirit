@@ -533,6 +533,7 @@ func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
 			bm.CWD = s.CWD
 			bm.GitBranch = s.GitBranch
 			bm.Headline = s.Headline
+			bm.ProblemType = s.ProblemType
 			bm.CustomTitle = s.CustomTitle
 			bm.FirstMessage = s.FirstMessage
 			bm.SessionID = s.SessionID
@@ -575,7 +576,7 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 		return &r
 	}
 	// Send the commit command to the pane
-	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit only your changes"); err != nil {
+	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit your changes, constraint to involved files on this session"); err != nil {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}

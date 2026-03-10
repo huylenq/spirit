@@ -7,6 +7,61 @@ import (
 	"strings"
 )
 
+// PrefDef defines a single editable preference.
+type PrefDef struct {
+	Key   string
+	Label string
+}
+
+// PrefRegistry is the ordered list of all editable preferences.
+var PrefRegistry = []PrefDef{
+	{Key: "groupByProject", Label: "Group by project"},
+	{Key: "minimap", Label: "Show minimap"},
+	{Key: "minimapMode", Label: "Minimap mode"},
+	{Key: "minimapMaxH", Label: "Minimap max height"},
+	{Key: "minimapCollapse", Label: "Minimap collapse"},
+	{Key: "listWidthPct", Label: "List width %"},
+}
+
+// prefsFileContent returns the raw prefs file content as a string.
+func prefsFileContent() string {
+	data, err := os.ReadFile(prefsPath())
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// parsePrefsText parses key=value pairs from raw text.
+func parsePrefsText(text string) map[string]string {
+	prefs := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if ok {
+			prefs[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return prefs
+}
+
+// prefRegistryKeys returns all PrefRegistry key names.
+func prefRegistryKeys() []string {
+	keys := make([]string, len(PrefRegistry))
+	for i, def := range PrefRegistry {
+		keys[i] = def.Key
+	}
+	return keys
+}
+
+// prefRegistryLabels returns a map of key -> human label for all PrefRegistry entries.
+func prefRegistryLabels() map[string]string {
+	labels := make(map[string]string, len(PrefRegistry))
+	for _, def := range PrefRegistry {
+		labels[def.Key] = def.Label
+	}
+	return labels
+}
+
 func prefsPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cache", "cmc", "prefs")
@@ -17,14 +72,7 @@ func loadPrefs() map[string]string {
 	if err != nil {
 		return nil
 	}
-	prefs := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
-		k, v, ok := strings.Cut(line, "=")
-		if ok {
-			prefs[k] = v
-		}
-	}
-	return prefs
+	return parsePrefsText(string(data))
 }
 
 func savePrefs(prefs map[string]string) {

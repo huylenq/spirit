@@ -243,6 +243,26 @@ func lastActionFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".lastaction")
 }
 
+func skillFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".skill")
+}
+
+func ReadSkillName(sessionID string) string {
+	data, err := os.ReadFile(skillFilePath(sessionID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteSkillName(sessionID, name string) {
+	os.WriteFile(skillFilePath(sessionID), []byte(name), 0o644)
+}
+
+func RemoveSkillName(sessionID string) {
+	os.Remove(skillFilePath(sessionID))
+}
+
 func ReadStopReason(sessionID string) string {
 	data, err := os.ReadFile(stopReasonFilePath(sessionID))
 	if err != nil {
@@ -303,6 +323,7 @@ func RemoveSessionFiles(sessionID string) {
 	os.Remove(waitingFilePath(sessionID))
 	os.Remove(compactCountFilePath(sessionID))
 	os.Remove(lastActionFilePath(sessionID))
+	os.Remove(skillFilePath(sessionID))
 }
 
 // RemovePaneMapping removes the pane→session reverse mapping file.
@@ -317,7 +338,7 @@ func MigrateToSessionKey(paneID, sessionID string) {
 		return
 	}
 	dir := statusDir()
-	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction"}
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill"}
 	for _, ext := range exts {
 		oldPath := filepath.Join(dir, paneID+ext)
 		newPath := filepath.Join(dir, sessionID+ext)

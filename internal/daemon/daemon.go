@@ -365,6 +365,10 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 		s.LastActionCommit = false
 		changed = true
 	}
+	if nudge.SkillSet && s.SkillName != nudge.SkillName {
+		s.SkillName = nudge.SkillName
+		changed = true
+	}
 	if nudge.Compacted {
 		s.CompactCount++
 		changed = true
@@ -701,6 +705,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].PermissionMode != b[i].PermissionMode ||
 			a[i].LastActionCommit != b[i].LastActionCommit ||
 			a[i].StopReason != b[i].StopReason ||
+			a[i].SkillName != b[i].SkillName ||
 			a[i].IsWaiting != b[i].IsWaiting ||
 			a[i].CompactCount != b[i].CompactCount ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||

@@ -121,58 +121,21 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
-// selectDefaultPane picks the default session as if ctrl-tab was pressed:
-// skip originating pane, rotate to next user-turn, fall back to agent-turn,
-// then origPane itself, then first non-Later in same tmux session.
+// selectDefaultPane picks the snap-target session (no exclusions).
 // Returns true if the cursor was moved.
 func (m *Model) selectDefaultPane() bool {
-	if !m.origPane.Captured {
+	targetID := m.list.SnapTarget("")
+	if targetID == "" {
 		return false
 	}
-	items := m.list.Items()
-	if len(items) == 0 {
-		return false
-	}
-
-	origIdx := -1
-	for i, s := range items {
-		if s.PaneID == m.origPane.PaneID {
-			origIdx = i
-			break
-		}
-	}
-	if origIdx >= 0 {
-		n := len(items)
-		for offset := 1; offset < n; offset++ {
-			idx := (origIdx + offset) % n
-			if items[idx].Status == claude.StatusUserTurn && items[idx].LaterBookmarkID == "" {
-				return m.list.SelectByPaneID(items[idx].PaneID)
-			}
-		}
-		// No other user-turn — fall back to first agent-turn session
-		for _, s := range items {
-			if s.Status == claude.StatusAgentTurn && s.LaterBookmarkID == "" {
-				return m.list.SelectByPaneID(s.PaneID)
-			}
-		}
-		return m.list.SelectByPaneID(m.origPane.PaneID)
-	}
-
-	// Fallback: first non-Later session in same tmux session (already sorted)
-	for _, s := range items {
-		if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
-			return m.list.SelectByPaneID(s.PaneID)
-		}
-	}
-
-	return false
+	return m.list.SelectByPaneID(targetID)
 }
 
 // snapToDefault selects the user-turn session with the oldest LastChanged
 // (waiting longest), skipping Later and skipPaneID. Falls back to agent-turn.
 // Returns cmds from fetchForSelection for the newly selected session.
 func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
-	targetID := m.list.SnapTargetExcluding(skipPaneID)
+	targetID := m.list.SnapTarget(skipPaneID)
 	if targetID == "" {
 		return nil
 	}
@@ -297,13 +260,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.Sessions
 		m.list.SetItems(m.sessions)
 		m.tryInitialSelection()
-		// On first load, pre-register the snap target so ctrl+i can reach it
-		if !m.initialSelectionDone && len(m.jumpTrail) == 0 && len(m.sessions) > 0 {
-			m.recordJump() // current position (cursor 0)
-			if target := m.list.SnapTargetPaneID(); target != "" {
-				m.jumpTrail = append(m.jumpTrail, target)
-				m.jumpCursor = len(m.jumpTrail)
-			}
+		if !m.initialSelectionDone && !m.selectActive && !m.rotateNext && len(m.sessions) > 0 {
 			m.initialSelectionDone = true
 		}
 		// Auto-select newly created session once it appears
@@ -402,11 +359,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.preview.SetSummary(msg.Summary)
 		}
-		// Update in-memory headline immediately so the list reflects it
-		if msg.Summary != nil && msg.Summary.Headline != "" {
+		// Update in-memory headline + problem type immediately so the list reflects it
+		if msg.Summary != nil {
 			for i := range m.sessions {
 				if m.sessions[i].PaneID == msg.PaneID {
-					m.sessions[i].Headline = msg.Summary.Headline
+					if msg.Summary.Headline != "" {
+						m.sessions[i].Headline = msg.Summary.Headline
+					}
+					if msg.Summary.ProblemType != "" {
+						m.sessions[i].ProblemType = msg.Summary.ProblemType
+					}
 					break
 				}
 			}
@@ -432,10 +394,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if s, ok := m.list.SelectedItem(); ok && s.PaneID == r.PaneID {
 				m.preview.SetSummary(r.Summary)
 			}
-			if r.Summary != nil && r.Summary.Headline != "" {
+			if r.Summary != nil {
 				for i := range m.sessions {
 					if m.sessions[i].PaneID == r.PaneID {
-						m.sessions[i].Headline = r.Summary.Headline
+						if r.Summary.Headline != "" {
+							m.sessions[i].Headline = r.Summary.Headline
+						}
+						if r.Summary.ProblemType != "" {
+							m.sessions[i].ProblemType = r.Summary.ProblemType
+						}
 						updated = true
 						break
 					}
@@ -600,6 +567,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyKillConfirm(msg)
 	case StateMinimapSettings:
 		return m.handleKeyMinimapSettings(msg)
+	case StatePrefsEditor:
+		return m.handleKeyPrefsEditor(msg)
 	case StatePromptRelay:
 		return m.handleKeyPromptRelay(msg)
 	case StateQueueRelay:
@@ -700,6 +669,52 @@ func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, m.flashMinimapSettings()
+}
+
+func (m Model) handleKeyPrefsEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.prefsEditor.CompletionVisible() {
+		switch {
+		case key.Matches(msg, Keys.Escape):
+			m.prefsEditor.DismissCompletion()
+			return m, nil
+		case msg.String() == "tab", key.Matches(msg, Keys.Enter):
+			m.prefsEditor.ApplyCompletion()
+			return m, nil
+		case key.Matches(msg, Keys.Up):
+			m.prefsEditor.CompletionUp()
+			return m, nil
+		case key.Matches(msg, Keys.Down):
+			m.prefsEditor.CompletionDown()
+			return m, nil
+		case msg.String() == "ctrl+s":
+			return m.savePrefsEditor()
+		default:
+			cmd := m.prefsEditor.UpdateTextarea(msg)
+			return m, cmd
+		}
+	}
+
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.prefsEditor.Deactivate()
+		return m, nil
+	case msg.String() == "ctrl+s":
+		return m.savePrefsEditor()
+	default:
+		cmd := m.prefsEditor.UpdateTextarea(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) savePrefsEditor() (tea.Model, tea.Cmd) {
+	text := m.prefsEditor.Value()
+	unknowns := m.applyPrefsFromText(text)
+	msg := "saved"
+	if unknowns > 0 {
+		msg = fmt.Sprintf("saved (%d unknown keys)", unknowns)
+	}
+	return m, func() tea.Msg { return flashInfoMsg(msg) }
 }
 
 // flashMinimapSettings shows the current minimap mode+scale in the flash bar with a 3s timeout.
@@ -843,11 +858,21 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Alt+Enter: insert newline
 		cmd := m.promptEditor.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
 		return m, cmd
+	case msg.String() == "alt+o":
+		m.promptEditor.SetModel("opus")
+		return m, nil
+	case msg.String() == "alt+s":
+		m.promptEditor.SetModel("sonnet")
+		return m, nil
+	case msg.String() == "alt+h":
+		m.promptEditor.SetModel("haiku")
+		return m, nil
 	case msg.Type == tea.KeyEnter:
+		model := m.promptEditor.SelectedModel()
 		prompt := m.promptEditor.Confirm()
 		m.state = StateNormal
 		// Keep newSessionWasSession alive — cleared in NewSessionCreatedMsg handler
-		return m, m.spawnNewSession(prompt)
+		return m, m.spawnNewSession(prompt, model)
 	default:
 		cmd := m.promptEditor.Update(msg)
 		return m, cmd
@@ -987,6 +1012,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.JumpForward):
 		target := m.jumpForward()
+		// At the live head with no forward history: jump to snap target
+		if target == "" {
+			target = m.list.SnapTargetFromCursor()
+		}
 		if target != "" && m.list.SelectByPaneID(target) {
 			if s, ok := m.list.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
@@ -1200,6 +1229,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case key.Matches(msg, Keys.Prefs):
+		m, cmd := m.execPrefsEditor()
+		return m, cmd
 
 	case key.Matches(msg, Keys.MinimapMode):
 		m.state = StateMinimapSettings
