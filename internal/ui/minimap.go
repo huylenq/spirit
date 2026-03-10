@@ -533,11 +533,17 @@ func (m MinimapModel) View() string {
 	visibleWindows := windows
 	hiddenBefore, hiddenAfter := 0, 0
 
-	// Find which window contains the selected pane
+	// Find which window contains the selected pane and pre-build its label style
 	selectedWindowIdx := -1
+	selectedLabelStyle := lipgloss.NewStyle()
 	for _, p := range m.panes {
 		if p.PaneID == m.selectedPaneID {
 			selectedWindowIdx = p.WindowIndex
+			fg := lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"}
+			if p.Status != PaneStatusNone {
+				fg = AvatarColor(p.AvatarColorIdx)
+			}
+			selectedLabelStyle = lipgloss.NewStyle().Foreground(fg).Bold(true)
 			break
 		}
 	}
@@ -552,9 +558,7 @@ func (m MinimapModel) View() string {
 		labelText := truncateStr(fmt.Sprintf("%d:%s", w.Index, w.Name), cols)
 		labelStyle := minimapTabStyle
 		if w.Index == selectedWindowIdx {
-			labelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"}).
-				Bold(true)
+			labelStyle = selectedLabelStyle
 		}
 		label := labelStyle.Render(labelText)
 		labelWidth := ansi.StringWidth(label)
