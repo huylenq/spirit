@@ -968,8 +968,9 @@ func renderBadges(s claude.ClaudeSession) string {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
 	}
 	// Skill badge: outcome indicator, shown after skill completes (user-turn).
-	// Cleared on next non-skill prompt.
-	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
+	// Cleared on next non-skill prompt. Suppressed when LastActionCommit already
+	// covers it (commit-commands:* skills are tracked mechanically via PostToolUse).
+	if s.SkillName != "" && s.Status == claude.StatusUserTurn && !s.LastActionCommit {
 		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+skillBadgeLabel(s.SkillName)))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
@@ -991,7 +992,6 @@ func renderBadges(s claude.ClaudeSession) string {
 var skillBadgeLabels = map[string]string{
 	"simplify": "simplified",
 	"review":   "reviewed",
-	"commit-commands:commit": "committed",
 }
 
 func skillBadgeLabel(name string) string {
