@@ -103,6 +103,22 @@ var (
 const DefaultMinimapWindowCols = 40
 const collapsedWindowCols = 12 // narrower column for single-pane windows
 
+// collapseRect computes the centered box coordinates for a single-pane
+// collapsed window. Returns adjusted y1, y2 with vertical centering.
+func collapseRect(rows int) (y1, y2 int) {
+	vMargin := max(1, rows/4)
+	boxH := rows - 2*vMargin
+	if boxH < 3 {
+		boxH = 3
+	}
+	y1 = (rows - boxH) / 2
+	y2 = y1 + boxH
+	if y2 > rows {
+		y2 = rows
+	}
+	return
+}
+
 func NewMinimapModel() MinimapModel {
 	return MinimapModel{windowCols: DefaultMinimapWindowCols}
 }
@@ -271,6 +287,10 @@ func (m MinimapModel) computeGridRects() []gridRect {
 			}
 			if y2 > gridH {
 				y2 = gridH
+			}
+			// Collapsed single-pane: vertically center the box
+			if m.collapse && len(w.Panes) == 1 && gridH > 4 {
+				y1, y2 = collapseRect(gridH)
 			}
 			for r := y1; r < y2; r++ {
 				for c := x1; c < x2; c++ {
@@ -543,7 +563,8 @@ func (m MinimapModel) View() string {
 		}
 		centeredLabel := strings.Repeat(" ", pad) + label
 
-		grid := renderWindowGrid(w, cols, gridH, m.spinnerView)
+		collapsed := m.collapse && len(w.Panes) == 1
+		grid := renderWindowGrid(w, cols, gridH, m.spinnerView, collapsed)
 		windowColumns = append(windowColumns, centeredLabel+"\n"+grid)
 	}
 
@@ -657,7 +678,7 @@ func stylesForStatus(status int) paneStatusStyles {
 	return statusStyleDefault
 }
 
-func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string {
+func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string, collapse bool) string {
 	if w.Width == 0 || w.Height == 0 || cols < 3 || rows < 1 {
 		return strings.Repeat("\n", rows)
 	}
@@ -702,6 +723,11 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 		}
 		if y2 > rows {
 			y2 = rows
+		}
+
+		// Collapsed single-pane: vertically center the box
+		if collapse && len(w.Panes) == 1 && rows > 4 {
+			y1, y2 = collapseRect(rows)
 		}
 
 		if p.IsSelected {
