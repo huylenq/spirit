@@ -10,6 +10,14 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
+// SelectionLevel tracks whether the cursor is on a session or a project group.
+type SelectionLevel int
+
+const (
+	LevelSession SelectionLevel = iota
+	LevelProject
+)
+
 // selBg adds ColorSelectionBg background to st when selected, otherwise returns st unchanged.
 func selBg(st lipgloss.Style, selected bool) lipgloss.Style {
 	if selected {
@@ -33,6 +41,9 @@ type ListModel struct {
 	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight synthesization
 	groupByProject       bool
 	deselected           bool // when true, SelectedItem() returns false (minimap on non-Claude pane)
+	selectionLevel       SelectionLevel
+	projectCursor        int
+	projects             []string // unique ordered project names from filtered list
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
