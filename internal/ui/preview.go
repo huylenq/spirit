@@ -634,7 +634,11 @@ func (m PreviewModel) View() string {
 	s := m.session
 
 	// Header: project name + branch + diff stats
-	title := PreviewTitleStyle.Render(s.Project + "/")
+	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
+	title := avatar + " " + PreviewTitleStyle.Render(s.Project+"/")
+	if s.CustomTitle != "" {
+		title += " " + PreviewMetaStyle.Render(s.CustomTitle)
+	}
 	branch := ""
 	if s.GitBranch != "" {
 		branch = PreviewMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
