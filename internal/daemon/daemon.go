@@ -124,8 +124,9 @@ func Run(info DaemonInfo) error {
 	pollStop := make(chan struct{})
 	go d.pollLoop(pollStop)
 
-	// Start usage polling goroutine
-	go d.usageLoop(pollStop)
+	// Usage polling disabled — Claude Code v2.1.72 changed /usage dialog format,
+	// causing FetchUsage to time out and bombard the API with rate-limited requests.
+	// go d.usageLoop(pollStop)
 
 	// Start idle timeout checker
 	go d.idleWatcher(sigCh)
