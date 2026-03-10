@@ -572,7 +572,7 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 		return &r
 	}
 	// Send the commit command to the pane
-	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit"); err != nil {
+	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit only your changes"); err != nil {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
