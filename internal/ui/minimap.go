@@ -18,9 +18,8 @@ type MinimapModel struct {
 	selectedPaneID string
 	height         int
 	windowCols     int    // columns per window in the grid (default 40)
-	collapse       bool   // collapse single-pane windows to narrower columns
-	dockWidth      int    // when > 0, stretch outermost border to this width
-	spinnerView    string // current spinner animation frame (set externally)
+	collapse    bool   // collapse single-pane windows to narrower columns
+	spinnerView string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
 
@@ -118,15 +117,6 @@ func (m *MinimapModel) SetSize(_, h int) {
 // SetCollapse enables/disables collapsing single-pane windows to narrower columns.
 func (m *MinimapModel) SetCollapse(on bool) {
 	m.collapse = on
-}
-
-// SetDockWidth sets the forced outer width for docked mode.
-// When > 0, the outermost border stretches to this width instead of content-driven width.
-func (m *MinimapModel) SetDockWidth(w int) {
-	if w > 0 && w < 8 {
-		w = 8
-	}
-	m.dockWidth = w
 }
 
 // SetWindowCols sets the per-window column width for the minimap grid.
@@ -521,6 +511,16 @@ func (m *MinimapModel) UpdateStatus(paneStatuses map[string]int) {
 }
 
 func (m MinimapModel) View() string {
+	return m.view(0)
+}
+
+// ViewDocked renders the minimap with its border stretched to the given width.
+// Content that overflows the border is truncated.
+func (m MinimapModel) ViewDocked(outerWidth int) string {
+	return m.view(outerWidth)
+}
+
+func (m MinimapModel) view(dockWidth int) string {
 	if len(m.panes) == 0 || m.height < 5 {
 		return ""
 	}
@@ -646,9 +646,9 @@ func (m MinimapModel) View() string {
 	// In docked mode, stretch border to fill container width;
 	// truncate inner content that overflows the budget.
 	borderW := innerW + 2 // +2 so padding doesn't eat into content
-	if m.dockWidth > 0 {
-		borderW = m.dockWidth - 2 // subtract left+right border chars
-		contentW := borderW - 2   // subtract left+right padding
+	if dockWidth > 0 {
+		borderW = dockWidth - 2 // subtract left+right border chars
+		contentW := borderW - 2 // subtract left+right padding
 		if innerW > contentW {
 			lines := strings.Split(inner, "\n")
 			for i, line := range lines {

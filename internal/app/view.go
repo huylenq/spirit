@@ -49,13 +49,11 @@ func (m Model) View() string {
 	minimapDocked := false
 	var minimapView string
 	if m.shouldDockMinimap() {
-		m.minimap.SetDockWidth(innerWidth)
-		minimapView = m.minimap.View()
+		minimapView = m.minimap.ViewDocked(innerWidth)
 		if minimapView != "" {
 			minimapDocked = true
 			contentHeight -= lipgloss.Height(minimapView)
 		}
-		m.minimap.SetDockWidth(0)
 	}
 
 	// List panel
