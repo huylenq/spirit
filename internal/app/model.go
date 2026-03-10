@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -173,6 +174,20 @@ func (m Model) waitForDaemonUpdate() tea.Cmd {
 			return DaemonDisconnectedMsg{Err: err}
 		}
 		return SessionsRefreshedMsg{Sessions: sessions, Usage: usage}
+	}
+}
+
+// reconnectToDaemon attempts to reconnect to the daemon with exponential backoff.
+func reconnectToDaemon() tea.Cmd {
+	return func() tea.Msg {
+		for attempt := range 10 {
+			time.Sleep(time.Duration(500*(1<<min(attempt, 4))) * time.Millisecond) // 500ms..8s
+			client, err := daemon.Connect()
+			if err == nil {
+				return DaemonReconnectedMsg{Client: client}
+			}
+		}
+		return DaemonDisconnectedMsg{Err: fmt.Errorf("reconnect failed after 10 attempts")}
 	}
 }
 

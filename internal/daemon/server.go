@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"strings"
 	"syscall"
 	"time"
 
@@ -121,6 +122,24 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 
 	case ReqDiffHunks:
 		return d.handleDiffHunks(req.Data)
+
+	case ReqRegisterOrchestrator:
+		return d.handleRegisterOrchestrator(req.Data)
+
+	case ReqUnregisterOrchestrator:
+		return d.handleUnregisterOrchestrator(req.Data)
+
+	case ReqSessions:
+		return d.handleSessions(req.Data)
+
+	case ReqSend:
+		return d.handleSend(req.Data)
+
+	case ReqSpawn:
+		return d.handleSpawn(req.Data)
+
+	case ReqKill:
+		return d.handleKill(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
@@ -629,4 +648,185 @@ func (d *Daemon) handleDiffHunks(data json.RawMessage) *Response {
 	hunks := claude.ReadDiffHunks(req.SessionID)
 	r := resultResponse(DiffHunksData{Hunks: hunks})
 	return &r
+}
+
+func (d *Daemon) handleRegisterOrchestrator(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.orchestratorMu.Lock()
+	d.orchestratorIDs[req.SessionID] = true
+	d.orchestratorMu.Unlock()
+	log.Printf("orchestrator: registered %s", req.SessionID)
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleUnregisterOrchestrator(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.orchestratorMu.Lock()
+	delete(d.orchestratorIDs, req.SessionID)
+	d.orchestratorMu.Unlock()
+	log.Printf("orchestrator: unregistered %s", req.SessionID)
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleSessions(data json.RawMessage) *Response {
+	var filter SessionsFilterData
+	if data != nil {
+		if err := json.Unmarshal(data, &filter); err != nil {
+			r := errResponse("bad data: " + err.Error())
+			return &r
+		}
+	}
+
+	sessions := d.currentSessions()
+
+	// Filter out orchestrator sessions
+	d.orchestratorMu.RLock()
+	filtered := make([]claude.ClaudeSession, 0, len(sessions))
+	for _, s := range sessions {
+		if s.SessionID != "" && d.orchestratorIDs[s.SessionID] {
+			continue
+		}
+		if filter.Status != "" {
+			target := claude.ParseStatus(filter.Status)
+			if s.Status != target {
+				continue
+			}
+		}
+		filtered = append(filtered, s)
+	}
+	d.orchestratorMu.RUnlock()
+
+	r := resultResponse(SessionsData{Sessions: filtered})
+	return &r
+}
+
+func (d *Daemon) handleSend(data json.RawMessage) *Response {
+	var req SendData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	// Resolve sessionID → paneID
+	sessions := d.currentSessions()
+	var paneID string
+	for _, s := range sessions {
+		if s.SessionID == req.SessionID {
+			paneID = s.PaneID
+			break
+		}
+	}
+	if paneID == "" {
+		r := errResponse("session not found: " + req.SessionID)
+		return &r
+	}
+	if err := tmux.SendKeysLiteral(paneID, req.Message); err != nil {
+		r := errResponse("send failed: " + err.Error())
+		return &r
+	}
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
+	var req SpawnData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if req.CWD == "" {
+		r := errResponse("cwd is required")
+		return &r
+	}
+	tmuxSession := req.TmuxSession
+	if tmuxSession == "" {
+		// Use first available tmux session
+		panes, err := tmux.ListAllPanes()
+		if err != nil || len(panes) == 0 {
+			r := errResponse("no tmux sessions available")
+			return &r
+		}
+		tmuxSession = panes[0].SessionName
+	}
+
+	paneID, err := tmux.NewWindow(tmuxSession, req.CWD)
+	if err != nil {
+		r := errResponse("new window: " + err.Error())
+		return &r
+	}
+
+	// Launch claude in the new pane
+	launchCmd := "claude"
+	if req.Message != "" {
+		launchCmd = "claude -p " + shellQuote(req.Message)
+	}
+	if err := tmux.SendKeysLiteral(paneID, launchCmd); err != nil {
+		r := errResponse("send claude: " + err.Error())
+		return &r
+	}
+
+	// Poll until session appears (up to 30s).
+	// Nudge once to trigger immediate discovery, then rely on the normal poll loop.
+	d.nudge()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		sessions := d.currentSessions()
+		for _, s := range sessions {
+			if s.PaneID == paneID && s.SessionID != "" {
+				log.Printf("spawn: session %s appeared in pane %s", s.SessionID, paneID)
+				r := resultResponse(SpawnResultData{SessionID: s.SessionID, PaneID: paneID})
+				return &r
+			}
+		}
+	}
+
+	// Timed out but pane exists — return paneID without sessionID
+	log.Printf("spawn: timed out waiting for session in pane %s", paneID)
+	r := resultResponse(SpawnResultData{PaneID: paneID})
+	return &r
+}
+
+func (d *Daemon) handleKill(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	sessions := d.currentSessions()
+	var found *claude.ClaudeSession
+	for i := range sessions {
+		if sessions[i].SessionID == req.SessionID {
+			found = &sessions[i]
+			break
+		}
+	}
+	if found == nil {
+		r := errResponse("session not found: " + req.SessionID)
+		return &r
+	}
+	if found.PID > 0 {
+		syscall.Kill(found.PID, syscall.SIGTERM) //nolint:errcheck
+	}
+	tmux.KillPane(found.PaneID) //nolint:errcheck
+	claude.RemoveSessionFiles(req.SessionID)
+	claude.RemovePaneMapping(found.PaneID)
+	d.nudge()
+	log.Printf("kill: killed session %s (pane %s)", req.SessionID, found.PaneID)
+	r := resultResponse("ok")
+	return &r
+}
+
+// shellQuote wraps a string in single quotes for shell safety.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

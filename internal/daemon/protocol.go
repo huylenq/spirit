@@ -47,7 +47,15 @@ const (
 	ReqCancelQueue      = "cancel_queue"
 	ReqRawTranscript    = "raw_transcript"
 	ReqDiffHunks        = "diffhunks"
-	ReqAllHookEffects   = "allhookeffects")
+	ReqAllHookEffects   = "allhookeffects"
+
+	ReqRegisterOrchestrator   = "register_orchestrator"
+	ReqUnregisterOrchestrator = "unregister_orchestrator"
+	ReqSessions               = "sessions"
+	ReqSend                   = "send"
+	ReqSpawn                  = "spawn"
+	ReqKill                   = "kill"
+)
 
 // Response type constants.
 const (
@@ -184,6 +192,28 @@ type SynthesizeResultData struct {
 
 type SynthesizeAllResultData struct {
 	Results []SynthesizeResultData `json:"results"`
+}
+
+// --- Eval API request/response data ---
+
+type SessionsFilterData struct {
+	Status string `json:"status,omitempty"`
+}
+
+type SendData struct {
+	SessionID string `json:"sessionID"`
+	Message   string `json:"message"`
+}
+
+type SpawnData struct {
+	CWD         string `json:"cwd"`
+	TmuxSession string `json:"tmuxSession"`
+	Message     string `json:"message,omitempty"`
+}
+
+type SpawnResultData struct {
+	SessionID string `json:"sessionID"`
+	PaneID    string `json:"paneID"`
 }
 
 // --- Helpers ---

@@ -16,8 +16,8 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	if m.err != nil {
-		return ui.EmptyStyle.Render("Error: " + m.err.Error())
+	if m.err != nil && len(m.sessions) == 0 {
+		return ui.EmptyStyle.Render("Reconnecting to daemon... (" + m.err.Error() + ")")
 	}
 
 	innerWidth := m.width

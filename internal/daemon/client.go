@@ -30,43 +30,43 @@ type Client struct {
 	rpcMu      sync.Mutex
 }
 
+// dialWithAutoStart connects to the daemon socket, auto-starting if needed.
+func dialWithAutoStart() (net.Conn, error) {
+	info := DefaultDaemonInfo()
+	conn, err := net.DialTimeout("unix", info.SocketPath, 500*time.Millisecond)
+	if err == nil {
+		return conn, nil
+	}
+	if startErr := autoStart(info); startErr != nil {
+		return nil, fmt.Errorf("connect failed and auto-start failed: dial=%w start=%w", err, startErr)
+	}
+	for i := range 5 {
+		time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+		conn, err = net.DialTimeout("unix", info.SocketPath, 500*time.Millisecond)
+		if err == nil {
+			return conn, nil
+		}
+	}
+	return nil, fmt.Errorf("connect failed after auto-start: %w", err)
+}
+
+func newScanner(conn net.Conn) *bufio.Scanner {
+	s := bufio.NewScanner(conn)
+	s.Buffer(make([]byte, 0, 1024*1024), 4*1024*1024)
+	return s
+}
+
 // Connect dials the daemon twice (sub + rpc), auto-starting if needed.
 func Connect() (*Client, error) {
-	info := DefaultDaemonInfo()
-
-	dial := func() (net.Conn, error) {
-		return net.DialTimeout("unix", info.SocketPath, 500*time.Millisecond)
-	}
-
-	subConn, err := dial()
+	subConn, err := dialWithAutoStart()
 	if err != nil {
-		if startErr := autoStart(info); startErr != nil {
-			return nil, fmt.Errorf("connect failed and auto-start failed: dial=%w start=%w", err, startErr)
-		}
-		for i := range 5 {
-			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
-			subConn, err = dial()
-			if err == nil {
-				break
-			}
-		}
-		if err != nil {
-			return nil, fmt.Errorf("connect failed after auto-start: %w", err)
-		}
+		return nil, err
 	}
-
-	rpcConn, err := dial()
+	rpcConn, err := dialWithAutoStart()
 	if err != nil {
 		subConn.Close()
 		return nil, fmt.Errorf("second connection failed: %w", err)
 	}
-
-	newScanner := func(conn net.Conn) *bufio.Scanner {
-		s := bufio.NewScanner(conn)
-		s.Buffer(make([]byte, 0, 1024*1024), 4*1024*1024)
-		return s
-	}
-
 	return &Client{
 		subConn:    subConn,
 		subEnc:     json.NewEncoder(subConn),
@@ -92,9 +92,26 @@ func autoStart(_ DaemonInfo) error {
 	return cmd.Start()
 }
 
+// ConnectRPCOnly dials the daemon once (RPC only, no subscribe stream).
+// Used by cmc eval and other non-TUI commands.
+func ConnectRPCOnly() (*Client, error) {
+	rpcConn, err := dialWithAutoStart()
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		rpcConn:    rpcConn,
+		rpcEnc:     json.NewEncoder(rpcConn),
+		rpcScanner: newScanner(rpcConn),
+	}, nil
+}
+
 // Close shuts down both connections.
 func (c *Client) Close() error {
-	e1 := c.subConn.Close()
+	var e1 error
+	if c.subConn != nil {
+		e1 = c.subConn.Close()
+	}
 	e2 := c.rpcConn.Close()
 	if e1 != nil {
 		return e1
@@ -295,6 +312,40 @@ func (c *Client) Queue(paneID, sessionID, message string) error {
 // CancelQueue removes a pending queued message for a session.
 func (c *Client) CancelQueue(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqCancelQueue, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+}
+
+// Sessions fetches all sessions filtered by orchestrator exclusion and optional status.
+func (c *Client) Sessions(statusFilter string) ([]claude.ClaudeSession, error) {
+	var data SessionsData
+	err := c.rpcInto(Request{Type: ReqSessions, Data: marshalData(SessionsFilterData{Status: statusFilter})}, &data)
+	return data.Sessions, err
+}
+
+// Send delivers a message to a session's tmux pane.
+func (c *Client) Send(sessionID, message string) error {
+	return c.rpcInto(Request{Type: ReqSend, Data: marshalData(SendData{SessionID: sessionID, Message: message})}, nil)
+}
+
+// Spawn creates a new tmux window, launches claude, and waits for session registration.
+func (c *Client) Spawn(cwd, tmuxSession, message string) (SpawnResultData, error) {
+	var data SpawnResultData
+	err := c.rpcInto(Request{Type: ReqSpawn, Data: marshalData(SpawnData{CWD: cwd, TmuxSession: tmuxSession, Message: message})}, &data)
+	return data, err
+}
+
+// Kill terminates a session (SIGTERM + kill pane + cleanup).
+func (c *Client) Kill(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqKill, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+}
+
+// RegisterOrchestrator marks a session ID for exclusion from eval sessions().
+func (c *Client) RegisterOrchestrator(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqRegisterOrchestrator, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+}
+
+// UnregisterOrchestrator removes a session ID from the exclusion set.
+func (c *Client) UnregisterOrchestrator(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqUnregisterOrchestrator, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
 }
 
 

@@ -50,6 +50,9 @@ type Daemon struct {
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
 
+	orchestratorMu  sync.RWMutex
+	orchestratorIDs map[string]bool // session IDs to exclude from eval sessions()
+
 	usageMu    sync.RWMutex
 	usageStats *claude.UsageStats
 
@@ -70,6 +73,7 @@ func Run(info DaemonInfo) error {
 		commitDonePanes:  make(map[string]commitDoneEntry),
 		queuePanes:       make(map[string]string),
 		synthesizingPanes: make(map[string]bool),
+		orchestratorIDs:   make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
 		pidPath:     info.PIDPath,

@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/daemon"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
 
@@ -109,4 +110,9 @@ type PaneKilledMsg struct {
 // DaemonDisconnectedMsg is sent when the daemon connection drops.
 type DaemonDisconnectedMsg struct {
 	Err error
+}
+
+// DaemonReconnectedMsg is sent when reconnection to the daemon succeeds.
+type DaemonReconnectedMsg struct {
+	Client *daemon.Client
 }

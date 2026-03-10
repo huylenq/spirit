@@ -46,7 +46,12 @@ func AvatarGlyph(idx int) string {
 	return avatarAnimals[idx%len(avatarAnimals)]
 }
 
+// AvatarColor returns the adaptive color for the given index.
+func AvatarColor(idx int) lipgloss.AdaptiveColor {
+	return avatarColors[idx%len(avatarColors)]
+}
+
 // AvatarStyle returns a lipgloss style colored for the given index.
 func AvatarStyle(idx int) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(avatarColors[idx%len(avatarColors)])
+	return lipgloss.NewStyle().Foreground(AvatarColor(idx))
 }

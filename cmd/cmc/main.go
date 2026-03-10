@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/app"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/daemon"
+	"github.com/huylenq/claude-mission-control/internal/scripting"
 )
 
 var version = "dev"
@@ -36,8 +38,17 @@ func main() {
 		case "capture":
 			runCapture()
 			return
+		case "eval":
+			runEval()
+			return
+		case "orchestrator":
+			runOrchestrator()
+			return
 		case "popup":
 			runPopup()
+			return
+		case "--agent-help":
+			printAgentHelp()
 			return
 		case "-h", "--help", "help":
 			printUsage()
@@ -78,12 +89,19 @@ Usage:
   cmc popup            Open TUI in a tmux popup (respects zoom pref)
   cmc popup --select-active  Same, but auto-select the current pane (ctrl-space)
   cmc popup --rotate-next    Same, but skip current pane → next YOUR TURN (ctrl-tab)
+  cmc eval <file.lua>        Evaluate a Lua script against the daemon
+  cmc eval -e '<expr>'       Evaluate an inline Lua expression
+  echo '<expr>' | cmc eval   Evaluate Lua from stdin
+  cmc orchestrator register <session-id>     Exclude session from eval sessions()
+  cmc orchestrator unregister <session-id>   Re-include session
   cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
   cmc daemon           Start the background daemon
   cmc daemon --check   Exit 0 if daemon is running, 1 otherwise
   cmc daemon --stop    Stop the running daemon
+
+  cmc --agent-help     Machine-readable reference for LLM agents using cmc
 
 The daemon polls sessions every 1s and pushes updates to connected clients.
 It auto-shuts down after 10 minutes with no clients.
@@ -93,6 +111,107 @@ Files:
   ~/.cache/cmc/daemon.pid    PID file
   ~/.cache/cmc/daemon.log    Log output
 `, version)
+}
+
+func printAgentHelp() {
+	fmt.Print(`# cmc — Claude Mission Control
+
+CLI for monitoring and controlling Claude Code sessions across tmux panes.
+Requires a running daemon (auto-started on first use).
+
+## CLI Commands
+
+cmc eval -e '<lua>'              Evaluate inline Lua, print JSON result to stdout
+cmc eval <file.lua>              Evaluate Lua file
+echo '<lua>' | cmc eval          Evaluate from stdin
+cmc orchestrator register <id>   Exclude session ID from sessions()
+cmc orchestrator unregister <id> Re-include session ID
+cmc capture [COLSxROWS]         Text snapshot of TUI to stdout
+cmc daemon --check               Exit 0 if daemon running
+cmc daemon --stop                Stop daemon
+
+## Eval: Lua Scripting Interface
+
+Sandboxed Lua VM (base/table/string/math only — no os/io/debug).
+Each invocation is stateless. Last expression is JSON-serialized to stdout.
+Errors go to stderr, exit 1. Use pcall() for recovery.
+
+### Session Discovery
+
+sessions()                       All sessions (orchestrator-excluded)
+sessions({status = "idle"})      Filter: "idle" or "working"
+session(id)                      Single session by ID, or nil
+
+Session fields: id, pane_id, status ("idle"|"working"), display_name,
+  project, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid,
+  first_message, last_user_message, headline, custom_title,
+  permission_mode, stop_reason, is_waiting, compact_count,
+  commit_done_pending, queue_pending, created_at, last_changed
+
+### Send & Wait
+
+send(id, msg)                              Fire-and-forget to tmux pane
+send(id, msg, {wait="idle"})               Block until idle
+send(id, msg, {wait="working"})            Block until working
+send(id, msg, {wait="idle", timeout=60})   With timeout (seconds)
+queue(id, msg)                             Deliver when session becomes idle
+cancel_queue(id)                           Cancel queued message
+wait(id)                                   Block until idle (default 300s)
+wait(id, {timeout=30})                     With timeout
+
+### Lifecycle
+
+spawn(cwd)                                           New Claude session
+spawn(cwd, {tmux_session="main", message="do X"})   With options
+  Returns: {session_id=..., pane_id=...}             Blocks up to 30s
+kill(id)                                             SIGTERM + cleanup
+
+### Orchestrator
+
+register_orchestrator(id)        Exclude from sessions() results
+unregister_orchestrator(id)      Re-include
+
+### Features
+
+later(id)                        Bookmark session
+later_kill(id)                   Bookmark + kill pane
+unlater(bookmark_id)             Remove bookmark
+synthesize(id)                   LLM summary → {headline, from_cache}
+synthesize_all()                 Summarize all sessions
+commit(id)                       Send /commit (no auto-kill)
+commit_done(id)                  Send /commit + kill on completion
+cancel_commit_done(id)           Cancel pending auto-kill
+transcript(id)                   User messages (string array)
+raw_transcript(id)               Parsed entries [{index, type, content_type, summary, timestamp}]
+diff_stats(id)                   {filepath = {added=N, removed=N}}
+diff_hunks(id)                   [{file_path, old_string, new_string, is_write}]
+summary(id)                      Cached summary {headline} or nil
+hook_events(id)                  [{time, hook_type, effect}]
+
+### Utilities
+
+sleep(n)                         Sleep n seconds
+log(...)                         Print to stderr (not in JSON output)
+
+## Examples
+
+# List idle sessions
+cmc eval -e 'return sessions({status = "idle"})'
+
+# Send to all idle sessions
+cmc eval -e 'for _, s in ipairs(sessions({status="idle"})) do send(s.id, "run tests") end'
+
+# Spawn, work, collect results
+cmc eval -e '
+  s = spawn("/tmp/myproject")
+  send(s.session_id, "fix the tests", {wait="idle", timeout=300})
+  return diff_stats(s.session_id)
+'
+
+# Orchestrator self-exclusion
+cmc orchestrator register <my-session-id>
+cmc eval -e 'return sessions()'  -- won't include the orchestrator
+`)
 }
 
 func runDaemon() {
@@ -327,6 +446,91 @@ func runPopup() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Run() //nolint:errcheck
+}
+
+func runEval() {
+	var script string
+
+	switch {
+	case len(os.Args) > 2 && os.Args[2] == "-e":
+		// Inline expression: cmc eval -e 'expr'
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "usage: cmc eval -e '<expression>'")
+			os.Exit(1)
+		}
+		script = os.Args[3]
+
+	case len(os.Args) > 2 && os.Args[2] != "-":
+		// File: cmc eval script.lua
+		data, err := os.ReadFile(os.Args[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", os.Args[2], err)
+			os.Exit(1)
+		}
+		script = string(data)
+
+	default:
+		// Stdin: echo 'expr' | cmc eval
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+			os.Exit(1)
+		}
+		script = string(data)
+	}
+
+	if strings.TrimSpace(script) == "" {
+		fmt.Fprintln(os.Stderr, "empty script")
+		os.Exit(1)
+	}
+
+	client, err := daemon.ConnectRPCOnly()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to daemon: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	result, err := scripting.RunEval(script, client, os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if result != "" {
+		fmt.Println(result)
+	}
+}
+
+func runOrchestrator() {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "usage: cmc orchestrator register|unregister <session-id>")
+		os.Exit(1)
+	}
+	action := os.Args[2]
+	sessionID := os.Args[3]
+
+	client, err := daemon.ConnectRPCOnly()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to daemon: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	switch action {
+	case "register":
+		if err := client.RegisterOrchestrator(sessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "unregister":
+		if err := client.UnregisterOrchestrator(sessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown orchestrator action: %s (expected register or unregister)\n", action)
+		os.Exit(1)
+	}
 }
 
 func runCapture() {

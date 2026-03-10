@@ -40,7 +40,7 @@ func ParseStatus(str string) Status {
 	switch str {
 	case "agent-turn", "working":
 		return StatusAgentTurn
-	case "user-turn", "stopped", "done", "later", "deferred":
+	case "user-turn", "idle", "stopped", "done", "later", "deferred":
 		return StatusUserTurn
 	default:
 		return StatusUserTurn

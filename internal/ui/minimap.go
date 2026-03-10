@@ -17,7 +17,7 @@ type MinimapModel struct {
 	sessionName    string
 	selectedPaneID string
 	height         int
-	spinnerView    string
+	spinnerView    string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
 
@@ -41,6 +41,14 @@ type minimapPane struct {
 	WindowWidth, WindowHeight int
 	Status                    int // PaneStatus* constant
 	IsSelected                bool
+	AvatarColorIdx            int // avatar color index (Claude panes only)
+	AvatarAnimalIdx           int // avatar animal glyph index (Claude panes only)
+}
+
+// PaneAvatarInfo bundles avatar indices for a Claude pane.
+type PaneAvatarInfo struct {
+	ColorIdx  int
+	AnimalIdx int
 }
 
 // MinimapPaneInfo carries the info needed to switch to a minimap pane.
@@ -126,26 +134,30 @@ func (m MinimapModel) computeLayout() (windows []windowGroup, winCols []int, inn
 
 // SetData configures the minimap. paneStatuses maps paneID → PaneStatus* constant
 // for Claude panes; panes not in the map are treated as non-Claude (PaneStatusNone).
-func (m *MinimapModel) SetData(geom []tmux.PaneGeometry, paneStatuses map[string]int, selectedPaneID, sessionName string) {
+// paneAvatars maps paneID → avatar info for identity coloring.
+func (m *MinimapModel) SetData(geom []tmux.PaneGeometry, paneStatuses map[string]int, paneAvatars map[string]PaneAvatarInfo, selectedPaneID, sessionName string) {
 	m.sessionName = sessionName
 	m.selectedPaneID = selectedPaneID
 	m.panes = make([]minimapPane, len(geom))
 	for i, g := range geom {
+		av := paneAvatars[g.PaneID]
 		m.panes[i] = minimapPane{
-			PaneID:       g.PaneID,
-			SessionName:  g.SessionName,
-			WindowIndex:  g.WindowIndex,
-			WindowName:   g.WindowName,
-			PaneTitle:    g.PaneTitle,
-			PaneIndex:    g.PaneIndex,
-			Left:         g.Left,
-			Top:          g.Top,
-			Width:        g.Width,
-			Height:       g.Height,
-			WindowWidth:  g.WindowWidth,
-			WindowHeight: g.WindowHeight,
-			Status:       paneStatuses[g.PaneID],
-			IsSelected:   g.PaneID == selectedPaneID,
+			PaneID:          g.PaneID,
+			SessionName:     g.SessionName,
+			WindowIndex:     g.WindowIndex,
+			WindowName:      g.WindowName,
+			PaneTitle:       g.PaneTitle,
+			PaneIndex:       g.PaneIndex,
+			Left:            g.Left,
+			Top:             g.Top,
+			Width:           g.Width,
+			Height:          g.Height,
+			WindowWidth:     g.WindowWidth,
+			WindowHeight:    g.WindowHeight,
+			Status:          paneStatuses[g.PaneID],
+			IsSelected:      g.PaneID == selectedPaneID,
+			AvatarColorIdx:  av.ColorIdx,
+			AvatarAnimalIdx: av.AnimalIdx,
 		}
 	}
 }
@@ -475,14 +487,29 @@ func (m MinimapModel) View() string {
 	visibleWindows := windows
 	hiddenBefore, hiddenAfter := 0, 0
 
+	// Find which window contains the selected pane
+	selectedWindowIdx := -1
+	for _, p := range m.panes {
+		if p.PaneID == m.selectedPaneID {
+			selectedWindowIdx = p.WindowIndex
+			break
+		}
+	}
+
 	// Render per-window columns: centered label + grid
 	var windowColumns []string
 	for i, w := range visibleWindows {
 		cols := winCols[i]
 
-		// Centered window index label
-		label := truncateStr(fmt.Sprintf("%d:%s", w.Index, w.Name), cols)
-		label = minimapTabStyle.Render(label)
+		// Centered window index label — highlight if it contains the selected pane
+		labelText := truncateStr(fmt.Sprintf("%d:%s", w.Index, w.Name), cols)
+		labelStyle := minimapTabStyle
+		if w.Index == selectedWindowIdx {
+			labelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"}).
+				Bold(true)
+		}
+		label := labelStyle.Render(labelText)
 		labelWidth := ansi.StringWidth(label)
 		pad := (cols - labelWidth) / 2
 		if pad < 0 {
@@ -617,7 +644,7 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 
 	// Track the selected pane to render as a lipgloss box overlay
 	type selPaneInfo struct {
-		pane        minimapPane
+		pane            minimapPane
 		x1, y1, x2, y2 int
 	}
 	var selPane *selPaneInfo
@@ -660,12 +687,41 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 		}
 
 		ss := stylesForStatus(p.Status)
+		isClaude := p.Status != PaneStatusNone
 
 		tl, tr, bl, br, hz, vt := "┌", "┐", "└", "┘", "─", "│"
 
-		// Center icon for claude panes: spinner (agent-turn) or flag (user-turn)
+		// For Claude panes, use avatar color for borders and avatar glyph as center icon
+		var avatarSt lipgloss.Style
+		if isClaude {
+			avatarSt = lipgloss.NewStyle().Foreground(AvatarColor(p.AvatarColorIdx))
+		}
+
+		// Interior dimensions (excluding border)
+		paneW := x2 - x1
+		paneH := y2 - y1
+
+		// Center position for avatar glyph
 		centerR := (y1 + y2 - 1) / 2
 		centerC := (x1 + x2 - 1) / 2
+
+		// Spinner placement for agent-turn Claude panes
+		hasSpinner := isClaude && p.Status == PaneStatusAgentTurn && spinnerView != ""
+		spinR, spinC := -1, -1
+		if hasSpinner {
+			innerW := paneW - 2 // excluding left+right border
+			innerH := paneH - 2 // excluding top+bottom border
+			if innerW >= 3 {
+				// Horizontal: spinner one cell right of avatar
+				spinR = centerR
+				spinC = centerC + 2
+			} else if innerH >= 2 {
+				// Vertical: spinner one row below avatar
+				spinR = centerR + 1
+				spinC = centerC
+			}
+			// else: no room, skip spinner
+		}
 
 		// Draw box characters
 		for r := y1; r < y2; r++ {
@@ -680,6 +736,7 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 				isLeft := c == x1
 				isRight := c == x2-1
 				isCenter := r == centerR && c == centerC
+				isSpinner := r == spinR && c == spinC
 
 				switch {
 				case isTop && isLeft:
@@ -694,15 +751,19 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 					ch = hz
 				case isLeft || isRight:
 					ch = vt
-				case p.Status == PaneStatusAgentTurn && isCenter:
+				case isClaude && isCenter:
+					ch = AvatarGlyph(p.AvatarAnimalIdx)
+				case hasSpinner && isSpinner:
 					ch = spinnerView
-					cellStyle = ss.Style
-				case p.Status != PaneStatusNone && isCenter:
-					ch = IconFlag
-					cellStyle = ss.Style
 				default:
 					ch = " "
 				}
+
+				// Claude panes: use avatar color for borders, icon, and spinner
+				if isClaude && (isTop || isBot || isLeft || isRight || isCenter || isSpinner) {
+					cellStyle = avatarSt
+				}
+
 				grid[r][c] = gridCell{char: ch, style: cellStyle}
 			}
 		}
@@ -739,22 +800,48 @@ func renderWindowGrid(w windowGroup, cols, rows int, spinnerView string) string 
 		}
 
 		ss := stylesForStatus(selPane.pane.Status)
+		isClaude := selPane.pane.Status != PaneStatusNone
+
+		borderColor := ss.BorderColor
+		fillBg := ss.FillBg
 		iconStr := ""
-		if selPane.pane.Status == PaneStatusAgentTurn {
-			iconStr = ss.Style.Render(spinnerView)
-		} else if selPane.pane.Status != PaneStatusNone {
-			iconStr = ss.Style.Render(IconFlag)
+		hAlign := lipgloss.Center
+		if isClaude {
+			avatarColor := AvatarColor(selPane.pane.AvatarColorIdx)
+			borderColor = avatarColor
+			fillBg = AvatarFillBg(selPane.pane.AvatarColorIdx)
+			glyph := AvatarGlyph(selPane.pane.AvatarAnimalIdx)
+			glyphW := ansi.StringWidth(glyph)
+
+			hasSpinner := selPane.pane.Status == PaneStatusAgentTurn && spinnerView != ""
+			if hasSpinner {
+				spinW := ansi.StringWidth(spinnerView)
+				glyphPad := max((innerW-glyphW)/2, 0)
+				if glyphPad+glyphW+1+spinW <= innerW {
+					hAlign = lipgloss.Left
+					iconStr = strings.Repeat(" ", glyphPad) + glyph + " " + spinnerView
+				} else if innerH >= 2 {
+					iconStr = glyph + "\n" + spinnerView
+				} else {
+					iconStr = glyph
+				}
+			} else {
+				iconStr = glyph
+			}
 		}
 
-		// Fill tint derived from the pane's status color
-		interior := lipgloss.NewStyle().
+		// Interior style carries fg+bg together so there are no ANSI reset
+		// gaps between content segments (glyph, space, spinner).
+		interiorSt := lipgloss.NewStyle().
 			Width(innerW).
 			Height(innerH).
-			Align(lipgloss.Center).
+			Align(hAlign).
 			AlignVertical(lipgloss.Center).
-			Background(ss.FillBg).
-			Render(iconStr)
-		borderColor := ss.BorderColor
+			Background(fillBg)
+		if isClaude {
+			interiorSt = interiorSt.Foreground(AvatarColor(selPane.pane.AvatarColorIdx))
+		}
+		interior := interiorSt.Render(iconStr)
 		box := lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder()).
 			BorderForeground(borderColor).

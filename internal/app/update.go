@@ -287,7 +287,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DaemonDisconnectedMsg:
 		m.err = msg.Err
-		return m, nil
+		if m.client != nil {
+			m.client.Close()
+		}
+		m.flashMsg = "daemon disconnected, reconnecting..."
+		m.flashIsError = true
+		m.flashExpiry = time.Now().Add(30 * time.Second)
+		return m, reconnectToDaemon()
+
+	case DaemonReconnectedMsg:
+		m.err = nil
+		m.client = msg.Client
+		m.flashMsg = "reconnected"
+		m.flashIsError = false
+		m.flashExpiry = time.Now().Add(2 * time.Second)
+		return m, tea.Batch(
+			m.subscribeToDaemon(),
+			tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} }),
+		)
 
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
@@ -507,18 +524,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MinimapReadyMsg:
 		paneStatuses := make(map[string]int)
+		paneAvatars := make(map[string]ui.PaneAvatarInfo)
 		for _, s := range m.sessions {
 			if s.LaterBookmarkID != "" {
 				paneStatuses[s.PaneID] = ui.PaneStatusLater
 			} else {
 				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
 			}
+			paneAvatars[s.PaneID] = ui.PaneAvatarInfo{
+				ColorIdx:  s.AvatarColorIdx,
+				AnimalIdx: s.AvatarAnimalIdx,
+			}
 		}
 		selectedPaneID := ""
 		if s, ok := m.list.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
-		m.minimap.SetData(msg.Panes, paneStatuses, selectedPaneID, msg.SessionName)
+		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatars, selectedPaneID, msg.SessionName)
 		m.minimapSession = msg.SessionName
 		return m, nil
 
