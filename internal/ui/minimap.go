@@ -556,6 +556,21 @@ func (m MinimapModel) View() string {
 		centeredLabel := strings.Repeat(" ", pad) + label
 
 		grid := renderWindowGrid(w, cols, rows, m.spinnerView)
+		// Vertically center collapsed windows within the full grid height
+		if rows < gridH {
+			topPad := (gridH - rows) / 2
+			botPad := gridH - rows - topPad
+			blank := strings.Repeat(" ", cols)
+			var padded []string
+			for j := 0; j < topPad; j++ {
+				padded = append(padded, blank)
+			}
+			padded = append(padded, strings.Split(grid, "\n")...)
+			for j := 0; j < botPad; j++ {
+				padded = append(padded, blank)
+			}
+			grid = strings.Join(padded, "\n")
+		}
 		windowColumns = append(windowColumns, centeredLabel+"\n"+grid)
 	}
 
