@@ -580,12 +580,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case StateSearching:
 		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.state = StateNormal
-			m.search.Deactivate()
-			m.list.ClearNarrow()
-			return m, nil
-		case key.Matches(msg, Keys.Enter):
+		case key.Matches(msg, Keys.Escape), key.Matches(msg, Keys.Enter):
 			m.search.Confirm()
 			m.state = StateNormal
 			// Remember selection, clear filter, re-select (search & jump)

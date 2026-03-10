@@ -41,6 +41,18 @@ var avatarColors = []lipgloss.AdaptiveColor{
 	{Light: "#0f766e", Dark: "#2dd4bf"}, // teal
 }
 
+// avatarFillBgs are very subtle tints of the avatar colors for selected-pane fill backgrounds.
+var avatarFillBgs = []lipgloss.AdaptiveColor{
+	{Light: "#fce7eb", Dark: "#2a1520"}, // rose
+	{Light: "#ffedd5", Dark: "#2a1e10"}, // orange
+	{Light: "#fef9c3", Dark: "#2a2510"}, // yellow
+	{Light: "#ecfccb", Dark: "#1e2a15"}, // lime
+	{Light: "#cffafe", Dark: "#102a2a"}, // cyan
+	{Light: "#e0e7ff", Dark: "#1e1e2a"}, // indigo
+	{Light: "#fce7f3", Dark: "#2a1525"}, // pink
+	{Light: "#ccfbf1", Dark: "#102a25"}, // teal
+}
+
 // AvatarGlyph returns the animal glyph for the given index.
 func AvatarGlyph(idx int) string {
 	return avatarAnimals[idx%len(avatarAnimals)]
@@ -49,6 +61,11 @@ func AvatarGlyph(idx int) string {
 // AvatarColor returns the adaptive color for the given index.
 func AvatarColor(idx int) lipgloss.AdaptiveColor {
 	return avatarColors[idx%len(avatarColors)]
+}
+
+// AvatarFillBg returns the subtle background tint for the given avatar color index.
+func AvatarFillBg(idx int) lipgloss.AdaptiveColor {
+	return avatarFillBgs[idx%len(avatarFillBgs)]
 }
 
 // AvatarStyle returns a lipgloss style colored for the given index.

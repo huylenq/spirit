@@ -53,7 +53,7 @@ func makeTestMinimap() MinimapModel {
 	}
 
 	m := NewMinimapModel()
-	m.SetData(geom, statuses, "%55", "main")
+	m.SetData(geom, statuses, map[string]PaneAvatarInfo{}, "%55", "main")
 	m.SetSize(50, 14) // realistic minimap size
 	return m
 }
@@ -308,7 +308,7 @@ func TestGridRectsVsCellOwnership(t *testing.T) {
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(t *testing.T) {
 			m := NewMinimapModel()
-			m.SetData(geom, statuses, "%55", "main")
+			m.SetData(geom, statuses, map[string]PaneAvatarInfo{}, "%55", "main")
 			m.SetSize(sz[0], sz[1])
 
 			rects := m.computeGridRects()
@@ -378,7 +378,7 @@ func TestNavigationMatchesVisual(t *testing.T) {
 	for _, sz := range sizes {
 		t.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(t *testing.T) {
 			m := NewMinimapModel()
-			m.SetData(geom, statuses, "%55", "main")
+			m.SetData(geom, statuses, map[string]PaneAvatarInfo{}, "%55", "main")
 			m.SetSize(sz[0], sz[1])
 
 			grid, totalCols, totalRows := simulateCellOwnership(m)
@@ -746,7 +746,7 @@ func TestSelectedPaneInfo(t *testing.T) {
 		// %32 deliberately NOT in statuses → PaneStatusNone
 	}
 	m2 := NewMinimapModel()
-	m2.SetData(geom, statuses, "%32", "main")
+	m2.SetData(geom, statuses, map[string]PaneAvatarInfo{}, "%32", "main")
 	m2.SetSize(50, 14)
 
 	info2, ok2 := m2.SelectedPaneInfo()
