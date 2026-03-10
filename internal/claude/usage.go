@@ -39,8 +39,11 @@ func FetchUsage() (*UsageStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start pty: %w", err)
 	}
-	defer ptmx.Close()
-	defer cmd.Process.Kill()
+	defer func() {
+		ptmx.Close()          // unblocks reader goroutine first
+		cmd.Process.Kill()    // ensure dead
+		cmd.Wait()            // reap zombie
+	}()
 
 	// Accumulate pty output in background
 	var buf bytes.Buffer

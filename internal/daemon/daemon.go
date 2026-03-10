@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,12 @@ type commitDoneEntry struct {
 	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
 }
 
+// pendingPromptEntry tracks a prompt to deliver to a newly spawned session.
+type pendingPromptEntry struct {
+	Prompt    string
+	CreatedAt time.Time
+}
+
 // Daemon is the long-lived background process that polls sessions and serves clients.
 type Daemon struct {
 	mu       sync.RWMutex
@@ -45,7 +52,10 @@ type Daemon struct {
 	commitDonePanes map[string]commitDoneEntry // sessionID → entry
 
 	queueMu    sync.Mutex
-	queuePanes map[string]string // sessionID → message
+	queuePanes map[string][]string // sessionID → FIFO message queue
+
+	pendingPromptMu    sync.Mutex
+	pendingPromptPanes map[string]pendingPromptEntry // paneID → entry
 
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
@@ -53,8 +63,9 @@ type Daemon struct {
 	orchestratorMu  sync.RWMutex
 	orchestratorIDs map[string]bool // session IDs to exclude from eval sessions()
 
-	usageMu    sync.RWMutex
-	usageStats *claude.UsageStats
+	usageMu       sync.RWMutex
+	usageStats    *claude.UsageStats
+	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -71,8 +82,9 @@ func Run(info DaemonInfo) error {
 	d := &Daemon{
 		subscribers:      make(map[*subscriber]struct{}),
 		commitDonePanes:  make(map[string]commitDoneEntry),
-		queuePanes:       make(map[string]string),
-		synthesizingPanes: make(map[string]bool),
+		queuePanes:       make(map[string][]string),
+		synthesizingPanes:  make(map[string]bool),
+		pendingPromptPanes: make(map[string]pendingPromptEntry),
 		orchestratorIDs:   make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
@@ -124,9 +136,7 @@ func Run(info DaemonInfo) error {
 	pollStop := make(chan struct{})
 	go d.pollLoop(pollStop)
 
-	// Usage polling disabled — Claude Code v2.1.72 changed /usage dialog format,
-	// causing FetchUsage to time out and bombard the API with rate-limited requests.
-	// go d.usageLoop(pollStop)
+	go d.usageLoop(pollStop)
 
 	// Start idle timeout checker
 	go d.idleWatcher(sigCh)
@@ -184,10 +194,12 @@ func (d *Daemon) pollLoop(stop chan struct{}) {
 }
 
 func (d *Daemon) usageLoop(stop chan struct{}) {
-	// Fetch immediately on startup
-	d.fetchUsage()
+	// Only fetch immediately if we have no cached data yet.
+	if d.currentUsage() == nil {
+		go d.fetchUsage()
+	}
 
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -195,12 +207,18 @@ func (d *Daemon) usageLoop(stop chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
-			d.fetchUsage()
+			go d.fetchUsage()
 		}
 	}
 }
 
 func (d *Daemon) fetchUsage() {
+	// Skip if a fetch is already in flight.
+	if !d.usageFetching.TryLock() {
+		return
+	}
+	defer d.usageFetching.Unlock()
+
 	stats, err := claude.FetchUsage()
 	if err != nil {
 		log.Printf("usage fetch: %v", err)
@@ -377,6 +395,9 @@ func (d *Daemon) poll() {
 	// Resolve pending queued messages
 	d.resolveQueue(sessions)
 
+	// Resolve pending prompts for newly spawned sessions
+	d.resolvePendingPrompts(sessions)
+
 	// Annotate sessions with daemon-side pending states
 	d.commitDoneMu.Lock()
 	d.queueMu.Lock()
@@ -387,8 +408,8 @@ func (d *Daemon) poll() {
 			if _, pending := d.commitDonePanes[sid]; pending {
 				sessions[i].CommitDonePending = true
 			}
-			if msg, pending := d.queuePanes[sid]; pending {
-				sessions[i].QueuePending = msg
+			if msgs, pending := d.queuePanes[sid]; pending && len(msgs) > 0 {
+				sessions[i].QueuePending = msgs
 			}
 		}
 		if d.synthesizingPanes[sessions[i].PaneID] {
@@ -490,15 +511,17 @@ func (d *Daemon) recoverQueue() {
 			continue
 		}
 		sessionID := strings.TrimSuffix(name, ".queue")
-		msg := claude.ReadQueueMessage(sessionID)
-		if msg != "" {
-			d.queuePanes[sessionID] = msg
-			log.Printf("queue: recovered session %s", sessionID)
+		msgs := claude.ReadQueueMessages(sessionID)
+		if len(msgs) > 0 {
+			d.queuePanes[sessionID] = msgs
+			log.Printf("queue: recovered session %s (%d messages)", sessionID, len(msgs))
 		}
 	}
 }
 
-// resolveQueue delivers queued messages to sessions that have become Done.
+// resolveQueue delivers the first queued message to sessions that have become Done.
+// Only one message per session per poll cycle — the next waits for the session to
+// become Done again after processing.
 func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 	d.queueMu.Lock()
 	defer d.queueMu.Unlock()
@@ -514,7 +537,7 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 		}
 	}
 
-	for sessionID, msg := range d.queuePanes {
+	for sessionID, msgs := range d.queuePanes {
 		s, exists := sessionByID[sessionID]
 		if !exists {
 			log.Printf("queue: session %s disappeared, removing", sessionID)
@@ -522,17 +545,62 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 			claude.RemoveQueueMessage(sessionID)
 			continue
 		}
-		if s.Status != claude.StatusUserTurn {
+		if s.Status != claude.StatusUserTurn || len(msgs) == 0 {
 			continue
 		}
-		// Session is Done — deliver the message to its current pane
-		if err := tmux.SendKeysLiteral(s.PaneID, msg); err != nil {
+		// Session is Done — deliver the first message only
+		if err := tmux.SendKeysLiteral(s.PaneID, msgs[0]); err != nil {
 			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
 			continue
 		}
-		log.Printf("queue: delivered to pane %s (session %s)", s.PaneID, sessionID)
-		delete(d.queuePanes, sessionID)
-		claude.RemoveQueueMessage(sessionID)
+		log.Printf("queue: delivered 1/%d to pane %s (session %s)", len(msgs), s.PaneID, sessionID)
+		remaining := msgs[1:]
+		if len(remaining) == 0 {
+			delete(d.queuePanes, sessionID)
+			claude.RemoveQueueMessage(sessionID)
+		} else {
+			d.queuePanes[sessionID] = remaining
+			claude.WriteQueueMessages(sessionID, remaining) //nolint:errcheck
+		}
+	}
+}
+
+// resolvePendingPrompts delivers initial prompts to newly spawned sessions
+// once they reach user-turn (ready to receive input). Keyed by paneID since
+// the sessionID doesn't exist yet when the prompt is registered.
+func (d *Daemon) resolvePendingPrompts(sessions []claude.ClaudeSession) {
+	d.pendingPromptMu.Lock()
+	defer d.pendingPromptMu.Unlock()
+
+	if len(d.pendingPromptPanes) == 0 {
+		return
+	}
+
+	sessionByPane := make(map[string]*claude.ClaudeSession, len(sessions))
+	for i := range sessions {
+		sessionByPane[sessions[i].PaneID] = &sessions[i]
+	}
+
+	for paneID, entry := range d.pendingPromptPanes {
+		// Expire entries that have been waiting too long (pane likely died)
+		if time.Since(entry.CreatedAt) > 60*time.Second {
+			log.Printf("pending-prompt: pane %s expired after 60s", paneID)
+			delete(d.pendingPromptPanes, paneID)
+			continue
+		}
+		s, exists := sessionByPane[paneID]
+		if !exists {
+			continue // pane not yet discovered
+		}
+		if s.Status != claude.StatusUserTurn {
+			continue // session not ready yet
+		}
+		if err := tmux.SendKeysLiteral(paneID, entry.Prompt); err != nil {
+			log.Printf("pending-prompt: send to pane %s failed: %v (will retry)", paneID, err)
+			continue
+		}
+		log.Printf("pending-prompt: delivered to pane %s", paneID)
+		delete(d.pendingPromptPanes, paneID)
 	}
 }
 
@@ -620,7 +688,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].CompactCount != b[i].CompactCount ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||
 			a[i].SynthesizePending != b[i].SynthesizePending ||
-			a[i].QueuePending != b[i].QueuePending {
+			!slices.Equal(a[i].QueuePending, b[i].QueuePending) {
 			return false
 		}
 	}
