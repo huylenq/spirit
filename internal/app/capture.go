@@ -8,6 +8,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/daemon"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
 // RenderCapture does a headless render of the TUI and returns ANSI-stripped text.
@@ -35,10 +36,34 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	m.width = cols
 	m.height = rows
 	m.ready = true
-	// showMinimap loaded from prefs by NewModel — keep it
 	m.sessions = sessions
 	m.list.SetItems(sessions)
 	m.applyLayout()
+
+	// Load minimap geometry if minimap is enabled
+	if m.showMinimap {
+		if s, ok := m.list.SelectedItem(); ok {
+			panes, err := client.PaneGeometry(s.TmuxSession)
+			if err == nil && len(panes) > 0 {
+				paneStatuses := make(map[string]int)
+				paneAvatars := make(map[string]ui.PaneAvatarInfo)
+				for _, sess := range sessions {
+					if sess.LaterBookmarkID != "" {
+						paneStatuses[sess.PaneID] = ui.PaneStatusLater
+					} else {
+						paneStatuses[sess.PaneID] = claudeStatusToPane(sess.Status)
+					}
+					paneAvatars[sess.PaneID] = ui.PaneAvatarInfo{
+						ColorIdx:  sess.AvatarColorIdx,
+						AnimalIdx: sess.AvatarAnimalIdx,
+					}
+				}
+				m.minimap.SetData(panes, paneStatuses, paneAvatars, s.PaneID, s.TmuxSession)
+				m.minimapSession = s.TmuxSession
+				m.applyLayout()
+			}
+		}
+	}
 
 	// Populate diff stats for all sessions (shown as badges in list)
 	selectedID := ""

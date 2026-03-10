@@ -624,7 +624,7 @@ func (m MinimapModel) View() string {
 	)
 
 	return minimapBorderStyle.
-		Width(innerW).
+		Width(innerW + 2). // +2 so padding doesn't eat into content
 		Render(inner)
 }
 
