@@ -63,7 +63,7 @@ func copyToClipboard(text string) tea.Cmd {
 }
 
 // sessionDisplayTitle returns the effective display title for a session,
-// matching the list panel's priority: custom title → headline → first message → "New session".
+// matching the sidebar panel's priority: custom title → headline → first message → "New session".
 func sessionDisplayTitle(s claude.ClaudeSession) string {
 	title := s.DisplayName()
 	if title == "" {
@@ -124,35 +124,34 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 // selectDefaultPane picks the auto-jump target session (no exclusions).
 // Returns true if the cursor was moved.
 func (m *Model) selectDefaultPane() bool {
-	targetID := m.list.AutoJumpTarget("")
+	targetID := m.sidebar.AutoJumpTarget("")
 	if targetID == "" {
 		return false
 	}
-	return m.list.SelectByPaneID(targetID)
+	return m.sidebar.SelectByPaneID(targetID)
 }
 
 // autoJump selects the user-turn session with the oldest LastChanged
 // (waiting longest), skipping Later and skipPaneID.
 // Returns cmds from fetchForSelection for the newly selected session.
 func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
-	targetID := m.list.AutoJumpTarget(skipPaneID)
+	targetID := m.sidebar.AutoJumpTarget(skipPaneID)
 	if targetID == "" {
 		return nil
 	}
 	m.recordJump()
-	if !m.list.SelectByPaneID(targetID) {
+	if !m.sidebar.SelectByPaneID(targetID) {
 		return nil
 	}
 	m.recordJump() // register destination so ctrl+i can reach it
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return nil
 	}
 	if skipPaneID != "" {
-		m.list.SetGhost(skipPaneID)
+		m.sidebar.SetGhost(skipPaneID)
 	}
-	ghostTick := tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return ghostTickMsg{} })
-	return append(m.fetchForSelection(s, true), ghostTick)
+	return m.fetchForSelection(s, true)
 }
 
 // tryInitialSelection auto-selects a pane on launch.
@@ -188,16 +187,16 @@ func (m *Model) tryInitialSelection() bool {
 		// ctrl-space: exact match on originating pane (any status)
 		for _, s := range m.sessions {
 			if s.PaneID == m.origPane.PaneID {
-				moved = m.list.SelectByPaneID(m.origPane.PaneID)
+				moved = m.sidebar.SelectByPaneID(m.origPane.PaneID)
 				break
 			}
 		}
 		// Fallback: first non-Later session in same tmux session (already sorted)
 		if !moved {
-			items := m.list.Items()
+			items := m.sidebar.Items()
 			for _, s := range items {
 				if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
-					moved = m.list.SelectByPaneID(s.PaneID)
+					moved = m.sidebar.SelectByPaneID(s.PaneID)
 					break
 				}
 			}
@@ -268,27 +267,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.usageBar.Tick()
 		return m, cmd
 
-	case ghostTickMsg:
-		if m.list.AdvanceGhost() {
-			return m, tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return ghostTickMsg{} })
-		}
-		return m, nil
-
 	case SessionsRefreshedMsg:
 		if msg.Err != nil {
 			m.err = msg.Err
 			return m, nil
 		}
 		m.sessions = msg.Sessions
-		m.list.SetItems(m.sessions)
+		m.sidebar.SetItems(m.sessions)
 		m.tryInitialSelection()
 		if !m.initialSelectionDone && !m.selectActive && !m.rotateNext && len(m.sessions) > 0 {
 			m.initialSelectionDone = true
 		}
 		// Auto-select newly created session once it appears
 		if m.pendingSelectPaneID != "" {
-			m.list.EnterSessionLevel() // switch from project → session level
-			if m.list.SelectByPaneID(m.pendingSelectPaneID) {
+			m.sidebar.EnterSessionLevel() // switch from project → session level
+			if m.sidebar.SelectByPaneID(m.pendingSelectPaneID) {
 				m.pendingSelectPaneID = ""
 			}
 		}
@@ -313,7 +306,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Capture preview + transcript + diff stats for selected item; diff stats for all sessions
 		cmds = append(cmds, m.fetchAllDiffStats(msg.Sessions))
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			cmds = append(cmds, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 			if m.showMinimap && m.minimapSession == "" {
 				cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -322,7 +315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, capturePreview(m.nonClaudePane.PaneID))
 		}
 		// Discover backlog items from visible project CWDs (skip when hidden to avoid needless I/O)
-		if m.list.ShowBacklog() {
+		if m.sidebar.ShowBacklog() {
 			cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
 		}
 		// Wait for next daemon push
@@ -330,36 +323,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case BacklogsRefreshedMsg:
-		m.list.SetBacklog(msg.Backlogs)
+		m.sidebar.SetBacklog(msg.Backlogs)
 		return m, nil
 
 	case PreviewReadyMsg:
 		if msg.Err != nil {
 			return m, nil
 		}
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetSession(&s, msg.Content)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetSession(&s, msg.Content)
 		} else if m.nonClaudePane != nil && m.nonClaudePane.PaneID == msg.PaneID {
-			m.preview.SetNonClaudePane(msg.PaneID, m.nonClaudePane.PaneTitle, msg.Content)
+			m.detail.SetNonClaudePane(msg.PaneID, m.nonClaudePane.PaneTitle, msg.Content)
 		}
 		return m, nil
 
 	case TranscriptReadyMsg:
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetUserMessages(msg.Messages)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetUserMessages(msg.Messages)
 		}
 		return m, nil
 
 	case DiffStatsReadyMsg:
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetDiffStats(msg.Stats)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetDiffStats(msg.Stats)
 		}
-		m.list.SetDiffStats(msg.SessionID, msg.Stats)
+		m.sidebar.SetDiffStats(msg.SessionID, msg.Stats)
 		return m, nil
 
 	case HooksReadyMsg:
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetHookEvents(msg.Events)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetHookEvents(msg.Events)
 		}
 		return m, nil
 
@@ -368,14 +361,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case DiffHunksReadyMsg:
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetDiffHunks(msg.Hunks, msg.CWD)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetDiffHunks(msg.Hunks, msg.CWD)
 		}
 		return m, nil
 
 	case RawTranscriptReadyMsg:
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetTranscriptEntries(msg.Entries)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetTranscriptEntries(msg.Entries)
 		}
 		return m, nil
 
@@ -383,8 +376,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			return m, m.setFlash("Synthesize failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetSummary(msg.Summary)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
+			m.detail.SetSummary(msg.Summary)
 		}
 		// Update in-memory headline + problem type immediately so the list reflects it
 		if msg.Summary != nil {
@@ -399,7 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			m.list.SetItems(m.sessions)
+			m.sidebar.SetItems(m.sessions)
 		}
 		if msg.FromCache && msg.UserRequested {
 			return m, m.setFlash("summary unchanged (cached)", false, 2*time.Second)
@@ -412,8 +405,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		updated := false
 		for _, r := range msg.Results {
-			if s, ok := m.list.SelectedItem(); ok && s.PaneID == r.PaneID {
-				m.preview.SetSummary(r.Summary)
+			if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == r.PaneID {
+				m.detail.SetSummary(r.Summary)
 			}
 			if r.Summary != nil {
 				for i := range m.sessions {
@@ -431,7 +424,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if updated {
-			m.list.SetItems(m.sessions)
+			m.sidebar.SetItems(m.sessions)
 		}
 		return m, nil
 
@@ -471,8 +464,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NewSessionCreatedMsg:
 		if m.newSessionWasSession {
 			// Invoked from session level — stay on the original session
-			m.list.EnterSessionLevel()
-			m.list.SelectByPaneID(m.newSessionPrevPaneID)
+			m.sidebar.EnterSessionLevel()
+			m.sidebar.SelectByPaneID(m.newSessionPrevPaneID)
 		} else {
 			// Invoked from project level — auto-jump to the new session
 			m.pendingSelectPaneID = msg.PaneID
@@ -502,7 +495,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				PaneID: msg.PaneID, Captured: true,
 			}
 			if m.tryInitialSelection() {
-				if s, ok := m.list.SelectedItem(); ok {
+				if s, ok := m.sidebar.SelectedItem(); ok {
 					return m, tea.Batch(
 						capturePreview(s.PaneID),
 						m.fetchTranscript(s.PaneID, s.SessionID),
@@ -528,7 +521,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		selectedPaneID := ""
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
 		m.minimap.SetData(msg.Panes, paneStatuses, paneAvatars, selectedPaneID, msg.SessionName)
@@ -540,7 +533,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		frame := m.spinner.View()
-		m.list.SetSpinnerView(frame)
+		m.sidebar.SetSpinnerView(frame)
 		m.minimap.SetSpinnerView(frame)
 		return m, cmd
 
@@ -601,21 +594,21 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = StateNormal
 		// Remember selection, clear filter, re-select (search & jump)
 		var selectedPaneID string
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			selectedPaneID = s.PaneID
 		}
-		m.list.ClearNarrow()
-		m.list.SelectByPaneID(selectedPaneID)
+		m.sidebar.ClearNarrow()
+		m.sidebar.SelectByPaneID(selectedPaneID)
 		return m, nil
 	case key.Matches(msg, Keys.MsgNext):
-		m.list.MoveDown()
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.MoveDown()
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, nil
 	case key.Matches(msg, Keys.MsgPrev):
-		m.list.MoveUp()
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.MoveUp()
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, nil
@@ -624,9 +617,9 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ti := m.search.TextInput()
 		newTI, cmd := ti.Update(msg)
 		*ti = newTI
-		m.list.SetNarrow(m.search.Value())
+		m.sidebar.SetNarrow(m.search.Value())
 		// Update preview for new selection
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, cmd
@@ -761,7 +754,7 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if val == "" {
 			return m, nil
 		}
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
 			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
@@ -771,7 +764,7 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Bang mode: ! as first character sends ! keystroke to pane (bash mode) and stays in relay
 		if msg.String() == "!" && m.relay.Value() == "" {
 			m.relay.EnterBangMode()
-			if s, ok := m.list.SelectedItem(); ok {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, sendBangKey(s.PaneID)
 			}
 			return m, nil
@@ -784,7 +777,7 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		m.state = StateNormal
 		m.queueRelay.Deactivate()
@@ -869,8 +862,8 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeBacklogCWD = ""
 		// Restore previous session-level selection if we came from there
 		if m.newSessionWasSession {
-			m.list.EnterSessionLevel()
-			m.list.SelectByPaneID(m.newSessionPrevPaneID)
+			m.sidebar.EnterSessionLevel()
+			m.sidebar.SelectByPaneID(m.newSessionPrevPaneID)
 			m.newSessionWasSession = false
 		}
 		return m, nil
@@ -1079,7 +1072,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Backlog-specific keys (when cursor is in backlog zone)
-	if m.list.IsBacklogSelected() {
+	if m.sidebar.IsBacklogSelected() {
 		switch {
 		case key.Matches(msg, Keys.Enter):
 			return m.execSubmitBacklog()
@@ -1096,17 +1089,17 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// New backlog item via `b` key — works from session item, session project, or BACKLOG project level
 	if msg.String() == "b" {
 		// Session item selected
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m.execNewBacklogForCWD(s.CWD)
 		}
-		if m.list.SelectionLevel() == ui.LevelProject {
-			if pe, ok := m.list.SelectedProject(); ok {
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			if pe, ok := m.sidebar.SelectedProject(); ok {
 				if pe.StatusOrder == ui.OrderBacklog {
 					// Backlog project: derive CWD from existing backlog
 					return m.execNewBacklog()
 				}
 				// Session project: derive CWD from first session
-				if s, ok := m.list.SelectedProjectSession(); ok {
+				if s, ok := m.sidebar.SelectedProjectSession(); ok {
 					return m.execNewBacklogForCWD(s.CWD)
 				}
 			}
@@ -1136,26 +1129,26 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHooks = false
 		m.showRawTranscript = false
 		m.showDiffs = false
-		m.preview.SetShowHooks(false)
-		m.preview.SetShowRawTranscript(false)
-		m.preview.SetShowDiffs(false)
+		m.detail.SetShowHooks(false)
+		m.detail.SetShowRawTranscript(false)
+		m.detail.SetShowDiffs(false)
 		return m, nil
 
 	case m.showHooks && msg.String() == "f":
-		m.preview.CycleHookFilter()
+		m.detail.CycleHookFilter()
 		return m, nil
 
 	case m.showRawTranscript && msg.String() == "e":
-		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
+		if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
 			return m, openTranscriptInEditor(m.origPane.Session, s.SessionID)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.Quit), key.Matches(msg, Keys.Escape):
 		// At project level, esc drops back to session level instead of quitting
-		if key.Matches(msg, Keys.Escape) && m.list.SelectionLevel() == ui.LevelProject {
-			m.list.EnterSessionLevel()
-			if s, ok := m.list.SelectedItem(); ok {
+		if key.Matches(msg, Keys.Escape) && m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.EnterSessionLevel()
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
@@ -1167,8 +1160,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.JumpBack):
 		target := m.jumpBack()
-		if target != "" && m.list.SelectByPaneID(target) {
-			if s, ok := m.list.SelectedItem(); ok {
+		if target != "" && m.sidebar.SelectByPaneID(target) {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		}
@@ -1178,10 +1171,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		target := m.jumpForward()
 		// At the live head with no forward history: auto-jump to next target
 		if target == "" {
-			target = m.list.AutoJumpTargetFromCursor()
+			target = m.sidebar.AutoJumpTargetFromCursor()
 		}
-		if target != "" && m.list.SelectByPaneID(target) {
-			if s, ok := m.list.SelectedItem(); ok {
+		if target != "" && m.sidebar.SelectByPaneID(target) {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		}
@@ -1210,8 +1203,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.recordJump()
-		if isClaude && m.list.SelectByPaneID(paneID) {
-			if s, ok := m.list.SelectedItem(); ok {
+		if isClaude && m.sidebar.SelectByPaneID(paneID) {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, false)...)
 			}
 		} else if !isClaude {
@@ -1224,10 +1217,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.NavLeft):
 		// h: enter project-level navigation
-		if m.list.SelectionLevel() == ui.LevelSession {
+		if m.sidebar.SelectionLevel() == ui.LevelSession {
 			m.recordJump()
-			m.list.EnterProjectLevel()
-			if s, ok := m.list.SelectedProjectSession(); ok {
+			m.sidebar.EnterProjectLevel()
+			if s, ok := m.sidebar.SelectedProjectSession(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		}
@@ -1235,66 +1228,66 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.NavRight):
 		// l: exit project-level, enter session-level
-		if m.list.SelectionLevel() == ui.LevelProject {
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.recordJump()
-			m.list.EnterSessionLevel()
-			if s, ok := m.list.SelectedItem(); ok {
+			m.sidebar.EnterSessionLevel()
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.Up):
-		if m.list.SelectionLevel() == ui.LevelProject {
-			m.list.MoveUpProject()
-			if s, ok := m.list.SelectedProjectSession(); ok {
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.MoveUpProject()
+			if s, ok := m.sidebar.SelectedProjectSession(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
 		}
-		m.list.MoveUp()
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.MoveUp()
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.Down):
-		if m.list.SelectionLevel() == ui.LevelProject {
-			m.list.MoveDownProject()
-			if s, ok := m.list.SelectedProjectSession(); ok {
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.MoveDownProject()
+			if s, ok := m.sidebar.SelectedProjectSession(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
 		}
-		m.list.MoveDown()
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.MoveDown()
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.GoBottom):
 		m.recordJump()
-		m.list.MoveToBottom()
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.MoveToBottom()
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 		return m, nil
 
 	case (m.showRawTranscript || m.showHooks) && msg.String() == " ":
-		m.preview.ToggleExpand()
+		m.detail.ToggleExpand()
 		return m, nil
 
 	case key.Matches(msg, Keys.Enter):
 		// Project level: enter drops into session level (same as l)
-		if m.list.SelectionLevel() == ui.LevelProject {
-			m.list.EnterSessionLevel()
-			if s, ok := m.list.SelectedItem(); ok {
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.EnterSessionLevel()
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 			return m, nil
 		}
 		if m.showDiffs {
-			m.preview.ToggleDiffExpand()
+			m.detail.ToggleDiffExpand()
 			return m, nil
 		}
 		// Minimap: Enter on non-Claude pane → switch to it directly
@@ -1304,7 +1297,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.IsPhantom {
 				// Dead Later → create new window + remove bookmark
 				bookmarkID, cwd := s.LaterBookmarkID, s.CWD
@@ -1326,7 +1319,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.PromptRelay):
-		if _, ok := m.list.SelectedItem(); ok {
+		if _, ok := m.sidebar.SelectedItem(); ok {
 			m.state = StatePromptRelay
 			m.relay.Activate()
 		}
@@ -1339,15 +1332,15 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Search):
 		m.recordJump()
 		// Exit project level when entering search
-		if m.list.SelectionLevel() == ui.LevelProject {
-			m.list.EnterSessionLevel()
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.EnterSessionLevel()
 		}
 		m.state = StateSearching
 		m.search.Activate()
 		return m, nil
 
 	case key.Matches(msg, Keys.Later):
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.LaterBookmarkID != "" {
 				// Toggle off (unlater): stay on current item
 				return m.execLater()
@@ -1364,18 +1357,18 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.Transcript):
 		m.hideTranscript = !m.hideTranscript
-		m.preview.SetHideTranscript(m.hideTranscript)
+		m.detail.SetHideTranscript(m.hideTranscript)
 		return m, nil
 
 	case key.Matches(msg, Keys.GroupMode):
-		newMode := !m.list.GroupByProject()
-		m.list.SetGroupByProject(newMode)
+		newMode := !m.sidebar.GroupByProject()
+		m.sidebar.SetGroupByProject(newMode)
 		savePrefBool("groupByProject", newMode)
 		return m, nil
 
 	case msg.String() == "B":
-		newVal := !m.list.ShowBacklog()
-		m.list.SetShowBacklog(newVal)
+		newVal := !m.sidebar.ShowBacklog()
+		m.sidebar.SetShowBacklog(newVal)
 		savePrefBool("showBacklog", newVal)
 		if newVal {
 			// Trigger discovery so backlog items appear immediately
@@ -1390,13 +1383,13 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefBool("minimap", m.showMinimap)
 		m.applyLayout()
 		if m.showMinimap {
-			if s, ok := m.list.SelectedItem(); ok {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, m.fetchMinimapData(s.TmuxSession)
 			}
 		} else {
 			// Toggling off: restore list selection in case we were on a non-Claude pane
-			m.list.Reselect()
-			if s, ok := m.list.SelectedItem(); ok {
+			m.sidebar.Reselect()
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(
 					capturePreview(s.PaneID),
 					m.fetchTranscript(s.PaneID, s.SessionID),
@@ -1418,8 +1411,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 
 	case key.Matches(msg, Keys.Synthesize):
-		if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
-			m.list.SetSummaryLoading(s.PaneID, true)
+		if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
+			m.sidebar.SetSummaryLoading(s.PaneID, true)
 			return m, m.fetchSynthesize(s.PaneID, s.SessionID)
 		}
 		return m, nil
@@ -1435,20 +1428,20 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		for _, sess := range m.sessions {
 			if sess.PaneID != latestPaneID && sess.SessionID != "" {
-				m.list.SetSummaryLoading(sess.PaneID, true)
+				m.sidebar.SetSummaryLoading(sess.PaneID, true)
 			}
 		}
 		return m, m.fetchSynthesizeAll(latestPaneID)
 
 	case key.Matches(msg, Keys.Rename):
-		if s, ok := m.list.SelectedItem(); ok && !m.renaming {
+		if s, ok := m.sidebar.SelectedItem(); ok && !m.renaming {
 			m.renaming = true
 			return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.Kill):
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.IsPhantom && s.LaterBookmarkID != "" {
 				// Phantom Later — no pane to kill, just remove bookmark
 				bookmarkID := s.LaterBookmarkID
@@ -1469,7 +1462,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Commit):
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.Status != claude.StatusUserTurn {
 				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 			}
@@ -1489,7 +1482,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.CommitAndDone):
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.Status != claude.StatusUserTurn {
 				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 			}
@@ -1523,61 +1516,61 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, reopenPopup(m.binaryPath, m.inFullscreenPopup)
 
 	case key.Matches(msg, Keys.ListShrink):
-		m.listWidthPct = max(m.listWidthPct-5, 10)
+		m.sidebarWidthPct = max(m.sidebarWidthPct-5, 10)
 		m.applyLayout()
-		savePrefInt("listWidthPct", m.listWidthPct)
+		savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 		return m, nil
 
 	case key.Matches(msg, Keys.ListGrow):
-		m.listWidthPct = min(m.listWidthPct+5, 60)
+		m.sidebarWidthPct = min(m.sidebarWidthPct+5, 60)
 		m.applyLayout()
-		savePrefInt("listWidthPct", m.listWidthPct)
+		savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 		return m, nil
 
 	case key.Matches(msg, Keys.Refresh):
 		// In daemon mode, sessions are pushed — but we can still force a preview refresh
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, capturePreview(s.PaneID)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.ScrollDown):
-		m.preview.ScrollDown()
+		m.detail.ScrollDown()
 		return m, nil
 
 	case key.Matches(msg, Keys.ScrollUp):
-		m.preview.ScrollUp()
+		m.detail.ScrollUp()
 		return m, nil
 
 	case key.Matches(msg, Keys.LineDown):
-		m.preview.ScrollLines(1)
+		m.detail.ScrollLines(1)
 		return m, nil
 
 	case key.Matches(msg, Keys.LineUp):
-		m.preview.ScrollLines(-1)
+		m.detail.ScrollLines(-1)
 		return m, nil
 
 	case key.Matches(msg, Keys.PageDown):
-		m.preview.ScrollPageDown()
+		m.detail.ScrollPageDown()
 		return m, nil
 
 	case key.Matches(msg, Keys.PageUp):
-		m.preview.ScrollPageUp()
+		m.detail.ScrollPageUp()
 		return m, nil
 
 	case key.Matches(msg, Keys.MsgNext):
 		if m.showHooks || m.showRawTranscript || m.showDiffs {
-			m.preview.ScrollLines(1)
+			m.detail.ScrollLines(1)
 		} else {
-			m.preview.NavigateMsg(1)
+			m.detail.NavigateMsg(1)
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.MsgPrev):
 		if m.showHooks || m.showRawTranscript || m.showDiffs {
-			m.preview.ScrollLines(-1)
+			m.detail.ScrollLines(-1)
 		} else {
-			m.preview.NavigateMsg(-1)
+			m.detail.NavigateMsg(-1)
 		}
 		return m, nil
 	}
@@ -1588,10 +1581,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // focusNonClaudePane deselects the list, captures the non-Claude pane content
 // for preview, and switches tmux to the minimap's currently selected pane.
 func (m *Model) focusNonClaudePane() tea.Cmd {
-	m.list.Deselect()
+	m.sidebar.Deselect()
 	info, ok := m.minimap.SelectedPaneInfo()
 	if !ok {
-		m.preview.ClearSession()
+		m.detail.ClearSession()
 		return nil
 	}
 	m.nonClaudePane = &info
@@ -1606,8 +1599,8 @@ type mousePanel int
 
 const (
 	panelNone    mousePanel = iota
-	panelList               // session list (left)
-	panelPreview            // content preview (right)
+	panelSidebar               // sidebar (left)
+	panelDetail            // content preview (right)
 	panelMinimap            // minimap overlay (bottom-left corner of list)
 )
 
@@ -1641,12 +1634,12 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 	if !m.inFullscreenPopup {
 		innerWidth -= 2
 	}
-	listWidth := max(innerWidth*m.listWidthPct/100, 20)
+	sidebarWidth := max(innerWidth*m.sidebarWidthPct/100, 20)
 
-	if x-colOffset < listWidth {
-		return panelList
+	if x-colOffset < sidebarWidth {
+		return panelSidebar
 	}
-	return panelPreview
+	return panelDetail
 }
 
 // handleMouseClick dispatches a left-click to the appropriate panel handler.
@@ -1654,7 +1647,7 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.hitTestPanel(msg.X, msg.Y) {
 	case panelMinimap:
 		return m.handleMinimapClick(msg)
-	case panelList:
+	case panelSidebar:
 		return m.handleListClick(msg)
 	}
 	return m, nil
@@ -1663,26 +1656,26 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // handleMouseWheel scrolls the panel under the cursor.
 func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) {
 	switch m.hitTestPanel(msg.X, msg.Y) {
-	case panelPreview:
-		m.preview.ScrollLines(dir * wheelScrollLines)
+	case panelDetail:
+		m.detail.ScrollLines(dir * wheelScrollLines)
 		return m, nil
-	case panelList:
-		if m.list.SelectionLevel() == ui.LevelProject {
+	case panelSidebar:
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			if dir > 0 {
-				m.list.MoveDownProject()
+				m.sidebar.MoveDownProject()
 			} else {
-				m.list.MoveUpProject()
+				m.sidebar.MoveUpProject()
 			}
-			if s, ok := m.list.SelectedProjectSession(); ok {
+			if s, ok := m.sidebar.SelectedProjectSession(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		} else {
 			if dir > 0 {
-				m.list.MoveDown()
+				m.sidebar.MoveDown()
 			} else {
-				m.list.MoveUp()
+				m.sidebar.MoveUp()
 			}
-			if s, ok := m.list.SelectedItem(); ok {
+			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, true)...)
 			}
 		}
@@ -1727,7 +1720,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < doubleClickWindow {
 		m.lastClickPaneID = ""
 		m.lastClickTime = time.Time{}
-		if s, ok := m.list.SelectedItem(); ok && s.PaneID == paneID {
+		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == paneID {
 			if s.LaterBookmarkID != "" {
 				m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
 			}
@@ -1749,8 +1742,8 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	m.recordJump()
 	m.minimap.UpdateSelected(paneID)
-	if isClaude && m.list.SelectByPaneID(paneID) {
-		if s, ok := m.list.SelectedItem(); ok {
+	if isClaude && m.sidebar.SelectByPaneID(paneID) {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, false)...)
 		}
 	} else if !isClaude {
@@ -1759,10 +1752,10 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleListClick handles left-clicks on the session list panel.
+// handleListClick handles left-clicks on the session sidebar panel.
 func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	listLocalY := msg.Y - contentStartRow
-	paneID := m.list.PaneIDAtLine(listLocalY)
+	paneID := m.sidebar.PaneIDAtLine(listLocalY)
 	if paneID == "" {
 		return m, nil
 	}
@@ -1772,8 +1765,8 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < doubleClickWindow {
 		m.lastClickPaneID = ""
 		m.lastClickTime = time.Time{}
-		m.list.SelectByPaneID(paneID)
-		if s, ok := m.list.SelectedItem(); ok {
+		m.sidebar.SelectByPaneID(paneID)
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.IsPhantom {
 				bookmarkID, cwd := s.LaterBookmarkID, s.CWD
 				tmuxSession := m.origPane.Session
@@ -1798,13 +1791,13 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.lastClickTime = now
 
 	// Skip re-fetch if already selected
-	if s, ok := m.list.SelectedItem(); ok && s.PaneID == paneID {
+	if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == paneID {
 		return m, nil
 	}
 
 	m.recordJump()
-	if m.list.SelectByPaneID(paneID) {
-		if s, ok := m.list.SelectedItem(); ok {
+	if m.sidebar.SelectByPaneID(paneID) {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
 	}

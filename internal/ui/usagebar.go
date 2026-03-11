@@ -48,6 +48,9 @@ func (m *UsageBarModel) Resets() string {
 // RippleActive returns whether the ripple animation is running (for debug display).
 func (m *UsageBarModel) RippleActive() bool { return m.rippleActive }
 
+// Stats returns the raw usage stats (for debug display). May be nil if no data.
+func (m *UsageBarModel) Stats() *claude.UsageStats { return m.stats }
+
 // SetUsage updates the bar with new usage data.
 // Returns a tea.Cmd to start the ripple animation if the fill changed visually.
 func (m *UsageBarModel) SetUsage(stats *claude.UsageStats) tea.Cmd {
@@ -117,26 +120,50 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 	if m.hasData && thickWidth > 0 {
 		filledChars = thickStart + thickWidth*m.sessionPct/100
 	}
+	weeklyFilledChars := 0
+	weekAllPct := 0
+	if m.hasData && m.stats != nil {
+		weekAllPct = m.stats.WeekAllPct
+	}
+	if m.hasData && thickWidth > 0 && weekAllPct > 0 {
+		weeklyFilledChars = thickStart + thickWidth*weekAllPct/100
+	}
+	showPills := corners && m.hasData && weekAllPct > 0
 
 	var sb strings.Builder
 	for i := 0; i < width; i++ {
 		glyph := "━"
+		isPillLeft := showPills && i == 1       // thickStart-1
+		isPillRight := showPills && i == width-2 // thickEnd
+
 		if corners {
 			switch i {
 			case 0:
 				glyph = "╭"
-			case 1, width - 2:
-				glyph = "─"
+			case 1:
+				if showPills {
+					glyph = "▐"
+				} else {
+					glyph = "─"
+				}
+			case width - 2:
+				if showPills {
+					glyph = "▌"
+				} else {
+					glyph = "─"
+				}
 			case width - 1:
 				glyph = "╮"
 			}
 		}
 
 		isThick := i >= thickStart && i < thickEnd
-		if isThick && m.hasData && i < filledChars {
+		inWeekly := isThick && weeklyFilledChars > 0 && i < weeklyFilledChars
+		inSession := isThick && m.hasData && i < filledChars
+
+		if inSession {
 			t := float64(i-thickStart) / float64(max(filledChars-thickStart, 1))
 			c := blendHex("#3d2b00", "#8a5a00", t)
-
 			if m.rippleActive {
 				rippleCenter := filledChars - rippleWidth + (m.rippleFrame * (rippleWidth + 3) / rippleFrames)
 				dist := intAbs(i - rippleCenter)
@@ -145,8 +172,15 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 					c = blendHex(c, "#93c5fd", intensity*0.8)
 				}
 			}
-
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render(glyph))
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color(c))
+			if inWeekly {
+				style = style.Background(lipgloss.Color("#0d2030"))
+			}
+			sb.WriteString(style.Render(glyph))
+		} else if inWeekly {
+			sb.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#0d2030")).Render(glyph))
+		} else if isPillLeft || isPillRight {
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#2a4a5a")).Render(glyph))
 		} else {
 			sb.WriteString(BorderCharStyle.Render(glyph))
 		}

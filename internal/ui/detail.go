@@ -22,7 +22,7 @@ type diffFileStat struct {
 	footprint int
 }
 
-type PreviewModel struct {
+type DetailModel struct {
 	viewport        viewport.Model
 	session         *claude.ClaudeSession
 	content         string
@@ -60,11 +60,11 @@ type PreviewModel struct {
 	ready           bool
 }
 
-func NewPreviewModel() PreviewModel {
-	return PreviewModel{}
+func NewDetailModel() DetailModel {
+	return DetailModel{}
 }
 
-func (m *PreviewModel) SetSize(w, h int) {
+func (m *DetailModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 	headerHeight := 3 // title + branch/diff + blank line
@@ -95,7 +95,7 @@ func (m *PreviewModel) SetSize(w, h int) {
 }
 
 // ClearSession resets the preview to the empty "Select a session" state.
-func (m *PreviewModel) ClearSession() {
+func (m *DetailModel) ClearSession() {
 	m.session = nil
 	m.content = ""
 	m.userMessages = nil
@@ -104,7 +104,7 @@ func (m *PreviewModel) ClearSession() {
 }
 
 // SetNonClaudePane shows a raw terminal capture for a non-Claude pane.
-func (m *PreviewModel) SetNonClaudePane(paneID string, paneTitle string, content string) {
+func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content string) {
 	title := paneTitle
 	if title == "" {
 		title = paneID
@@ -129,7 +129,7 @@ func (m *PreviewModel) SetNonClaudePane(paneID string, paneTitle string, content
 	}
 }
 
-func (m *PreviewModel) SetSession(s *claude.ClaudeSession, content string) {
+func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	isNewSession := m.session == nil || m.session.PaneID != s.PaneID
 	if isNewSession {
 		// Don't clear diffStats, userMessages, or summary here — they're set
@@ -150,7 +150,7 @@ func (m *PreviewModel) SetSession(s *claude.ClaudeSession, content string) {
 	}
 }
 
-func (m *PreviewModel) SetUserMessages(msgs []string) {
+func (m *DetailModel) SetUserMessages(msgs []string) {
 	m.userMessages = msgs
 	m.recomputeOffsets()
 	if m.pendingMsgReset {
@@ -162,7 +162,7 @@ func (m *PreviewModel) SetUserMessages(msgs []string) {
 	}
 }
 
-func (m *PreviewModel) SetDiffStats(stats map[string]claude.FileDiffStat) {
+func (m *DetailModel) SetDiffStats(stats map[string]claude.FileDiffStat) {
 	m.diffStats = stats
 	// Pre-sort file entries by footprint so View() doesn't re-sort every frame
 	files := make([]diffFileStat, 0, len(stats))
@@ -182,15 +182,15 @@ func (m *PreviewModel) SetDiffStats(stats map[string]claude.FileDiffStat) {
 	m.diffFiles = files
 }
 
-func (m *PreviewModel) SetSummary(s *claude.SessionSummary) {
+func (m *DetailModel) SetSummary(s *claude.SessionSummary) {
 	m.summary = s
 }
 
-func (m *PreviewModel) SetHideTranscript(hide bool) {
+func (m *DetailModel) SetHideTranscript(hide bool) {
 	m.hideTranscript = hide
 }
 
-func (m *PreviewModel) SetShowHooks(show bool) {
+func (m *DetailModel) SetShowHooks(show bool) {
 	m.showHooks = show
 	m.hookScroll = 0
 	m.hookCursor = 0
@@ -207,7 +207,7 @@ func (m *PreviewModel) SetShowHooks(show bool) {
 }
 
 // CycleHookFilter cycles through hook filter modes: all → handled → unhandled → all.
-func (m *PreviewModel) CycleHookFilter() {
+func (m *DetailModel) CycleHookFilter() {
 	m.hookFilter = (m.hookFilter + 1) % 3
 	m.hookCursor = 0
 	m.hookScroll = 0
@@ -217,7 +217,7 @@ func (m *PreviewModel) CycleHookFilter() {
 }
 
 // rebuildHookFiltered rebuilds the cached filtered+reversed hook event list.
-func (m *PreviewModel) rebuildHookFiltered() {
+func (m *DetailModel) rebuildHookFiltered() {
 	filtered := make([]claude.HookEvent, 0, len(m.hookEvents))
 	for i := len(m.hookEvents) - 1; i >= 0; i-- {
 		ev := m.hookEvents[i]
@@ -237,7 +237,7 @@ func (m *PreviewModel) rebuildHookFiltered() {
 	m.hookFiltered = filtered
 }
 
-func (m *PreviewModel) ToggleExpand() {
+func (m *DetailModel) ToggleExpand() {
 	if m.showRawTranscript {
 		if m.transcriptExpanded == nil {
 			m.transcriptExpanded = make(map[int]bool)
@@ -254,18 +254,18 @@ func (m *PreviewModel) ToggleExpand() {
 	m.hookExpanded[m.hookCursor] = !m.hookExpanded[m.hookCursor]
 }
 
-func (m *PreviewModel) SetRelayView(v string) {
+func (m *DetailModel) SetRelayView(v string) {
 	m.relayView = v
 }
 
-func (m *PreviewModel) SetHookEvents(events []claude.HookEvent) {
+func (m *DetailModel) SetHookEvents(events []claude.HookEvent) {
 	m.hookEvents = events
 	m.hookExpanded = make(map[int]bool)       // reset — filtered indices shift
 	m.hookExpandedJSON = make(map[int]string) // invalidate cache
 	m.rebuildHookFiltered()
 }
 
-func (m *PreviewModel) SetTranscriptEntries(entries []claude.TranscriptEntry) {
+func (m *DetailModel) SetTranscriptEntries(entries []claude.TranscriptEntry) {
 	m.transcriptEntries = entries
 	m.transcriptExpandedJSON = make(map[int]string)
 	// Precompute column widths (minimum = header label width)
@@ -282,7 +282,7 @@ func (m *PreviewModel) SetTranscriptEntries(entries []claude.TranscriptEntry) {
 	// Don't reset cursor/scroll/expanded — preserve navigation state on refresh
 }
 
-func (m *PreviewModel) SetShowRawTranscript(show bool) {
+func (m *DetailModel) SetShowRawTranscript(show bool) {
 	m.showRawTranscript = show
 	if !show {
 		m.transcriptEntries = nil
@@ -297,13 +297,13 @@ func (m *PreviewModel) SetShowRawTranscript(show bool) {
 }
 
 // recomputeOffsets rebuilds msgOffsets from the current content and userMessages.
-func (m *PreviewModel) recomputeOffsets() {
+func (m *DetailModel) recomputeOffsets() {
 	m.msgOffsets = findMsgLineOffsets(m.content, m.userMessages)
 }
 
 // NavigateMsg moves the message cursor by delta (+1 = next, -1 = prev) and scrolls
 // the viewport to that message's line in the pane capture.
-func (m *PreviewModel) NavigateMsg(delta int) {
+func (m *DetailModel) NavigateMsg(delta int) {
 	if len(m.userMessages) == 0 {
 		return
 	}
@@ -398,7 +398,7 @@ func truncateLines(content string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *PreviewModel) scrollDown(n int) {
+func (m *DetailModel) scrollDown(n int) {
 	if m.showDiffs {
 		m.diffScroll += n
 		return
@@ -426,7 +426,7 @@ func (m *PreviewModel) scrollDown(n int) {
 	m.viewport.LineDown(n)
 }
 
-func (m *PreviewModel) scrollUp(n int) {
+func (m *DetailModel) scrollUp(n int) {
 	if m.showDiffs {
 		m.diffScroll -= n
 		if m.diffScroll < 0 {
@@ -459,7 +459,7 @@ func (m *PreviewModel) scrollUp(n int) {
 
 // ensureTranscriptCursorVisible adjusts transcriptScroll so the cursor is in view,
 // accounting for expanded entries consuming extra lines.
-func (m *PreviewModel) ensureTranscriptCursorVisible() {
+func (m *DetailModel) ensureTranscriptCursorVisible() {
 	avail := m.transcriptVisLines()
 	if avail < 1 {
 		return
@@ -488,7 +488,7 @@ func (m *PreviewModel) ensureTranscriptCursorVisible() {
 	}
 }
 
-func (m *PreviewModel) halfPage() int {
+func (m *DetailModel) halfPage() int {
 	h := m.viewport.Height / 2
 	if h < 1 {
 		h = 1
@@ -496,7 +496,7 @@ func (m *PreviewModel) halfPage() int {
 	return h
 }
 
-func (m *PreviewModel) fullPage() int {
+func (m *DetailModel) fullPage() int {
 	h := m.viewport.Height - 3
 	if h < 1 {
 		h = 1
@@ -505,19 +505,19 @@ func (m *PreviewModel) fullPage() int {
 }
 
 // ScrollDown scrolls half a page down (ctrl+d).
-func (m *PreviewModel) ScrollDown() { m.scrollDown(m.halfPage()) }
+func (m *DetailModel) ScrollDown() { m.scrollDown(m.halfPage()) }
 
 // ScrollUp scrolls half a page up (ctrl+u).
-func (m *PreviewModel) ScrollUp() { m.scrollUp(m.halfPage()) }
+func (m *DetailModel) ScrollUp() { m.scrollUp(m.halfPage()) }
 
 // ScrollPageDown scrolls a full page down (ctrl+f).
-func (m *PreviewModel) ScrollPageDown() { m.scrollDown(m.fullPage()) }
+func (m *DetailModel) ScrollPageDown() { m.scrollDown(m.fullPage()) }
 
 // ScrollPageUp scrolls a full page up (ctrl+b).
-func (m *PreviewModel) ScrollPageUp() { m.scrollUp(m.fullPage()) }
+func (m *DetailModel) ScrollPageUp() { m.scrollUp(m.fullPage()) }
 
 // ScrollLines scrolls the preview by n lines (positive = down, negative = up).
-func (m *PreviewModel) ScrollLines(n int) {
+func (m *DetailModel) ScrollLines(n int) {
 	if n > 0 {
 		m.scrollDown(n)
 	} else if n < 0 {
@@ -539,7 +539,7 @@ func hookIsHandled(ev claude.HookEvent) bool {
 }
 
 // hookVisLines returns the number of visible lines for the hook event overlay.
-func (m *PreviewModel) hookVisLines() int {
+func (m *DetailModel) hookVisLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
 	if avail < 1 {
 		avail = 1
@@ -549,7 +549,7 @@ func (m *PreviewModel) hookVisLines() int {
 
 // ensureHookCursorVisible adjusts hookScroll so the cursor is in view,
 // accounting for expanded entries consuming extra lines.
-func (m *PreviewModel) ensureHookCursorVisible() {
+func (m *DetailModel) ensureHookCursorVisible() {
 	avail := m.hookVisLines()
 	if avail < 1 {
 		return
@@ -575,7 +575,7 @@ func (m *PreviewModel) ensureHookCursorVisible() {
 }
 
 // hookExpandedLineCount returns the number of extra lines an expanded hook entry consumes.
-func (m *PreviewModel) hookExpandedLineCount(idx int) int {
+func (m *DetailModel) hookExpandedLineCount(idx int) int {
 	s := m.getHookExpandedJSON(idx)
 	if s == "" {
 		return 0
@@ -584,7 +584,7 @@ func (m *PreviewModel) hookExpandedLineCount(idx int) int {
 }
 
 // getHookExpandedJSON returns the pretty-printed payload JSON for a hook entry, caching lazily.
-func (m *PreviewModel) getHookExpandedJSON(idx int) string {
+func (m *DetailModel) getHookExpandedJSON(idx int) string {
 	if idx < 0 || idx >= len(m.hookFiltered) {
 		return ""
 	}
@@ -611,7 +611,7 @@ func (m *PreviewModel) getHookExpandedJSON(idx int) string {
 	return result
 }
 
-func (m PreviewModel) View() string {
+func (m DetailModel) View() string {
 	if m.session == nil {
 		return EmptyStyle.Width(m.width).Height(m.height).Render("Select a session to preview")
 	}
@@ -621,10 +621,10 @@ func (m PreviewModel) View() string {
 	avatarColor := AvatarColor(s.AvatarColorIdx)
 
 	// Header line 1: project + diff stats + right-aligned git info
-	projectLabel := PreviewTitleStyle.Foreground(avatarColor).Render(s.Project + "/")
+	projectLabel := DetailTitleStyle.Foreground(avatarColor).Render(s.Project + "/")
 	gitInfo := ""
 	if s.GitBranch != "" {
-		gitInfo = PreviewMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
+		gitInfo = DetailMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
 			s.TmuxSession + ":" + fmt.Sprintf("%d.%s", s.TmuxWindow, s.PaneID))
 	}
 	gitInfoWidth := lipgloss.Width(gitInfo)
@@ -693,7 +693,7 @@ func (m PreviewModel) View() string {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
 	// Use the session's avatar color for the preview border
-	contentStyle := PreviewContentStyle.BorderForeground(avatarColor)
+	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
 	if !m.hideTranscript && (len(m.userMessages) > 0 || m.summary != nil) {
@@ -707,7 +707,7 @@ func (m PreviewModel) View() string {
 		vpWidth := contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
-		transcriptPanel := m.renderTranscript(transcriptWidth, m.viewport.Height-2)
+		transcriptPanel := m.renderTranscript(transcriptWidth)
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", transcriptPanel)
 		// Hard clip the entire joined output so nothing overflows the content border
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
@@ -745,13 +745,13 @@ func (m PreviewModel) View() string {
 		age := FormatAge(s.LastChanged)
 		metaParts = append(metaParts, IconClock+" "+age+" ago")
 	}
-	meta := PreviewMetaStyle.Render(strings.Join(metaParts, "  "))
+	meta := DetailMetaStyle.Render(strings.Join(metaParts, "  "))
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, "", meta)
 }
 
 // renderTranscript renders the user messages panel with a border.
-func (m PreviewModel) renderTranscript(width, height int) string {
+func (m DetailModel) renderTranscript(width int) string {
 	// Inner width for text (subtract border 2 + padding 2)
 	innerWidth := width - 4
 	if innerWidth < 5 {
@@ -793,18 +793,17 @@ func (m PreviewModel) renderTranscript(width, height int) string {
 	content := strings.Join(lines, "\n")
 	return TranscriptOverlayStyle.
 		Width(width).
-		Height(height).
 		Render(content)
 }
 
-func (m PreviewModel) renderHookOverlay(width, height int) string {
+func (m DetailModel) renderHookOverlay(width, height int) string {
 	// Title with filter indicator
 	filterLabel := ""
 	switch m.hookFilter {
 	case 1:
 		filterLabel = "  " + DiffAddedStyle.Render("[handled]")
 	case 2:
-		filterLabel = "  " + PreviewMetaStyle.Render("[unhandled]")
+		filterLabel = "  " + DetailMetaStyle.Render("[unhandled]")
 	}
 	titleLine := DebugTitleStyle.Render(" Hook Events") + filterLabel
 
@@ -814,7 +813,7 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 
 	total := len(m.hookFiltered)
 	if total == 0 {
-		lines = append(lines, PreviewMetaStyle.Render("No hook events recorded"))
+		lines = append(lines, DetailMetaStyle.Render("No hook events recorded"))
 	} else {
 		visLines := m.hookVisLines()
 		innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
@@ -828,7 +827,7 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 			if i == m.hookCursor {
 				cursorMark = "> "
 			}
-			timestamp := PreviewMetaStyle.Render(ev.Time)
+			timestamp := DetailMetaStyle.Render(ev.Time)
 			hookType := hookTypeStyled(ev.HookType)
 
 			// Effect annotation
@@ -868,7 +867,7 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 
 		// Scroll indicator
 		if total > 1 {
-			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d events ──", min(m.hookCursor+1, total), total))
+			indicator := DetailMetaStyle.Render(fmt.Sprintf("── %d/%d events ──", min(m.hookCursor+1, total), total))
 			lines = append(lines, indicator)
 		}
 	}
@@ -881,7 +880,7 @@ func (m PreviewModel) renderHookOverlay(width, height int) string {
 }
 
 // transcriptVisLines returns the number of visible lines for the transcript entry overlay.
-func (m *PreviewModel) transcriptVisLines() int {
+func (m *DetailModel) transcriptVisLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
 	if avail < 1 {
 		avail = 1
@@ -890,7 +889,7 @@ func (m *PreviewModel) transcriptVisLines() int {
 }
 
 // expandedLineCount returns the number of extra lines an expanded entry consumes.
-func (m *PreviewModel) expandedLineCount(idx int) int {
+func (m *DetailModel) expandedLineCount(idx int) int {
 	json := m.getExpandedJSON(idx)
 	if json == "" {
 		return 0
@@ -899,7 +898,7 @@ func (m *PreviewModel) expandedLineCount(idx int) int {
 }
 
 // getExpandedJSON returns the pretty-printed JSON for an entry, caching lazily.
-func (m *PreviewModel) getExpandedJSON(idx int) string {
+func (m *DetailModel) getExpandedJSON(idx int) string {
 	if idx < 0 || idx >= len(m.transcriptEntries) {
 		return ""
 	}
@@ -922,7 +921,7 @@ func (m *PreviewModel) getExpandedJSON(idx int) string {
 	return result
 }
 
-func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
+func (m DetailModel) renderRawTranscriptOverlay(width, height int) string {
 	total := len(m.transcriptEntries)
 	titleLine := TranscriptTitleStyle.Render(fmt.Sprintf(" Transcript (%d entries)", total))
 
@@ -931,7 +930,7 @@ func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
 	lines = append(lines, "")
 
 	if total == 0 {
-		lines = append(lines, PreviewMetaStyle.Render("No transcript data"))
+		lines = append(lines, DetailMetaStyle.Render("No transcript data"))
 	} else {
 		visLines := m.transcriptVisLines() - 1 // -1 for sticky header
 		if visLines < 1 {
@@ -1004,7 +1003,7 @@ func (m PreviewModel) renderRawTranscriptOverlay(width, height int) string {
 
 		// Scroll indicator
 		if total > 1 {
-			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d entries ──", min(m.transcriptCursor+1, total), total))
+			indicator := DetailMetaStyle.Render(fmt.Sprintf("── %d/%d entries ──", min(m.transcriptCursor+1, total), total))
 			lines = append(lines, indicator)
 		}
 	}
@@ -1096,7 +1095,7 @@ func HighlightJSON(line string) string {
 				i++
 			}
 		case ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == ':' || ch == ',':
-			result.WriteString(PreviewMetaStyle.Render(string(ch)))
+			result.WriteString(DetailMetaStyle.Render(string(ch)))
 			i++
 		default:
 			result.WriteRune(ch)
@@ -1143,7 +1142,7 @@ func hookTypeStyled(hookType string) string {
 	case "PreCompact":
 		return StatLaterStyle.Render(hookType)
 	default:
-		return PreviewMetaStyle.Render(hookType)
+		return DetailMetaStyle.Render(hookType)
 	}
 }
 

@@ -57,66 +57,66 @@ func (m Model) View() string {
 		}
 	}
 
-	// List panel
-	listWidth := m.listPanelWidth()
-	previewWidth := innerWidth - listWidth
+	// Sidebar panel
+	sidebarWidth := m.sidebarPanelWidth()
+	detailWidth := innerWidth - sidebarWidth
 
-	listContent := m.list.View()
-	listPanel := ui.ListPanelStyle.
-		Width(listWidth).
+	sidebarContent := m.sidebar.View()
+	sidebarPanel := ui.SidebarPanelStyle.
+		Width(sidebarWidth).
 		Height(contentHeight).
 		MaxHeight(contentHeight).
-		Render(listContent)
+		Render(sidebarContent)
 
 	// Set inline relay prompt on preview when active
 	switch m.state {
 	case StatePromptRelay:
-		m.preview.SetRelayView(m.relay.View())
+		m.detail.SetRelayView(m.relay.View())
 	case StateQueueRelay:
-		m.preview.SetRelayView(m.queueRelay.View())
+		m.detail.SetRelayView(m.queueRelay.View())
 	default:
-		m.preview.SetRelayView("")
+		m.detail.SetRelayView("")
 	}
 
 	// Queue section below preview (always visible when items pending, interactive in queue mode)
 	var queueView string
 	var queueHeight int
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		showQueue := len(s.QueuePending) > 0
 		if showQueue {
-			queueView = m.renderQueueSection(s, previewWidth)
+			queueView = m.renderQueueSection(s, detailWidth)
 			queueHeight = lipgloss.Height(queueView)
 		}
 	}
 
-	// Preview panel (reduced height when queue section visible)
-	previewH := contentHeight - queueHeight
-	var previewContent string
+	// Detail panel (reduced height when queue section visible)
+	detailH := contentHeight - queueHeight
+	var detailContent string
 	if m.state == StateBacklogPrompt && !m.backlogOverlay {
 		project := ""
 		if m.activeBacklogCWD != "" {
 			project = filepath.Base(m.activeBacklogCWD)
 		}
-		previewContent = m.renderBacklogEditor(project, previewWidth, previewH)
-	} else if backlog, ok := m.list.SelectedBacklog(); ok {
-		previewContent = m.renderBacklogPreview(backlog)
+		detailContent = m.renderBacklogEditor(project, detailWidth, detailH)
+	} else if backlog, ok := m.sidebar.SelectedBacklog(); ok {
+		detailContent = m.renderBacklogPreview(backlog)
 	} else {
-		previewContent = m.preview.View()
+		detailContent = m.detail.View()
 	}
-	previewPanel := ui.PreviewPanelStyle.
-		Width(previewWidth).
-		Height(previewH).
-		MaxHeight(previewH).
-		Render(previewContent)
+	detailPanel := ui.DetailPanelStyle.
+		Width(detailWidth).
+		Height(detailH).
+		MaxHeight(detailH).
+		Render(detailContent)
 
 	// Combine preview + queue section in right column
-	rightColumn := previewPanel
+	rightColumn := detailPanel
 	if queueView != "" {
-		rightColumn = previewPanel + "\n" + queueView
+		rightColumn = detailPanel + "\n" + queueView
 	}
 
 	// Main content: list | right column (preview + optional queue)
-	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, rightColumn)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
 
 	// Minimap: docked at bottom in fullscreen (inserted into layout below),
 	// overlaid in normal mode
@@ -138,7 +138,10 @@ func (m Model) View() string {
 	if m.debugMode {
 		effectsPanel := m.renderEffectsPanel()
 		sessionPanel := m.renderSessionPanel()
-		combined := lipgloss.JoinHorizontal(lipgloss.Bottom, effectsPanel, " ", sessionPanel)
+		usagePanel := m.renderUsageDebugPanel()
+		synthPanel := m.renderSynthesizeDebugPanel()
+		jumpPanel := m.renderJumpTrailPanel()
+		combined := lipgloss.JoinHorizontal(lipgloss.Bottom, effectsPanel, " ", sessionPanel, " ", usagePanel, " ", synthPanel, " ", jumpPanel)
 		if combined != "" {
 			content = ui.OverlayBottomRight(content, combined, innerWidth)
 		}
@@ -146,7 +149,7 @@ func (m Model) View() string {
 
 	// Spirit animal overlay centered (lower z-order than help)
 	if m.showSpiritAnimal {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			overlay := ui.RenderSpiritOverlay(s.AvatarAnimalIdx, s.AvatarColorIdx, m.width, m.height)
 			content = ui.OverlayCentered(content, overlay, innerWidth)
 		}
@@ -178,14 +181,14 @@ func (m Model) View() string {
 
 	// Prompt editor overlays (new session / new backlog from session context)
 	if m.state == StateNewSessionPrompt {
-		row := max(m.list.SelectedProjectRow(), 0)
+		row := max(m.sidebar.SelectedProjectRow(), 0)
 		content = m.overlayPrompt(content, m.newSessionProject, row, innerWidth)
 	}
 	if m.state == StateBacklogPrompt && m.backlogOverlay {
 		project := filepath.Base(m.activeBacklogCWD)
-		row := m.list.SelectedItemRow()
+		row := m.sidebar.SelectedItemRow()
 		if row < 0 {
-			row = m.list.SelectedProjectRow()
+			row = m.sidebar.SelectedProjectRow()
 		}
 		row = max(row, 0)
 		content = m.overlayPrompt(content, project, row, innerWidth)
@@ -258,7 +261,7 @@ func (m Model) renderEffectsPanel() string {
 }
 
 func (m Model) renderSessionPanel() string {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return ""
 	}
@@ -283,53 +286,120 @@ func (m Model) renderSessionPanel() string {
 	lines = append(lines, line("Project", s.Project))
 	lines = append(lines, line("CWD", s.CWD))
 	lines = append(lines, line("GitBranch", s.GitBranch))
+	lines = append(lines, line("SynthPending", fmt.Sprintf("%v", s.SynthesizePending)))
+	lines = append(lines, line("HasOverlap", fmt.Sprintf("%v", s.HasOverlap)))
 
-	// Usage bar info
-	lines = append(lines, ui.ItemDetailStyle.Render("--- usage bar ---"))
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderUsageDebugPanel() string {
+	line := func(label, v string) string {
+		if v == "" {
+			v = "(empty)"
+		}
+		return ui.ItemDetailStyle.Render(label+": ") + ui.TranscriptMsgStyle.Render(v)
+	}
+
+	var lines []string
+	lines = append(lines, ui.DebugTitleStyle.Render("USAGE BAR"))
 	if m.usageBar.HasData() {
-		lines = append(lines, line("SessionPct", fmt.Sprintf("%d%%", m.usageBar.SessionPct())))
-		lines = append(lines, line("Resets", m.usageBar.Resets()))
 		lines = append(lines, line("RippleActive", fmt.Sprintf("%v", m.usageBar.RippleActive())))
+		if s := m.usageBar.Stats(); s != nil {
+			lines = append(lines, line("SessionPct", fmt.Sprintf("%d%%", s.SessionPct)))
+			lines = append(lines, line("SessionResets", s.SessionResets))
+			lines = append(lines, line("WeekAllPct", fmt.Sprintf("%d%%", s.WeekAllPct)))
+			lines = append(lines, line("WeekAllResets", s.WeekAllResets))
+			lines = append(lines, line("WeekSonnetPct", fmt.Sprintf("%d%%", s.WeekSonnetPct)))
+			lines = append(lines, line("WeekSonnetResets", s.WeekSonnetResets))
+		}
 	} else {
 		lines = append(lines, ui.ItemDetailStyle.Render("(no usage data yet)"))
 	}
 
-	// Synthesize cache info
-	if s.SessionID != "" {
-		cached := claude.ReadCachedSummary(s.SessionID)
-		sMod, tMod, fresh := claude.SummaryCacheInfo(s.SessionID)
-		lines = append(lines, ui.ItemDetailStyle.Render("--- synthesize result cache ---"))
-		if cached != nil {
-			const jsonWrap = 50
-			data, _ := json.MarshalIndent(cached, "", "  ")
-			for _, jsonLine := range strings.Split(string(data), "\n") {
-				for len(jsonLine) > jsonWrap {
-					lines = append(lines, ui.HighlightJSON(jsonLine[:jsonWrap]))
-					jsonLine = "    " + jsonLine[jsonWrap:] // indent continuation
-				}
-				lines = append(lines, ui.HighlightJSON(jsonLine))
-			}
-		} else {
-			lines = append(lines, ui.ItemDetailStyle.Render("(no cached synthesize)"))
-		}
-		freshStr := "stale"
-		if fresh {
-			freshStr = "fresh"
-		}
-		if sMod == "" {
-			freshStr = "n/a"
-		}
-		lines = append(lines, line("SynthMod", sMod))
-		lines = append(lines, line("TranscriptMod", tMod))
-		lines = append(lines, line("CacheFresh", freshStr))
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderSynthesizeDebugPanel() string {
+	s, ok := m.sidebar.SelectedItem()
+	if !ok || s.SessionID == "" {
+		return ""
 	}
 
-	// Jump trail
+	line := func(label, v string) string {
+		if v == "" {
+			v = "(empty)"
+		}
+		return ui.ItemDetailStyle.Render(label+": ") + ui.TranscriptMsgStyle.Render(v)
+	}
+
+	cached := claude.ReadCachedSummary(s.SessionID)
+	sMod, tMod, fresh := claude.SummaryCacheInfo(s.SessionID)
+
+	var lines []string
+	lines = append(lines, ui.DebugTitleStyle.Render("SYNTHESIZE CACHE"))
+	if cached != nil {
+		const jsonWrap = 50
+		data, _ := json.MarshalIndent(cached, "", "  ")
+		for _, jsonLine := range strings.Split(string(data), "\n") {
+			for len(jsonLine) > jsonWrap {
+				lines = append(lines, ui.HighlightJSON(jsonLine[:jsonWrap]))
+				jsonLine = "    " + jsonLine[jsonWrap:] // indent continuation
+			}
+			lines = append(lines, ui.HighlightJSON(jsonLine))
+		}
+	} else {
+		lines = append(lines, ui.ItemDetailStyle.Render("(no cached synthesize)"))
+	}
+	freshStr := "stale"
+	if fresh {
+		freshStr = "fresh"
+	}
+	if sMod == "" {
+		freshStr = "n/a"
+	}
+	lines = append(lines, line("SynthMod", sMod))
+	lines = append(lines, line("TranscriptMod", tMod))
+	lines = append(lines, line("CacheFresh", freshStr))
+
+	// Auto-synthesis pref
+	autoSynth := loadPrefString("autoSynthesize", "on")
+	if autoSynth == "false" {
+		autoSynth = "off"
+	} else {
+		autoSynth = "on"
+	}
+	lines = append(lines, line("AutoSynth", autoSynth))
+
+	// Digest cache
+	digest := claude.ReadCachedDigest()
+	if digest != nil {
+		lines = append(lines, line("DigestAt", digest.GeneratedAt.Format("15:04:05")))
+		lines = append(lines, line("DigestSessions", fmt.Sprintf("%d", digest.SessionCount)))
+		lines = append(lines, line("DigestFiles", fmt.Sprintf("%d", digest.FileCount)))
+		summary := debugTruncate(digest.Summary, 50)
+		lines = append(lines, line("Digest", summary))
+	} else {
+		lines = append(lines, line("Digest", "(none)"))
+	}
+
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderJumpTrailPanel() string {
+	line := func(label, v string) string {
+		if v == "" {
+			v = "(empty)"
+		}
+		return ui.ItemDetailStyle.Render(label+": ") + ui.TranscriptMsgStyle.Render(v)
+	}
+
 	sessionByPane := make(map[string]claude.ClaudeSession)
 	for _, sess := range m.sessions {
 		sessionByPane[sess.PaneID] = sess
 	}
-	lines = append(lines, ui.ItemDetailStyle.Render("--- jump trail ---"))
+
+	var lines []string
+	lines = append(lines, ui.DebugTitleStyle.Render("JUMP TRAIL"))
 	lines = append(lines, line("Cursor", fmt.Sprintf("%d/%d", m.jumpCursor, len(m.jumpTrail))))
 	for i, pid := range m.jumpTrail {
 		marker := ui.ItemDetailStyle.Render("  ")
@@ -358,7 +428,7 @@ func debugTruncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-// renderQueueSection renders the queue items below the preview panel.
+// renderQueueSection renders the queue items below the detail panel.
 // Always visible when items are pending; interactive when in StateQueueRelay.
 func (m Model) renderQueueSection(s claude.ClaudeSession, width int) string {
 	items := s.QueuePending
@@ -402,7 +472,7 @@ func (m Model) renderNormalFooterHints() string {
 	var parts []string
 
 	// Backlog-specific footer
-	if m.list.IsBacklogSelected() {
+	if m.sidebar.IsBacklogSelected() {
 		parts = append(parts, hint("j/k", "nav"))
 		parts = append(parts, hint("enter", "submit"), hint("b", "edit"), hint("e", "$EDITOR"), hint("d", "delete"))
 		parts = append(parts, hint("?", "help"), hint("q", "quit"))
@@ -410,15 +480,15 @@ func (m Model) renderNormalFooterHints() string {
 	}
 
 	// Project-level footer
-	if m.list.SelectionLevel() == ui.LevelProject {
-		if _, ok := m.list.SelectedProject(); ok {
+	if m.sidebar.SelectionLevel() == ui.LevelProject {
+		if _, ok := m.sidebar.SelectedProject(); ok {
 			parts = append(parts, hint("j/k", "nav"), hint("b", "new backlog"), hint("l", "enter"))
 			parts = append(parts, hint("?", "help"), hint("q", "quit"))
 			return strings.Join(parts, "  ")
 		}
 	}
 
-	s, hasSelection := m.list.SelectedItem()
+	s, hasSelection := m.sidebar.SelectedItem()
 
 	// Always show nav
 	parts = append(parts, hint("j/k", "nav"))
@@ -565,7 +635,7 @@ func (m Model) overlayPrompt(content, project string, row, innerWidth int) strin
 	return ui.OverlayAt(content, overlayView, row, col)
 }
 
-// renderBacklogEditor renders the backlog textarea editor inline in the preview panel.
+// renderBacklogEditor renders the backlog textarea editor inline in the detail panel.
 func (m Model) renderBacklogEditor(project string, width, height int) string {
 	var modeLabel string
 	switch m.promptEditor.Mode() {
@@ -599,7 +669,7 @@ func (m Model) renderBacklogEditor(project string, width, height int) string {
 	return header + "\n\n" + body + "\n\n" + hint
 }
 
-// renderBacklogPreview renders the full backlog item body as plain text for the preview panel.
+// renderBacklogPreview renders the full backlog item body as plain text for the detail panel.
 func (m Model) renderBacklogPreview(backlog claude.Backlog) string {
 	header := ui.PromptEditorTitleStyle.Render(ui.IconBacklog + " " + backlog.DisplayTitle())
 	project := ui.ItemDetailStyle.Render(ui.IconFolder + " " + backlog.Project)

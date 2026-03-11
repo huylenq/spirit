@@ -37,15 +37,15 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	m.height = rows
 	m.ready = true
 	m.sessions = sessions
-	m.list.SetItems(sessions)
+	m.sidebar.SetItems(sessions)
 	m.applyLayout()
 
 	// Discover backlog items from session CWDs
-	m.list.SetBacklog(claude.DiscoverBacklogs(sessions))
+	m.sidebar.SetBacklog(claude.DiscoverBacklogs(sessions))
 
 	// Load minimap geometry if minimap is enabled
 	if m.showMinimap {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			panes, err := client.PaneGeometry(s.TmuxSession)
 			if err == nil && len(panes) > 0 {
 				paneStatuses := make(map[string]int)
@@ -70,14 +70,14 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 
 	// Populate diff stats for all sessions (shown as badges in list)
 	selectedID := ""
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		selectedID = s.SessionID
 	}
 	var selectedStats map[string]claude.FileDiffStat
 	for _, s := range sessions {
 		if s.SessionID != "" {
 			stats, _ := client.DiffStats(s.SessionID)
-			m.list.SetDiffStats(s.SessionID, stats)
+			m.sidebar.SetDiffStats(s.SessionID, stats)
 			if s.SessionID == selectedID {
 				selectedStats = stats
 			}
@@ -85,16 +85,16 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	}
 
 	// Populate preview for selected session
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		content, _ := tmux.CapturePaneContent(s.PaneID)
-		m.preview.SetSession(&s, content)
+		m.detail.SetSession(&s, content)
 
 		if s.SessionID != "" {
 			msgs, _ := client.Transcript(s.SessionID)
-			m.preview.SetUserMessages(msgs)
+			m.detail.SetUserMessages(msgs)
 			summary, _ := client.Summary(s.SessionID)
-			m.preview.SetSummary(summary)
-			m.preview.SetDiffStats(selectedStats)
+			m.detail.SetSummary(summary)
+			m.detail.SetDiffStats(selectedStats)
 		}
 	}
 

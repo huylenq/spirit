@@ -14,9 +14,10 @@ var ModelOptions = []string{"opus", "sonnet", "haiku"}
 
 // Cached styles for prompt editor hint rendering (avoids allocations in View hot path).
 var (
-	peKeyStyle      = lipgloss.NewStyle().Foreground(ColorGreen)
-	peActiveStyle   = lipgloss.NewStyle().Bold(true).Foreground(ColorGreen)
-	peBadgeStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+	peKeyStyle         = lipgloss.NewStyle().Foreground(ColorGreen)
+	peActiveStyle      = lipgloss.NewStyle().Bold(true).Foreground(ColorGreen)
+	peBadgeStyle       = lipgloss.NewStyle().Foreground(ColorMuted)
+	peBacklogKeyStyle  = lipgloss.NewStyle().Foreground(ColorBacklog)
 )
 
 // PromptEditorMode distinguishes how the prompt editor is being used.
@@ -113,6 +114,11 @@ func (m PromptEditorModel) Mode() PromptEditorMode {
 	return m.mode
 }
 
+// IsBacklogMode reports whether the editor is in any backlog-related mode.
+func (m PromptEditorModel) IsBacklogMode() bool {
+	return m.mode == ModeNewBacklog || m.mode == ModeEditBacklog || m.mode == ModeSubmitBacklog
+}
+
 func (m PromptEditorModel) Value() string {
 	return m.input.Value()
 }
@@ -173,7 +179,16 @@ func (m *PromptEditorModel) View(title string, width int) string {
 		headerPrefix = "New session: "
 	}
 
-	header := PromptEditorTitleStyle.Render(headerPrefix + title)
+	titleStyle := PromptEditorTitleStyle
+	keyStyle := peKeyStyle
+	overlayStyle := PromptEditorOverlayStyle
+	if m.IsBacklogMode() {
+		titleStyle = BacklogPromptEditorTitleStyle
+		keyStyle = peBacklogKeyStyle
+		overlayStyle = BacklogPromptEditorOverlayStyle
+	}
+
+	header := titleStyle.Render(headerPrefix + title)
 	if m.selectedModel != "" {
 		header += "  " + peBadgeStyle.Render("["+m.selectedModel+"]")
 	}
@@ -187,19 +202,19 @@ func (m *PromptEditorModel) View(title string, width int) string {
 
 	var hint string
 	if m.mode == ModeNewBacklog || m.mode == ModeEditBacklog {
-		hint = peKeyStyle.Render("enter") + FooterDimStyle.Render(" save  ") +
-			peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel")
+		hint = keyStyle.Render("enter") + FooterDimStyle.Render(" save  ") +
+			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel")
 	} else {
 		var planToggle string
 		if showModelHint {
 			if m.planMode {
 				planToggle = "  " + peActiveStyle.Render("alt+p") + " " + peActiveStyle.Render(IconCheckOn+" plan")
 			} else {
-				planToggle = "  " + peKeyStyle.Render("alt+p") + FooterDimStyle.Render(" "+IconCheckOff+" plan")
+				planToggle = "  " + keyStyle.Render("alt+p") + FooterDimStyle.Render(" "+IconCheckOff+" plan")
 			}
 		}
-		hint = peKeyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
-			peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + planToggle
+		hint = keyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
+			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + planToggle
 	}
 
 	if showModelHint {
@@ -218,5 +233,5 @@ func (m *PromptEditorModel) View(title string, width int) string {
 
 	content := header + "\n\n" + body + "\n\n" + hint
 
-	return PromptEditorOverlayStyle.Width(width - 4).Render(content)
+	return overlayStyle.Width(width - 4).Render(content)
 }

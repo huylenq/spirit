@@ -2,6 +2,17 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
+func promptEditorOverlay(color lipgloss.TerminalColor) lipgloss.Style {
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(color).
+		Padding(1, 2)
+}
+
+func promptEditorTitle(color lipgloss.TerminalColor) lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(color)
+}
+
 var (
 	// Colors — adaptive for light/dark terminals
 	ColorWorking     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"} // amber
@@ -15,6 +26,7 @@ var (
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
+	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#fbbf24"} // yellow/amber — file overlap
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
@@ -32,9 +44,10 @@ var (
 	StatWaitingStyle  = lipgloss.NewStyle().Foreground(ColorWaiting).Bold(true)
 	StatPostToolStyle = lipgloss.NewStyle().Foreground(ColorPostTool)
 	CommitDoneStyle   = DiffAddedStyle
+	OverlapStyle      = lipgloss.NewStyle().Foreground(ColorOverlap)
 
-	// List panel
-	ListPanelStyle = lipgloss.NewStyle().
+	// Sidebar panel
+	SidebarPanelStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderRight(true).
 			BorderForeground(ColorBorder)
@@ -42,7 +55,7 @@ var (
 	// Group headers in list
 	GroupHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	ColorBacklog = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — backlog
 
@@ -51,7 +64,7 @@ var (
 	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
 	GroupHeaderBacklogStyle  = GroupHeaderStyle.Foreground(ColorBacklog)
 	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
-	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
+	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1, 1, 1)
 
 	// List items
 	ItemStyle = lipgloss.NewStyle()
@@ -61,26 +74,26 @@ var (
 	ItemDetailStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
 
-	// Preview panel
-	PreviewPanelStyle = lipgloss.NewStyle().
-				Padding(0, 1)
+	// Detail panel
+	DetailPanelStyle = lipgloss.NewStyle().
+				Padding(0, 1, 1, 1)
 
-	PreviewTitleStyle = lipgloss.NewStyle().
+	DetailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorAccent)
 
-	PreviewMetaStyle = lipgloss.NewStyle().
+	DetailMetaStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
-	PreviewContentStyle = lipgloss.NewStyle().
+	DetailContentStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorBorder)
 
 	// Footer
 	FooterStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
-			Padding(0, 1)
+			Padding(0, 1, 1, 1)
 
 	FooterKeyStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -116,7 +129,7 @@ var (
 	TranscriptOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorBorder).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	TranscriptTitleStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -126,10 +139,10 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
 	TranscriptBulletStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"}).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 	TranscriptCursorStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	SummaryStyle = lipgloss.NewStyle().
 			Italic(true).
@@ -139,7 +152,7 @@ var (
 	DebugOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorWorking).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	DebugTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -151,11 +164,18 @@ var (
 	// Diff background highlights (dimmed, used for all diff lines)
 	DiffDelBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#f5e6e6", Dark: "#2a1517"})
 	DiffAddBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#e6f2e6", Dark: "#152a1a"})
-// Diff hunks overlay
+	// Diff prefix symbols (+/-/~) with distinct foreground colors
+	DiffDelSymbol = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#dc2626", Dark: "#f87171"}).Bold(true)
+	DiffAddSymbol = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#16a34a", Dark: "#4ade80"}).Bold(true)
+	DiffModSymbol = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"}).Bold(true)
+	// Char-level emphasis within inline diffs (slightly brighter bg)
+	DiffInlineDelBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#ebc8c8", Dark: "#3d1a1d"})
+	DiffInlineAddBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#c3dfc3", Dark: "#1a3d24"})
+	// Diff hunks overlay
 	DiffOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorGreen).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	DiffTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -172,17 +192,17 @@ var (
 			Foreground(lipgloss.Color("#ff5555")).
 			Background(lipgloss.Color("#1a1a1a")).
 			Bold(true).
-			Padding(0, 1)
+			Padding(0, 1, 1, 1)
 
 	FlashInfoStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
-			Padding(0, 1)
+			Padding(0, 1, 1, 1)
 
 	// Toast notification overlay (transient, bottom-right)
 	ToastStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ColorMuted).
-			Padding(0, 1)
+			Padding(0, 1, 1, 1)
 
 	// Help overlay
 	HelpOverlayStyle = lipgloss.NewStyle().
@@ -203,7 +223,7 @@ var (
 	PaletteOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorAccent).
-				Padding(0, 1)
+				Padding(0, 1, 1, 1)
 
 	PaletteSelectedStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
@@ -215,15 +235,11 @@ var (
 	PaletteSepStyle = lipgloss.NewStyle().
 			Foreground(ColorBorder)
 
-	// Prompt editor overlay (new session)
-	PromptEditorOverlayStyle = lipgloss.NewStyle().
-					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(ColorGreen).
-					Padding(1, 2)
-
-	PromptEditorTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(ColorGreen)
+	// Prompt editor overlays — session (green) and backlog (cyan)
+	PromptEditorOverlayStyle        = promptEditorOverlay(ColorGreen)
+	BacklogPromptEditorOverlayStyle = promptEditorOverlay(ColorBacklog)
+	PromptEditorTitleStyle          = promptEditorTitle(ColorGreen)
+	BacklogPromptEditorTitleStyle   = promptEditorTitle(ColorBacklog)
 
 	// Preferences editor overlay
 	PrefsEditorOverlayStyle = lipgloss.NewStyle().

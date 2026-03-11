@@ -42,7 +42,7 @@ func selBg(st lipgloss.Style, selected bool, colorIdx int) lipgloss.Style {
 	return st
 }
 
-type ListModel struct {
+type SidebarModel struct {
 	items                []claude.ClaudeSession
 	filtered             []claude.ClaudeSession            // cursor-navigable matching items
 	allSorted            []claude.ClaudeSession            // all items sorted (for stable group rendering)
@@ -71,55 +71,44 @@ type ListModel struct {
 }
 
 // SetGhost marks paneID as the ghost origin for the auto-jump fade animation.
-// Resets to frame 0 so the caller can tick it forward.
-func (m *ListModel) SetGhost(paneID string) {
+// Resets to frame 0; the spinner tick advances it via SetSpinnerView.
+func (m *SidebarModel) SetGhost(paneID string) {
 	m.ghostPaneID = paneID
 	m.ghostFrame = 0
 }
 
-// AdvanceGhost increments the ghost frame. Returns true while the animation
-// is still running (frame < 3), false when it should stop.
-func (m *ListModel) AdvanceGhost() bool {
-	m.ghostFrame++
-	if m.ghostFrame >= 3 {
-		m.ghostPaneID = ""
-		return false
-	}
-	return true
-}
-
-func (m *ListModel) SetGroupByProject(v bool) {
+func (m *SidebarModel) SetGroupByProject(v bool) {
 	m.groupByProject = v
 	m.applyNarrow()
 }
 
-func (m ListModel) GroupByProject() bool {
+func (m SidebarModel) GroupByProject() bool {
 	return m.groupByProject
 }
 
-func (m *ListModel) SetShowBacklog(v bool) {
+func (m *SidebarModel) SetShowBacklog(v bool) {
 	m.showBacklog = v
 	m.applyNarrowBacklog()
 	m.rebuildProjects()
 }
 
-func (m ListModel) ShowBacklog() bool {
+func (m SidebarModel) ShowBacklog() bool {
 	return m.showBacklog
 }
 
-func NewListModel() ListModel {
-	return ListModel{
+func NewSidebarModel() SidebarModel {
+	return SidebarModel{
 		diffStats:           make(map[string]map[string]claude.FileDiffStat),
 		summaryLoadingPanes: make(map[string]bool),
 	}
 }
 
-func (m ListModel) SummaryLoadingCount() int {
+func (m SidebarModel) SummaryLoadingCount() int {
 	return len(m.summaryLoadingPanes)
 }
 
 // SetSummaryLoading sets immediate client-side loading state for instant UI feedback.
-func (m *ListModel) SetSummaryLoading(paneID string, loading bool) {
+func (m *SidebarModel) SetSummaryLoading(paneID string, loading bool) {
 	if m.summaryLoadingPanes == nil {
 		m.summaryLoadingPanes = make(map[string]bool)
 	}
@@ -130,7 +119,7 @@ func (m *ListModel) SetSummaryLoading(paneID string, loading bool) {
 	}
 }
 
-func (m *ListModel) SetDiffStats(sessionID string, stats map[string]claude.FileDiffStat) {
+func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.FileDiffStat) {
 	if m.diffStats == nil {
 		m.diffStats = make(map[string]map[string]claude.FileDiffStat)
 	}
@@ -140,12 +129,18 @@ func (m *ListModel) SetDiffStats(sessionID string, stats map[string]claude.FileD
 // commitDoneFrames is a distinct animation for commit-and-done pending sessions.
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
-func (m *ListModel) SetSpinnerView(s string) {
+func (m *SidebarModel) SetSpinnerView(s string) {
 	m.spinnerView = s
 	m.commitDoneFrame = (m.commitDoneFrame + 1) % len(commitDoneFrames)
+	if m.ghostPaneID != "" {
+		m.ghostFrame++
+		if m.ghostFrame >= 3 {
+			m.ghostPaneID = ""
+		}
+	}
 }
 
-func (m *ListModel) SetItems(items []claude.ClaudeSession) {
+func (m *SidebarModel) SetItems(items []claude.ClaudeSession) {
 	// Remember currently selected PaneID or backlog ID before rebuilding
 	var selectedPaneID string
 	var selectedBacklogID string
@@ -184,24 +179,24 @@ func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 	}
 }
 
-func (m *ListModel) SetSize(w, h int) {
+func (m *SidebarModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 }
 
-func (m *ListModel) SetNarrow(f string) {
+func (m *SidebarModel) SetNarrow(f string) {
 	m.narrow = f
 	m.applyNarrow()
 	m.cursor = 0
 }
 
-func (m *ListModel) ClearNarrow() {
+func (m *SidebarModel) ClearNarrow() {
 	m.narrow = ""
 	m.applyNarrow()
 	m.cursor = 0
 }
 
-func (m ListModel) SelectedItem() (claude.ClaudeSession, bool) {
+func (m SidebarModel) SelectedItem() (claude.ClaudeSession, bool) {
 	if m.deselected || m.cursor >= len(m.filtered) || len(m.filtered) == 0 {
 		return claude.ClaudeSession{}, false
 	}
@@ -209,17 +204,17 @@ func (m ListModel) SelectedItem() (claude.ClaudeSession, bool) {
 }
 
 // totalItems returns the combined count of sessions + backlog items for cursor range.
-func (m ListModel) totalItems() int {
+func (m SidebarModel) totalItems() int {
 	return len(m.filtered) + len(m.filteredBacklog)
 }
 
 // IsBacklogSelected returns true if the cursor is in the backlog zone.
-func (m ListModel) IsBacklogSelected() bool {
+func (m SidebarModel) IsBacklogSelected() bool {
 	return !m.deselected && len(m.filteredBacklog) > 0 && m.cursor >= len(m.filtered)
 }
 
 // SelectedBacklog returns the backlog item at the cursor, if in the backlog zone.
-func (m ListModel) SelectedBacklog() (claude.Backlog, bool) {
+func (m SidebarModel) SelectedBacklog() (claude.Backlog, bool) {
 	if !m.IsBacklogSelected() {
 		return claude.Backlog{}, false
 	}
@@ -231,7 +226,7 @@ func (m ListModel) SelectedBacklog() (claude.Backlog, bool) {
 }
 
 // SetBacklog stores backlog items, sorts by project then CreatedAt, applies narrow.
-func (m *ListModel) SetBacklog(backlogs []claude.Backlog) {
+func (m *SidebarModel) SetBacklog(backlogs []claude.Backlog) {
 	// Preserve selected backlog item across refresh
 	var selectedBacklogID string
 	if m.IsBacklogSelected() {
@@ -250,7 +245,7 @@ func (m *ListModel) SetBacklog(backlogs []claude.Backlog) {
 }
 
 // selectByBacklogID sets the cursor to the backlog item with the given ID. Returns true if found.
-func (m *ListModel) selectByBacklogID(id string) bool {
+func (m *SidebarModel) selectByBacklogID(id string) bool {
 	for i, backlog := range m.filteredBacklog {
 		if backlog.ID == id {
 			m.cursor = len(m.filtered) + i
@@ -262,7 +257,7 @@ func (m *ListModel) selectByBacklogID(id string) bool {
 }
 
 // applyNarrowBacklog filters backlog items by the current narrow query.
-func (m *ListModel) applyNarrowBacklog() {
+func (m *SidebarModel) applyNarrowBacklog() {
 	if !m.showBacklog {
 		m.filteredBacklog = nil
 		return
@@ -284,16 +279,16 @@ func (m *ListModel) applyNarrowBacklog() {
 }
 
 // Deselect marks the list as having no active selection (minimap on non-Claude pane).
-func (m *ListModel) Deselect() {
+func (m *SidebarModel) Deselect() {
 	m.deselected = true
 }
 
 // Reselect restores the list selection after Deselect.
-func (m *ListModel) Reselect() {
+func (m *SidebarModel) Reselect() {
 	m.deselected = false
 }
 
-func (m *ListModel) SelectByPaneID(paneID string) bool {
+func (m *SidebarModel) SelectByPaneID(paneID string) bool {
 	for i, s := range m.filtered {
 		if s.PaneID == paneID {
 			m.cursor = i
@@ -304,26 +299,26 @@ func (m *ListModel) SelectByPaneID(paneID string) bool {
 	return false
 }
 
-func (m *ListModel) MoveUp() {
+func (m *SidebarModel) MoveUp() {
 	m.deselected = false
 	if m.cursor > 0 {
 		m.cursor--
 	}
 }
 
-func (m *ListModel) MoveDown() {
+func (m *SidebarModel) MoveDown() {
 	m.deselected = false
 	if m.cursor < m.totalItems()-1 {
 		m.cursor++
 	}
 }
 
-func (m *ListModel) MoveToTop() {
+func (m *SidebarModel) MoveToTop() {
 	m.deselected = false
 	m.cursor = 0
 }
 
-func (m *ListModel) MoveToBottom() {
+func (m *SidebarModel) MoveToBottom() {
 	m.deselected = false
 	total := m.totalItems()
 	if total > 0 {
@@ -332,25 +327,25 @@ func (m *ListModel) MoveToBottom() {
 }
 
 // SelectionLevel returns the current navigation level.
-func (m ListModel) SelectionLevel() SelectionLevel {
+func (m SidebarModel) SelectionLevel() SelectionLevel {
 	return m.selectionLevel
 }
 
 // SelectedProjectRow returns the line index of the selected project header
 // within the list's rendered output. Returns -1 if no project is selected.
-func (m ListModel) SelectedProjectRow() int {
+func (m SidebarModel) SelectedProjectRow() int {
 	return m.selectedProjectRow
 }
 
 // SelectedItemRow returns the line index of the selected session item
 // within the list's rendered output. Returns -1 if no session item is selected.
-func (m ListModel) SelectedItemRow() int {
+func (m SidebarModel) SelectedItemRow() int {
 	return m.selectedItemRow
 }
 
 // EnterProjectLevel switches to project-level navigation.
 // The project cursor is set to the project entry matching the currently selected session.
-func (m *ListModel) EnterProjectLevel() {
+func (m *SidebarModel) EnterProjectLevel() {
 	if len(m.projects) == 0 {
 		return
 	}
@@ -387,7 +382,7 @@ func (m *ListModel) EnterProjectLevel() {
 
 // EnterSessionLevel switches to session-level navigation.
 // The cursor moves to the first session matching the selected project entry.
-func (m *ListModel) EnterSessionLevel() {
+func (m *SidebarModel) EnterSessionLevel() {
 	if m.selectionLevel != LevelProject {
 		return
 	}
@@ -414,21 +409,21 @@ func (m *ListModel) EnterSessionLevel() {
 }
 
 // MoveUpProject moves the project cursor up.
-func (m *ListModel) MoveUpProject() {
+func (m *SidebarModel) MoveUpProject() {
 	if m.projectCursor > 0 {
 		m.projectCursor--
 	}
 }
 
 // MoveDownProject moves the project cursor down.
-func (m *ListModel) MoveDownProject() {
+func (m *SidebarModel) MoveDownProject() {
 	if m.projectCursor < len(m.projects)-1 {
 		m.projectCursor++
 	}
 }
 
 // SelectedProject returns the currently selected project entry when at project level.
-func (m ListModel) SelectedProject() (projectEntry, bool) {
+func (m SidebarModel) SelectedProject() (projectEntry, bool) {
 	if m.selectionLevel != LevelProject || len(m.projects) == 0 {
 		return projectEntry{}, false
 	}
@@ -439,7 +434,7 @@ func (m ListModel) SelectedProject() (projectEntry, bool) {
 }
 
 // FirstSessionInProject returns the first session matching a project entry.
-func (m ListModel) FirstSessionInProject(pe projectEntry) (claude.ClaudeSession, bool) {
+func (m SidebarModel) FirstSessionInProject(pe projectEntry) (claude.ClaudeSession, bool) {
 	for _, s := range m.filtered {
 		if pe.matches(s) {
 			return s, true
@@ -450,7 +445,7 @@ func (m ListModel) FirstSessionInProject(pe projectEntry) (claude.ClaudeSession,
 
 // SelectedProjectSession returns the first session in the currently selected project.
 // Convenience method collapsing SelectedProject + FirstSessionInProject.
-func (m ListModel) SelectedProjectSession() (claude.ClaudeSession, bool) {
+func (m SidebarModel) SelectedProjectSession() (claude.ClaudeSession, bool) {
 	pe, ok := m.SelectedProject()
 	if !ok {
 		return claude.ClaudeSession{}, false
@@ -459,7 +454,7 @@ func (m ListModel) SelectedProjectSession() (claude.ClaudeSession, bool) {
 }
 
 // SessionsInProject returns all sessions matching a project entry.
-func (m ListModel) SessionsInProject(pe projectEntry) []claude.ClaudeSession {
+func (m SidebarModel) SessionsInProject(pe projectEntry) []claude.ClaudeSession {
 	var result []claude.ClaudeSession
 	for _, s := range m.filtered {
 		if pe.matches(s) {
@@ -469,12 +464,12 @@ func (m ListModel) SessionsInProject(pe projectEntry) []claude.ClaudeSession {
 	return result
 }
 
-func (m ListModel) Items() []claude.ClaudeSession {
+func (m SidebarModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
 // BacklogsInProject returns all backlog items matching a project name.
-func (m ListModel) BacklogsInProject(projectName string) []claude.Backlog {
+func (m SidebarModel) BacklogsInProject(projectName string) []claude.Backlog {
 	var result []claude.Backlog
 	for _, backlog := range m.filteredBacklog {
 		if backlog.Project == projectName {
@@ -485,7 +480,7 @@ func (m ListModel) BacklogsInProject(projectName string) []claude.Backlog {
 }
 
 // FirstBacklogCWDInProject returns the CWD from the first backlog item in a project.
-func (m ListModel) FirstBacklogCWDInProject(projectName string) string {
+func (m SidebarModel) FirstBacklogCWDInProject(projectName string) string {
 	for _, backlog := range m.filteredBacklog {
 		if backlog.Project == projectName {
 			return backlog.CWD
@@ -496,7 +491,7 @@ func (m ListModel) FirstBacklogCWDInProject(projectName string) string {
 
 // AutoJumpTargetFromCursor returns the auto-jump target, skipping the currently
 // selected session. Returns "" if no target exists.
-func (m ListModel) AutoJumpTargetFromCursor() string {
+func (m SidebarModel) AutoJumpTargetFromCursor() string {
 	var skipPaneID string
 	if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		skipPaneID = m.filtered[m.cursor].PaneID
@@ -507,7 +502,7 @@ func (m ListModel) AutoJumpTargetFromCursor() string {
 // AutoJumpTarget finds the best auto-jump target, skipping skipPaneID.
 // Returns the user-turn session with the oldest LastChanged (waiting longest).
 // Excludes Later-bookmarked sessions. Returns "" if no user-turn target exists.
-func (m ListModel) AutoJumpTarget(skipPaneID string) string {
+func (m SidebarModel) AutoJumpTarget(skipPaneID string) string {
 	var bestUser string
 	var bestUserTime time.Time
 
@@ -525,7 +520,7 @@ func (m ListModel) AutoJumpTarget(skipPaneID string) string {
 	return bestUser
 }
 
-func (m *ListModel) applyNarrow() {
+func (m *SidebarModel) applyNarrow() {
 	// Always maintain a sorted copy of all items for stable group rendering
 	m.allSorted = make([]claude.ClaudeSession, len(m.items))
 	copy(m.allSorted, m.items)
@@ -584,7 +579,7 @@ func bestNarrowScore(s claude.ClaudeSession, query string) int {
 // rebuildProjects extracts project entries in display order from the filtered list.
 // In project-group mode: one entry per unique project name (StatusOrder=-1).
 // In status-group mode: one entry per (project, statusGroup) pair.
-func (m *ListModel) rebuildProjects() {
+func (m *SidebarModel) rebuildProjects() {
 	var prev projectEntry
 	havePrev := m.projectCursor >= 0 && m.projectCursor < len(m.projects)
 	if havePrev {
@@ -699,7 +694,7 @@ type diffColWidths struct {
 	removed int // digits in removed lines
 }
 
-func (m ListModel) computeDiffColWidths() diffColWidths {
+func (m SidebarModel) computeDiffColWidths() diffColWidths {
 	var dw diffColWidths
 	for _, s := range m.filtered {
 		if s.SessionID == "" {
@@ -727,7 +722,7 @@ func (m ListModel) computeDiffColWidths() diffColWidths {
 	return dw
 }
 
-func (m ListModel) View() string {
+func (m SidebarModel) View() string {
 	if len(m.items) == 0 {
 		return EmptyStyle.Width(m.width).Render("No Claude sessions found\n\nStart Claude in a tmux pane to see it here.")
 	}
@@ -897,7 +892,7 @@ func renderStatusGroupHeader(order int) string {
 	}
 }
 
-func (m ListModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
+func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
 	// Display name priority: custom title → headline → first message → (new session)
 	displayName := s.DisplayName()
@@ -1078,7 +1073,7 @@ func (m ListModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSessio
 }
 
 // renderBacklogItem renders a single backlog entry in the list.
-func (m ListModel) renderBacklogItem(isSelected bool, backlog claude.Backlog) string {
+func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog) string {
 	title := backlog.DisplayTitle()
 	title = strings.ReplaceAll(title, "\n", " ")
 
@@ -1117,7 +1112,7 @@ func (m ListModel) renderBacklogItem(isSelected bool, backlog claude.Backlog) st
 }
 
 // subtitleMsgWidth returns the available text width for a subtitle line with the given icon.
-func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
+func (m SidebarModel) subtitleMsgWidth(icon string, isSelected bool) int {
 	if isSelected {
 		prefix := "   " + icon + " "
 		w := m.width - 5 - lipgloss.Width(prefix)
@@ -1136,7 +1131,7 @@ func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
 
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
+func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
 
@@ -1182,7 +1177,7 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isAu
 // renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
 // at word boundaries. The first line gets the icon; the second is indented with
 // spaces matching the icon's width.
-func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
+func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	if msgWidth < 1 {
 		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
@@ -1224,6 +1219,9 @@ func renderBadges(s claude.ClaudeSession) string {
 	}
 	if s.ProblemType != "" {
 		badges = append(badges, problemTypeBadge(s.ProblemType))
+	}
+	if s.HasOverlap {
+		badges = append(badges, OverlapStyle.Render(IconOverlap+" overlap"))
 	}
 	if s.CompactCount > 0 {
 		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
@@ -1285,7 +1283,7 @@ func problemTypeBadge(pt string) string {
 		Render(" " + pt + " ")
 }
 
-func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
+func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	bg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, selected, s.AvatarColorIdx) }
 	if s.CommitDonePending {
 		return bg(CommitDoneStyle).Render(commitDoneFrames[m.commitDoneFrame])
@@ -1335,7 +1333,7 @@ func FormatAge(t time.Time) string {
 // PaneIDAtLine maps a terminal line index (relative to list content start) to
 // the PaneID of the session rendered at that line. Returns "" for headers,
 // separators, or out-of-bounds lines. Mirrors View()'s group/filter/item logic.
-func (m ListModel) PaneIDAtLine(line int) string {
+func (m SidebarModel) PaneIDAtLine(line int) string {
 	if line < 0 || len(m.allSorted) == 0 {
 		return ""
 	}
@@ -1404,7 +1402,7 @@ func (m ListModel) PaneIDAtLine(line int) string {
 
 // itemLineCount returns the number of terminal lines a rendered item occupies.
 // Must stay in sync with renderItem's subtitle appendages.
-func (m ListModel) itemLineCount(s claude.ClaudeSession, query string) int {
+func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 	count := 1 // main line
 
 	if m.summaryLoadingPanes[s.PaneID] {

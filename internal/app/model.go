@@ -52,7 +52,7 @@ const (
 	MinimapAuto   = "auto"   // docked in fullscreen, overlay in normal
 	MinimapDocked = "docked" // always docked at bottom
 	MinimapFloat  = "float"  // always overlay
-	MinimapSmart  = "smart"  // docked when minimap wider than list panel
+	MinimapSmart  = "smart"  // docked when minimap wider than sidebar panel
 )
 
 var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart}
@@ -103,8 +103,8 @@ type originalPane struct {
 
 type Model struct {
 	client         *daemon.Client
-	list           ui.ListModel
-	preview        ui.PreviewModel
+	sidebar           ui.SidebarModel
+	detail        ui.DetailModel
 	search         ui.SearchModel
 	relay          ui.RelayModel
 	queueRelay     ui.RelayModel
@@ -127,7 +127,7 @@ type Model struct {
 	spinner        spinner.Model
 	width          int
 	height         int
-	listWidthPct   int // percentage of total width for the session list
+	sidebarWidthPct   int // percentage of total width for the sidebar
 	ready          bool
 	err            error
 	flashMsg       string    // transient message overlay
@@ -148,7 +148,7 @@ type Model struct {
 	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
 	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
-	pendingSelectPaneID  string // pane to auto-select once it appears in the session list
+	pendingSelectPaneID  string // pane to auto-select once it appears in the sidebar
 	promptEditor         ui.PromptEditorModel
 	newSessionProject    string // project name for the new session being created
 	newSessionCWD        string // working directory for the new session
@@ -175,17 +175,17 @@ type Model struct {
 }
 
 func NewModel(client *daemon.Client) Model {
-	list := ui.NewListModel()
-	list.SetGroupByProject(loadPrefBool("groupByProject"))
+	sidebar := ui.NewSidebarModel()
+	sidebar.SetGroupByProject(loadPrefBool("groupByProject"))
 	migratePref("showIdeas", "showBacklog")
-	list.SetShowBacklog(loadPrefBool("showBacklog"))
+	sidebar.SetShowBacklog(loadPrefBool("showBacklog"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
 	return Model{
 		client:            client,
-		list:              list,
-		preview:           ui.NewPreviewModel(),
+		sidebar:           sidebar,
+		detail:            ui.NewDetailModel(),
 		search:            ui.NewSearchModel(),
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
@@ -198,7 +198,7 @@ func NewModel(client *daemon.Client) Model {
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
 		minimapCollapse:   loadPrefBool("minimapCollapse"),
-		listWidthPct:      loadPrefInt("listWidthPct", 30),
+		sidebarWidthPct:      loadPrefInt("sidebarWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
 		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",
@@ -248,9 +248,9 @@ func (m Model) innerWidth() int {
 	return w
 }
 
-// listPanelWidth returns the computed list panel width from the current layout.
-func (m Model) listPanelWidth() int {
-	return max(m.innerWidth()*m.listWidthPct/100, 20)
+// sidebarPanelWidth returns the computed sidebar panel width from the current layout.
+func (m Model) sidebarPanelWidth() int {
+	return max(m.innerWidth()*m.sidebarWidthPct/100, 20)
 }
 
 // shouldDockMinimap returns true when the minimap should be docked at the bottom
@@ -266,13 +266,13 @@ func (m Model) shouldDockMinimap() bool {
 		return false
 	case MinimapSmart:
 		mmW, _ := m.minimap.ViewSize()
-		return mmW > 0 && mmW > m.listPanelWidth()
+		return mmW > 0 && mmW > m.sidebarPanelWidth()
 	default: // MinimapAuto
 		return m.inFullscreenPopup
 	}
 }
 
-// applyLayout recomputes and applies component sizes from m.width, m.height, m.listWidthPct.
+// applyLayout recomputes and applies component sizes from m.width, m.height, m.sidebarWidthPct.
 func (m *Model) applyLayout() {
 	innerW := m.innerWidth()
 	contentHeight := m.height - 3 // top border + label + footer
@@ -292,9 +292,9 @@ func (m *Model) applyLayout() {
 		}
 	}
 
-	listWidth := m.listPanelWidth()
-	m.list.SetSize(listWidth-1, contentHeight)
-	m.preview.SetSize(innerW-listWidth, contentHeight)
+	sidebarWidth := m.sidebarPanelWidth()
+	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
+	m.detail.SetSize(innerW-sidebarWidth, contentHeight)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -546,7 +546,7 @@ const maxJumpTrail = 100
 // recordJump saves the currently selected paneID to the jump trail.
 // Call before any programmatic jump (gg, G, spatial nav, clicks, autoJump, etc.).
 func (m *Model) recordJump() {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return
 	}
@@ -577,7 +577,7 @@ func (m *Model) jumpBack() string {
 	}
 	// First time going back: save current position at the end
 	if m.jumpCursor >= len(m.jumpTrail) {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			current := s.PaneID
 			if len(m.jumpTrail) == 0 || m.jumpTrail[len(m.jumpTrail)-1] != current {
 				m.jumpTrail = append(m.jumpTrail, current)

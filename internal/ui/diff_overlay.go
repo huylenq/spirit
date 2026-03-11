@@ -22,7 +22,7 @@ type diffHunkFile struct {
 }
 
 // SetShowDiffs toggles the diff hunks overlay.
-func (m *PreviewModel) SetShowDiffs(show bool) {
+func (m *DetailModel) SetShowDiffs(show bool) {
 	m.showDiffs = show
 	m.diffScroll = 0
 	if !show {
@@ -33,7 +33,7 @@ func (m *PreviewModel) SetShowDiffs(show bool) {
 
 // SetDiffHunks sets the diff hunks and groups them by file.
 // cwd is the session's working directory, used to compute relative display paths.
-func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk, cwd string) {
+func (m *DetailModel) SetDiffHunks(hunks []claude.FileDiffHunk, cwd string) {
 	m.diffHunks = hunks
 
 	// Group by file path
@@ -81,10 +81,10 @@ func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk, cwd string) {
 }
 
 // ToggleDiffExpand is a no-op — the flat view is always fully expanded.
-func (m *PreviewModel) ToggleDiffExpand() {}
+func (m *DetailModel) ToggleDiffExpand() {}
 
 // diffVisLines returns the number of file rows visible in the diff overlay.
-func (m *PreviewModel) diffVisLines() int {
+func (m *DetailModel) diffVisLines() int {
 	avail := m.viewport.Height - 4 // border(2) + title(1) + blank(1)
 	if avail < 1 {
 		avail = 1
@@ -95,25 +95,24 @@ func (m *PreviewModel) diffVisLines() int {
 // maxHunkDisplayLines caps how many output lines a single hunk can produce.
 const maxHunkDisplayLines = 30
 
-// renderInlineDiff computes a line-level diff first (using DiffLinesToChars to
-// treat lines as atomic units), then for paired modified lines does a char-level
-// pass to highlight word/segment changes on the same output line.
-// maxWidth is the available visual width for truncation.
-func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
+// diffLine is a typed diff output line.
+// kind '+'/'-' get full-width background in the caller; '~' uses char-level highlights only.
+type diffLine struct {
+	text string // pre-rendered content (symbol + body); no full-width bg for +/-
+	kind byte
+}
+
+// renderInlineDiff computes a line-level diff, then for paired modified lines
+// does a char-level pass to produce '~' inline-highlight lines.
+func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
 	differ := dmp.New()
 
-	// Phase 1: line-level diff using DiffLinesToChars (maps each unique line to
-	// a single rune so DiffMain diffs lines, not characters).
 	chars1, chars2, lineArray := differ.DiffLinesToChars(oldStr, newStr)
 	lineDiffs := differ.DiffMain(chars1, chars2, false)
 	lineDiffs = differ.DiffCharsToLines(lineDiffs, lineArray)
 	lineDiffs = differ.DiffCleanupSemantic(lineDiffs)
 
-	// Phase 2: collect delete/insert runs, pair them for inline rendering
-	type linePair struct {
-		old string // empty = pure insert
-		new string // empty = pure delete
-	}
+	type linePair struct{ old, new string }
 	var pairs []linePair
 	var delBuf, insBuf []string
 
@@ -134,7 +133,6 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
 	}
 
 	for _, d := range lineDiffs {
-		// DiffCharsToLines restores full lines including trailing \n
 		text := strings.TrimRight(d.Text, "\n")
 		for _, l := range strings.Split(text, "\n") {
 			switch d.Type {
@@ -150,24 +148,41 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
 	}
 	flushPairs()
 
-	// Phase 3: render changed pairs only (skip equal lines silently)
-	var result []string
+	var result []diffLine
 	for _, p := range pairs {
 		if p.old == p.new {
 			continue
 		}
+		// Both sides non-empty → inline char-level '~' line (no full-width bg)
+		if strings.TrimSpace(p.old) != "" && strings.TrimSpace(p.new) != "" {
+			charDiffs := differ.DiffMain(p.old, p.new, false)
+			charDiffs = differ.DiffCleanupSemantic(charDiffs)
+			var buf strings.Builder
+			buf.WriteString(DiffModSymbol.Render("~") + " ")
+			for _, cd := range charDiffs {
+				switch cd.Type {
+				case dmp.DiffEqual:
+					buf.WriteString(cd.Text)
+				case dmp.DiffDelete:
+					buf.WriteString(DiffInlineDelBg.Render(cd.Text))
+				case dmp.DiffInsert:
+					buf.WriteString(DiffInlineAddBg.Render(cd.Text))
+				}
+			}
+			result = append(result, diffLine{text: ansi.Truncate(buf.String(), maxWidth, "…"), kind: '~'})
+			continue
+		}
 		if strings.TrimSpace(p.old) != "" {
-			result = append(result, ansi.Truncate(DiffDelBg.Render("- "+p.old), maxWidth, "…"))
+			result = append(result, diffLine{text: "- " + p.old, kind: '-'})
 		}
 		if strings.TrimSpace(p.new) != "" {
-			result = append(result, ansi.Truncate(DiffAddBg.Render("+ "+p.new), maxWidth, "…"))
+			result = append(result, diffLine{text: "+ " + p.new, kind: '+'})
 		}
-
 
 		if len(result) >= maxHunkDisplayLines {
 			remaining := len(pairs) - len(result)
 			if remaining > 0 {
-				result = append(result, PreviewMetaStyle.Render(fmt.Sprintf("  … (%d more changes)", remaining)))
+				result = append(result, diffLine{text: fmt.Sprintf("  … (%d more changes)", remaining), kind: '~'})
 			}
 			break
 		}
@@ -175,7 +190,7 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
 	return result
 }
 
-func (m PreviewModel) renderDiffOverlay(width, height int) string {
+func (m DetailModel) renderDiffOverlay(width, height int) string {
 	fileCount := len(m.diffHunkFiles)
 	titleLine := DiffTitleStyle.Render(fmt.Sprintf(" File Changes (%d files)", fileCount))
 
@@ -184,14 +199,14 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 	lines = append(lines, "")
 
 	if fileCount == 0 {
-		lines = append(lines, PreviewMetaStyle.Render("No file changes"))
+		lines = append(lines, DetailMetaStyle.Render("No file changes"))
 	} else {
 		// innerWidth = total visual width of each file box line
 		innerWidth := width - 6 // outer border(2) + outer padding(2) + reserved(2)
 		contentW := innerWidth - 4 // │ _ content _ │
 
 		borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
-		hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
+		hunkSepSt := lipgloss.NewStyle()
 		rowSt := lipgloss.NewStyle().Width(contentW)
 
 		// Dashed separator between hunks within a file
@@ -222,6 +237,16 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 			wrapLine := func(dl string) string {
 				return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
 			}
+			wrapTyped := func(dl diffLine) string {
+				switch dl.kind {
+				case '+':
+					return borderSt.Render("│") + " " + DiffAddBg.Width(contentW).Render(dl.text) + " " + borderSt.Render("│")
+				case '-':
+					return borderSt.Render("│") + " " + DiffDelBg.Width(contentW).Render(dl.text) + " " + borderSt.Render("│")
+				default:
+					return wrapLine(dl.text)
+				}
+			}
 
 			for hi, h := range f.hunks {
 				if hi > 0 {
@@ -232,11 +257,11 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 						if strings.TrimSpace(dl) == "" {
 							continue
 						}
-						allLines = append(allLines, wrapLine(ansi.Truncate(DiffAddBg.Render("+ "+dl), contentW, "…")))
+						allLines = append(allLines, wrapTyped(diffLine{text: "+ " + dl, kind: '+'}))
 					}
 				} else {
 					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW) {
-						allLines = append(allLines, wrapLine(dl))
+						allLines = append(allLines, wrapTyped(dl))
 					}
 				}
 			}

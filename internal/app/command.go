@@ -27,24 +27,24 @@ type Command struct {
 // --- Predicate helpers ---
 
 func hasSelection(m *Model) bool {
-	_, ok := m.list.SelectedItem()
+	_, ok := m.sidebar.SelectedItem()
 	return ok
 }
 
 func hasSessionID(m *Model) bool {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	return ok && s.SessionID != ""
 }
 
 func canCommit(m *Model) bool {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	return ok && s.Status == claude.StatusUserTurn && !s.CommitDonePending
 }
 
 // --- Exec methods (extracted from handleKey case blocks) ---
 
 func (m Model) execSwitchPane() (Model, tea.Cmd) {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return m, nil
 	}
@@ -66,7 +66,7 @@ func (m Model) execSwitchPane() (Model, tea.Cmd) {
 }
 
 func (m Model) execPromptRelay() (Model, tea.Cmd) {
-	if _, ok := m.list.SelectedItem(); ok {
+	if _, ok := m.sidebar.SelectedItem(); ok {
 		m.state = StatePromptRelay
 		m.relay.Activate()
 	}
@@ -74,7 +74,7 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 }
 
 func (m Model) execQueue() (Model, tea.Cmd) {
-	if _, ok := m.list.SelectedItem(); ok {
+	if _, ok := m.sidebar.SelectedItem(); ok {
 		m.state = StateQueueRelay
 		m.queueCursor = -1 // start with text input focused
 		m.queueRelay.Activate()
@@ -89,7 +89,7 @@ func (m Model) execSearch() (Model, tea.Cmd) {
 }
 
 func (m Model) execLater() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		if s.LaterBookmarkID != "" {
 			// Toggle: unlater to restore real status
 			paneID, bookmarkID := s.PaneID, s.LaterBookmarkID
@@ -119,7 +119,7 @@ func (m Model) execLater() (Model, tea.Cmd) {
 }
 
 func (m Model) execLaterKill() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		paneID, pid, sessionID := s.PaneID, s.PID, s.SessionID
 		return m, func() tea.Msg {
 			if err := m.client.LaterKill(paneID, pid, sessionID); err != nil {
@@ -133,13 +133,13 @@ func (m Model) execLaterKill() (Model, tea.Cmd) {
 
 func (m Model) execTranscript() (Model, tea.Cmd) {
 	m.hideTranscript = !m.hideTranscript
-	m.preview.SetHideTranscript(m.hideTranscript)
+	m.detail.SetHideTranscript(m.hideTranscript)
 	return m, nil
 }
 
 func (m Model) execGroupMode() (Model, tea.Cmd) {
-	newMode := !m.list.GroupByProject()
-	m.list.SetGroupByProject(newMode)
+	newMode := !m.sidebar.GroupByProject()
+	m.sidebar.SetGroupByProject(newMode)
 	savePrefBool("groupByProject", newMode)
 	return m, nil
 }
@@ -148,7 +148,7 @@ func (m Model) execMinimap() (Model, tea.Cmd) {
 	m.showMinimap = !m.showMinimap
 	savePrefBool("minimap", m.showMinimap)
 	if m.showMinimap {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, m.fetchMinimapData(s.TmuxSession)
 		}
 	}
@@ -156,8 +156,8 @@ func (m Model) execMinimap() (Model, tea.Cmd) {
 }
 
 func (m Model) execSynthesize() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
-		m.list.SetSummaryLoading(s.PaneID, true)
+	if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
+		m.sidebar.SetSummaryLoading(s.PaneID, true)
 		return m, m.fetchSynthesize(s.PaneID, s.SessionID)
 	}
 	return m, nil
@@ -174,14 +174,14 @@ func (m Model) execSynthesizeAll() (Model, tea.Cmd) {
 	}
 	for _, sess := range m.sessions {
 		if sess.PaneID != latestPaneID && sess.SessionID != "" {
-			m.list.SetSummaryLoading(sess.PaneID, true)
+			m.sidebar.SetSummaryLoading(sess.PaneID, true)
 		}
 	}
 	return m, m.fetchSynthesizeAll(latestPaneID)
 }
 
 func (m Model) execRename() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok && !m.renaming {
+	if s, ok := m.sidebar.SelectedItem(); ok && !m.renaming {
 		m.renaming = true
 		return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
 	}
@@ -189,7 +189,7 @@ func (m Model) execRename() (Model, tea.Cmd) {
 }
 
 func (m Model) execKill() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		if s.IsPhantom && s.LaterBookmarkID != "" {
 			bookmarkID := s.LaterBookmarkID
 			return m, func() tea.Msg {
@@ -210,7 +210,7 @@ func (m Model) execKill() (Model, tea.Cmd) {
 }
 
 func (m Model) execCommit() (Model, tea.Cmd) {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return m, nil
 	}
@@ -230,7 +230,7 @@ func (m Model) execCommit() (Model, tea.Cmd) {
 }
 
 func (m Model) execCommitAndDone() (Model, tea.Cmd) {
-	s, ok := m.list.SelectedItem()
+	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return m, nil
 	}
@@ -267,14 +267,14 @@ func (m Model) execFullscreen() (Model, tea.Cmd) {
 }
 
 func (m Model) execRefresh() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		return m, capturePreview(s.PaneID)
 	}
 	return m, nil
 }
 
 func (m Model) execCopySessionID() (Model, tea.Cmd) {
-	if s, ok := m.list.SelectedItem(); ok && s.SessionID != "" {
+	if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
 		return m, copyToClipboard(s.SessionID)
 	}
 	return m, nil
@@ -282,8 +282,8 @@ func (m Model) execCopySessionID() (Model, tea.Cmd) {
 
 func (m Model) execGoTop() (Model, tea.Cmd) {
 	m.recordJump()
-	m.list.MoveToTop()
-	if s, ok := m.list.SelectedItem(); ok {
+	m.sidebar.MoveToTop()
+	if s, ok := m.sidebar.SelectedItem(); ok {
 		return m, tea.Batch(m.fetchForSelection(s, true)...)
 	}
 	return m, nil
@@ -296,20 +296,20 @@ func (m Model) execCaptureView() (Model, tea.Cmd) {
 
 func (m Model) execNewSession() (Model, tea.Cmd) {
 	// Save session-level state for restore on cancel, then switch to project level
-	m.newSessionWasSession = m.list.SelectionLevel() == ui.LevelSession
+	m.newSessionWasSession = m.sidebar.SelectionLevel() == ui.LevelSession
 	if m.newSessionWasSession {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			m.newSessionPrevPaneID = s.PaneID
 		}
-		m.list.EnterProjectLevel()
+		m.sidebar.EnterProjectLevel()
 	}
 
-	pe, ok := m.list.SelectedProject()
+	pe, ok := m.sidebar.SelectedProject()
 	if !ok {
 		return m, nil
 	}
 
-	sessions := m.list.SessionsInProject(pe)
+	sessions := m.sidebar.SessionsInProject(pe)
 
 	var cwd, tmuxSession string
 	for _, s := range sessions {
@@ -356,13 +356,11 @@ func (m Model) spawnNewSession(prompt, model string, planning bool) tea.Cmd {
 		if model != "" {
 			cmd += " --model " + model
 		}
-		if planning {
-			cmd += " --plan"
-		}
 		tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
-		if prompt != "" {
-			// Register pending prompt with daemon for delivery when session is ready
-			if err := m.client.PendingPrompt(paneID, prompt); err != nil {
+		if prompt != "" || planning {
+			// Register pending prompt with daemon for delivery when session is ready.
+			// If planning, daemon will prepend "/plan " to the prompt text.
+			if err := m.client.PendingPrompt(paneID, prompt, planning); err != nil {
 				return flashErrorMsg("register prompt: " + err.Error())
 			}
 		}
@@ -391,8 +389,8 @@ func (m *Model) applyPrefsFromText(text string) int {
 	}
 
 	// Apply each known key to live model state
-	m.list.SetGroupByProject(prefs["groupByProject"] == "true")
-	m.list.SetShowBacklog(prefs["showBacklog"] == "true")
+	m.sidebar.SetGroupByProject(prefs["groupByProject"] == "true")
+	m.sidebar.SetShowBacklog(prefs["showBacklog"] == "true")
 	m.showMinimap = prefs["minimap"] == "true"
 	if v := prefs["minimapMode"]; v != "" {
 		m.minimapMode = v
@@ -401,8 +399,8 @@ func (m *Model) applyPrefsFromText(text string) int {
 		m.minimapMaxH = n
 	}
 	m.minimapCollapse = prefs["minimapCollapse"] == "true"
-	if n, err := strconv.Atoi(prefs["listWidthPct"]); err == nil {
-		m.listWidthPct = n
+	if n, err := strconv.Atoi(prefs["sidebarWidthPct"]); err == nil {
+		m.sidebarWidthPct = n
 	}
 	m.applyLayout()
 	return unknowns
@@ -418,12 +416,12 @@ func (m Model) execNewBacklogForCWD(cwd string) (Model, tea.Cmd) {
 }
 
 func (m Model) execNewBacklog() (Model, tea.Cmd) {
-	pe, ok := m.list.SelectedProject()
+	pe, ok := m.sidebar.SelectedProject()
 	if !ok {
 		return m, nil
 	}
 	// Backlog project/section: use full right-pane editor
-	cwd := m.list.FirstBacklogCWDInProject(pe.Name)
+	cwd := m.sidebar.FirstBacklogCWDInProject(pe.Name)
 	if cwd == "" {
 		return m, func() tea.Msg { return flashErrorMsg("no working directory for project") }
 	}
@@ -436,7 +434,7 @@ func (m Model) execNewBacklog() (Model, tea.Cmd) {
 }
 
 func (m Model) execEditBacklog() (Model, tea.Cmd) {
-	backlog, ok := m.list.SelectedBacklog()
+	backlog, ok := m.sidebar.SelectedBacklog()
 	if !ok {
 		return m, nil
 	}
@@ -449,7 +447,7 @@ func (m Model) execEditBacklog() (Model, tea.Cmd) {
 }
 
 func (m Model) execDeleteBacklog() (Model, tea.Cmd) {
-	backlog, ok := m.list.SelectedBacklog()
+	backlog, ok := m.sidebar.SelectedBacklog()
 	if !ok {
 		return m, nil
 	}
@@ -475,7 +473,7 @@ func (m Model) confirmDeleteBacklog() (Model, tea.Cmd) {
 }
 
 func (m Model) execSubmitBacklog() (Model, tea.Cmd) {
-	backlog, ok := m.list.SelectedBacklog()
+	backlog, ok := m.sidebar.SelectedBacklog()
 	if !ok {
 		return m, nil
 	}
@@ -506,7 +504,7 @@ func (m Model) execSubmitBacklog() (Model, tea.Cmd) {
 }
 
 func (m Model) execOpenBacklogInEditor() (Model, tea.Cmd) {
-	backlog, ok := m.list.SelectedBacklog()
+	backlog, ok := m.sidebar.SelectedBacklog()
 	if !ok {
 		return m, nil
 	}
@@ -529,11 +527,11 @@ func (m Model) execToggleDiffs() (Model, tea.Cmd) {
 	m.showDiffs = !m.showDiffs
 	m.showHooks = false
 	m.showRawTranscript = false
-	m.preview.SetShowDiffs(m.showDiffs)
-	m.preview.SetShowHooks(false)
-	m.preview.SetShowRawTranscript(false)
+	m.detail.SetShowDiffs(m.showDiffs)
+	m.detail.SetShowHooks(false)
+	m.detail.SetShowRawTranscript(false)
 	if m.showDiffs {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, m.fetchDiffHunks(s.PaneID, s.SessionID, s.CWD)
 		}
 	}
@@ -544,11 +542,11 @@ func (m Model) execToggleHooks() (Model, tea.Cmd) {
 	m.showHooks = !m.showHooks
 	m.showRawTranscript = false
 	m.showDiffs = false
-	m.preview.SetShowHooks(m.showHooks)
-	m.preview.SetShowRawTranscript(false)
-	m.preview.SetShowDiffs(false)
+	m.detail.SetShowHooks(m.showHooks)
+	m.detail.SetShowRawTranscript(false)
+	m.detail.SetShowDiffs(false)
 	if m.showHooks {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, m.fetchHooks(s.PaneID, s.SessionID)
 		}
 	}
@@ -559,11 +557,11 @@ func (m Model) execToggleRawTranscript() (Model, tea.Cmd) {
 	m.showRawTranscript = !m.showRawTranscript
 	m.showHooks = false
 	m.showDiffs = false
-	m.preview.SetShowRawTranscript(m.showRawTranscript)
-	m.preview.SetShowHooks(false)
-	m.preview.SetShowDiffs(false)
+	m.detail.SetShowRawTranscript(m.showRawTranscript)
+	m.detail.SetShowHooks(false)
+	m.detail.SetShowDiffs(false)
 	if m.showRawTranscript {
-		if s, ok := m.list.SelectedItem(); ok {
+		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, m.fetchRawTranscript(s.PaneID, s.SessionID)
 		}
 	}
@@ -571,7 +569,7 @@ func (m Model) execToggleRawTranscript() (Model, tea.Cmd) {
 }
 
 func (m Model) execShowSpiritAnimal() (Model, tea.Cmd) {
-	if _, ok := m.list.SelectedItem(); !ok {
+	if _, ok := m.sidebar.SelectedItem(); !ok {
 		return m, nil
 	}
 	m.showSpiritAnimal = true
