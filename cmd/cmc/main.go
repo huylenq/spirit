@@ -48,12 +48,34 @@ func main() {
 			runPopup()
 			return
 		case "usage-dump":
-			raw, err := claude.FetchUsageRaw()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
+			if refresh {
+				raw, err := claude.FetchUsageRaw()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				fmt.Print(raw)
+			} else {
+				client, err := daemon.Connect()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "daemon not running:", err)
+					os.Exit(1)
+				}
+				_, usage, err := client.Subscribe()
+				client.Close()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				if usage == nil {
+					fmt.Fprintln(os.Stderr, "no cached usage data (daemon may still be fetching)")
+					os.Exit(1)
+				}
+				fmt.Printf("session=%d%% resets=%q\n", usage.SessionPct, usage.SessionResets)
+				fmt.Printf("week_all=%d%% resets=%q\n", usage.WeekAllPct, usage.WeekAllResets)
+				fmt.Printf("week_sonnet=%d%% resets=%q\n", usage.WeekSonnetPct, usage.WeekSonnetResets)
 			}
-			fmt.Print(raw)
 			return
 		case "--agent-help":
 			printAgentHelp()

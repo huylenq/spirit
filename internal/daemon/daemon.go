@@ -68,8 +68,8 @@ type Daemon struct {
 	overlaps     []claude.FileOverlap
 	overlapPanes map[string]bool // paneIDs involved in any file overlap
 
-	digestMu      sync.Mutex
-	digestPending bool
+	digestMu       sync.Mutex
+	lastDigestTime time.Time
 
 	orchestratorMu  sync.RWMutex
 	orchestratorIDs map[string]bool // session IDs to exclude from eval sessions()
@@ -326,6 +326,13 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 		d.notifySubscribers(sessions)
 		if endSessionID != "" {
 			go d.autoSynthesize(endPaneID, endSessionID)
+			// Defer cleanup of debounce entry (after auto-synth has a chance to check it)
+			go func() {
+				time.Sleep(35 * time.Second)
+				d.autoSynthMu.Lock()
+				delete(d.lastAutoSynthTime, endSessionID)
+				d.autoSynthMu.Unlock()
+			}()
 		}
 		return patchApplied
 	}
@@ -797,24 +804,21 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 		return
 	}
 
-	// Debounce: skip if last auto-synth for this session was < 30s ago
+	// Atomically check debounce + claim synthesizing slot.
+	// Single lock acquisition prevents TOCTOU between debounce check and slot claim.
 	d.autoSynthMu.Lock()
 	if last, ok := d.lastAutoSynthTime[sessionID]; ok && time.Since(last) < 30*time.Second {
 		d.autoSynthMu.Unlock()
 		return
 	}
-	d.autoSynthMu.Unlock()
-
-	// Skip if already synthesizing this pane
 	d.synthesizingMu.Lock()
 	if d.synthesizingPanes[paneID] {
 		d.synthesizingMu.Unlock()
+		d.autoSynthMu.Unlock()
 		return
 	}
 	d.synthesizingPanes[paneID] = true
 	d.synthesizingMu.Unlock()
-
-	d.autoSynthMu.Lock()
 	d.lastAutoSynthTime[sessionID] = time.Now()
 	d.autoSynthMu.Unlock()
 
@@ -882,12 +886,18 @@ func (d *Daemon) triggerDigest() {
 	}
 	defer d.digestMu.Unlock()
 
+	// Debounce: skip if last digest was < 60s ago
+	if time.Since(d.lastDigestTime) < 60*time.Second {
+		return
+	}
+
 	sessions := d.currentSessions()
 	_, err := claude.GenerateDigest(sessions)
 	if err != nil {
 		log.Printf("digest: %v", err)
 		return
 	}
+	d.lastDigestTime = time.Now()
 
 	// Bump version so subscribers receive digest update
 	d.mu.Lock()

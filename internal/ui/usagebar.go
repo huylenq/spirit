@@ -162,6 +162,7 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 		inSession := isThick && m.hasData && i < filledChars
 
 		if inSession {
+			// Session fill: amber gradient — no background overlay so amber stays visible
 			t := float64(i-thickStart) / float64(max(filledChars-thickStart, 1))
 			c := blendHex("#3d2b00", "#8a5a00", t)
 			if m.rippleActive {
@@ -172,15 +173,15 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 					c = blendHex(c, "#93c5fd", intensity*0.8)
 				}
 			}
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color(c))
-			if inWeekly {
-				style = style.Background(lipgloss.Color("#0d2030"))
-			}
-			sb.WriteString(style.Render(glyph))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render(glyph))
 		} else if inWeekly {
-			sb.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#0d2030")).Render(glyph))
+			// Weekly fill (beyond session): background tint + muted fg so ━ glyphs are visible
+			sb.WriteString(lipgloss.NewStyle().
+				Background(lipgloss.Color("#1a3a52")).
+				Foreground(lipgloss.Color("#2e5a78")).
+				Render(glyph))
 		} else if isPillLeft || isPillRight {
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#2a4a5a")).Render(glyph))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#2e5a78")).Render(glyph))
 		} else {
 			sb.WriteString(BorderCharStyle.Render(glyph))
 		}

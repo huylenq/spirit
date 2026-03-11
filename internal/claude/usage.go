@@ -27,6 +27,7 @@ var (
 	rePct = regexp.MustCompile(`(\d+)%(?:\s+used)?`)
 	// Tolerates cursor-right ANSI mangling "Resets" → "Rese s" or "Rese ts"
 	reResets = regexp.MustCompile(`Rese\s*t?s\s+(.+)`)
+
 )
 
 // FetchUsageRaw returns the raw ANSI-stripped dialog text for debugging.
@@ -39,87 +40,24 @@ func FetchUsageRaw() (string, error) {
 	return stripANSI(raw), nil
 }
 
-// fetchUsagePTYRaw runs /usage and returns the raw output without waiting for "% used".
-func fetchUsagePTYRaw() (string, error) {
-	cmd := exec.Command("claude")
-	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
-
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 50, Cols: 220})
-	if err != nil {
-		return "", fmt.Errorf("start pty: %w", err)
-	}
-	defer func() {
-		ptmx.Close()
-		cmd.Process.Kill()
-		cmd.Wait()
-	}()
-
-	var buf bytes.Buffer
-	var mu sync.Mutex
-	go func() {
-		tmp := make([]byte, 4096)
-		for {
-			n, err := ptmx.Read(tmp)
-			if n > 0 {
-				mu.Lock()
-				buf.Write(tmp[:n])
-				mu.Unlock()
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	snapshot := func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		return buf.String()
-	}
-
-	if err := pollFor(snapshot, "Claude Code v", 30*time.Second); err != nil {
-		return "", fmt.Errorf("waiting for claude ready: %w", err)
-	}
-	for _, ch := range "/usage" {
-		ptmx.Write([]byte(string(ch)))
-		time.Sleep(50 * time.Millisecond)
-	}
-	time.Sleep(300 * time.Millisecond)
-	ptmx.Write([]byte("\r"))
-
-	// Wait up to 10s for the dialog then dump whatever we have
-	pollFor(snapshot, "Current session", 10*time.Second)
-	time.Sleep(1 * time.Second)
-
-	return snapshot(), nil
-}
-
-// FetchUsage spawns claude in an internal pty, sends /usage, parses the output.
-// No tmux session is created — completely invisible to the user.
-func FetchUsage() (*UsageStats, error) {
-	raw, err := fetchUsagePTY()
-	if err != nil {
-		return nil, err
-	}
-	return parseUsageDialog(stripANSI(raw))
-}
-
-func fetchUsagePTY() (string, error) {
+// launchUsagePTY starts a hidden claude process, sends /usage, and returns a snapshot
+// function for reading accumulated output plus a cleanup func. The caller is responsible
+// for calling cleanup (via defer) and for any further polling/parsing.
+func launchUsagePTY() (snapshot func() string, cleanup func(), err error) {
 	cmd := exec.Command("claude")
 	// Unset env vars that trigger nested-session detection
 	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 50, Cols: 220})
 	if err != nil {
-		return "", fmt.Errorf("start pty: %w", err)
+		return nil, nil, fmt.Errorf("start pty: %w", err)
 	}
-	defer func() {
-		ptmx.Close()          // unblocks reader goroutine first
-		cmd.Process.Kill()    // ensure dead
-		cmd.Wait()            // reap zombie
-	}()
+	cleanup = func() {
+		ptmx.Close()       // unblocks reader goroutine first
+		cmd.Process.Kill() // ensure dead
+		cmd.Wait()         // reap zombie
+	}
 
-	// Accumulate pty output in background
 	var buf bytes.Buffer
 	var mu sync.Mutex
 	go func() {
@@ -136,35 +74,70 @@ func fetchUsagePTY() (string, error) {
 			}
 		}
 	}()
-
-	snapshot := func() string {
+	snapshot = func() string {
 		mu.Lock()
 		defer mu.Unlock()
 		return buf.String()
 	}
 
-	// Wait for Claude Code to be ready
 	if err := pollFor(snapshot, "Claude Code v", 30*time.Second); err != nil {
-		return "", fmt.Errorf("waiting for claude ready: %w", err)
+		cleanup()
+		return nil, nil, fmt.Errorf("waiting for claude ready: %w", err)
 	}
-
 	// Type /usage char-by-char (autocomplete intercepts bulk writes) then Enter
 	for _, ch := range "/usage" {
 		if _, err := ptmx.Write([]byte(string(ch))); err != nil {
-			return "", fmt.Errorf("send /usage: %w", err)
+			cleanup()
+			return nil, nil, fmt.Errorf("send /usage: %w", err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	time.Sleep(300 * time.Millisecond)
 	if _, err := ptmx.Write([]byte("\r")); err != nil {
-		return "", fmt.Errorf("send enter: %w", err)
+		cleanup()
+		return nil, nil, fmt.Errorf("send enter: %w", err)
 	}
+	return snapshot, cleanup, nil
+}
+
+// fetchUsagePTYRaw runs /usage and returns the raw PTY output for debugging.
+func fetchUsagePTYRaw() (string, error) {
+	snapshot, cleanup, err := launchUsagePTY()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	// Wait up to 10s for any usage data (%) to appear, then give the render a moment to finish
+	pollFor(snapshot, "%", 10*time.Second)
+	time.Sleep(500 * time.Millisecond)
+
+	text := stripANSI(snapshot())
+	if strings.Contains(text, "Failed to load usage data") {
+		if i := strings.Index(text, "Failed to load usage data"); i >= 0 {
+			msg := text[i:]
+			if end := strings.IndexAny(msg, "\n\r"); end > 0 {
+				msg = msg[:end]
+			}
+			return "", fmt.Errorf("%s", strings.TrimSpace(msg))
+		}
+	}
+	return text, nil
+}
+
+// FetchUsage spawns claude in an internal pty, sends /usage, parses the output.
+// No tmux session is created — completely invisible to the user.
+func FetchUsage() (*UsageStats, error) {
+	snapshot, cleanup, err := launchUsagePTY()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	// Wait for usage dialog to open ("Esc to cancel" is always present once the dialog is visible)
 	if err := pollFor(snapshot, "Esc to cancel", 15*time.Second); err != nil {
-		return "", fmt.Errorf("waiting for usage dialog: %w", err)
+		return nil, fmt.Errorf("waiting for usage dialog: %w", err)
 	}
-
 	// Wait for data to load (poll until we see a % or an error)
 	pollFor(snapshot, "%", 10*time.Second)
 	time.Sleep(500 * time.Millisecond)
@@ -178,11 +151,11 @@ func fetchUsagePTY() (string, error) {
 			if end := strings.IndexAny(msg, "\n\r"); end > 0 {
 				msg = msg[:end]
 			}
-			return "", fmt.Errorf("%s", strings.TrimSpace(msg))
+			return nil, fmt.Errorf("%s", strings.TrimSpace(msg))
 		}
 	}
 
-	return text, nil
+	return parseUsageDialog(text)
 }
 
 // pollFor polls snapshotFn until the ANSI-stripped output contains needle or timeout expires.
