@@ -184,6 +184,29 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	return sessions, nil
 }
 
+// parseWorktreeCWD detects if cwd is inside a Claude Code worktree
+// (i.e. contains /.claude/worktrees/<name>). Returns the root repo path,
+// worktree name, and whether it matched.
+func parseWorktreeCWD(cwd string) (rootPath, name string, ok bool) {
+	const marker = "/.claude/worktrees/"
+	idx := strings.Index(cwd, marker)
+	if idx < 0 {
+		return "", "", false
+	}
+	rootPath = cwd[:idx]
+	rest := cwd[idx+len(marker):]
+	// name is the first path segment after the marker
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		name = rest[:slash]
+	} else {
+		name = rest
+	}
+	if name == "" {
+		return "", "", false
+	}
+	return rootPath, name, true
+}
+
 func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[string]string) ClaudeSession {
 	sessionID := ReadSessionID(p.PaneID)
 	s := ClaudeSession{
@@ -198,6 +221,14 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		PID:         pid,
 		CreatedAt:   p.PaneCreated,
 		SessionID:   sessionID,
+	}
+
+	// Detect worktree sessions and fix project grouping
+	if rootPath, wtName, ok := parseWorktreeCWD(p.CurrentPath); ok {
+		s.IsWorktree = true
+		s.WorktreeName = wtName
+		s.WorktreeRootProjectPath = rootPath
+		s.Project = filepath.Base(rootPath)
 	}
 
 	if sessionID != "" {

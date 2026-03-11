@@ -32,6 +32,8 @@ const (
 	IconBacklog = "\uf0eb" // nf-fa-lightbulb_o — backlog item
 	// Overlap detection
 	IconOverlap = "\uf071" // nf-fa-warning — file overlap between sessions
+	// Worktree
+	IconWorktree = "\uf126" // nf-fa-code_fork — worktree session
 	// Usage bar pill caps (powerline round dividers)
 	IconPillLeft  = "\uE0B6" // nf-pl-left_hard_divider_inverse
 	IconPillRight = "\uE0B4" // nf-pl-right_hard_divider

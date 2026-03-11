@@ -314,7 +314,13 @@ func (m Model) execNewSession() (Model, tea.Cmd) {
 	var cwd, tmuxSession string
 	for _, s := range sessions {
 		if cwd == "" && s.CWD != "" {
-			cwd = s.CWD
+			// For worktree sessions, use the parent repo path so new sessions
+			// start in the real project root, not the worktree subdir.
+			if s.IsWorktree && s.WorktreeRootProjectPath != "" {
+				cwd = s.WorktreeRootProjectPath
+			} else {
+				cwd = s.CWD
+			}
 		}
 		if s.TmuxSession != "" && tmuxSession == "" {
 			tmuxSession = s.TmuxSession
@@ -345,7 +351,7 @@ func (m Model) execNewSession() (Model, tea.Cmd) {
 
 // spawnNewSession creates the tmux window, launches claude, and optionally
 // registers a pending prompt with the daemon for delivery once the session is ready.
-func (m Model) spawnNewSession(prompt, model string, planning bool) tea.Cmd {
+func (m Model) spawnNewSession(prompt, model string, planning bool, worktree string) tea.Cmd {
 	cwd, tmuxSession := m.newSessionCWD, m.newSessionTmuxSess
 	return func() tea.Msg {
 		paneID, err := tmux.NewWindow(tmuxSession, cwd)
@@ -355,6 +361,9 @@ func (m Model) spawnNewSession(prompt, model string, planning bool) tea.Cmd {
 		cmd := "claude --dangerously-skip-permissions"
 		if model != "" {
 			cmd += " --model " + model
+		}
+		if worktree != "" {
+			cmd += " --worktree " + worktree
 		}
 		tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 		if prompt != "" || planning {
@@ -578,8 +587,13 @@ func (m Model) execShowSpiritAnimal() (Model, tea.Cmd) {
 
 // evalLua runs a Lua script async against the daemon and returns a LuaEvalDoneMsg.
 func evalLua(client *daemon.Client, script string) tea.Cmd {
+	return evalLuaWithContext(client, script, scripting.EvalContext{})
+}
+
+// evalLuaWithContext runs a Lua script with TUI context (e.g. selected session).
+func evalLuaWithContext(client *daemon.Client, script string, ctx scripting.EvalContext) tea.Cmd {
 	return func() tea.Msg {
-		result, msgs, err := scripting.RunEval(script, client, os.Stderr)
+		result, msgs, err := scripting.RunEvalWithContext(script, client, os.Stderr, ctx)
 		return LuaEvalDoneMsg{Result: result, Msgs: msgs, Err: err}
 	}
 }

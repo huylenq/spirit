@@ -137,7 +137,7 @@ func (m *Model) selectDefaultPane() bool {
 func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	targetID := m.sidebar.AutoJumpTarget(skipPaneID)
 	if targetID == "" {
-		return nil
+		return []tea.Cmd{func() tea.Msg { return flashInfoMsg("autoJump: no target (skip=" + skipPaneID + ")") }}
 	}
 	m.recordJump()
 	if !m.sidebar.SelectByPaneID(targetID) {
@@ -244,6 +244,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.client = msg.Client
 		flashCmd := m.setFlash("reconnected", false, 2*time.Second)
 		return m, tea.Batch(m.subscribeToDaemon(), flashCmd)
+
+	case MacroEditorExitedMsg:
+		m.macros = claude.LoadMacros(nil)
+		return m, nil
 
 	case LuaEvalDoneMsg:
 		var cmds []tea.Cmd
@@ -604,6 +608,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyBacklogDeleteConfirm(msg)
 	case StatePalette:
 		return m.handleKeyPalette(msg)
+	case StateMacro:
+		return m.handleKeyMacro(msg)
+	case StateMacroEdit:
+		return m.handleKeyMacroEdit(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}
@@ -905,13 +913,24 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "alt+p":
 		m.promptEditor.TogglePlan()
 		return m, nil
+	case msg.String() == "alt+w":
+		if m.promptEditor.WorktreeMode() {
+			m.promptEditor.ClearWorktree()
+		} else {
+			m.promptEditor.SetWorktree(claude.GenerateWorktreeName(m.newSessionCWD))
+		}
+		return m, nil
 	case msg.Type == tea.KeyEnter:
 		model := m.promptEditor.SelectedModel()
 		planning := m.promptEditor.PlanMode()
+		worktree := ""
+		if m.promptEditor.WorktreeMode() {
+			worktree = m.promptEditor.WorktreeName()
+		}
 		prompt := m.promptEditor.Confirm()
 		m.state = StateNormal
 		// If submitting a backlog item, delete the file after spawning
-		spawnCmd := m.spawnNewSession(prompt, model, planning)
+		spawnCmd := m.spawnNewSession(prompt, model, planning, worktree)
 		if m.activeBacklogID != "" {
 			backlogCWD, backlogID := m.activeBacklogCWD, m.activeBacklogID
 			m.activeBacklogID = ""
@@ -1129,6 +1148,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case key.Matches(msg, Keys.Macro):
+		m.macros = claude.LoadMacros(nil) // refresh from disk
+		m.state = StateMacro
+		return m, nil
+
 	case key.Matches(msg, Keys.Palette):
 		items := make([]ui.PaletteItem, len(m.commands))
 		for i, cmd := range m.commands {

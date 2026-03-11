@@ -91,6 +91,9 @@ type ClaudeSession struct {
 	QueuePending       []string // daemon-annotated: messages queued for delivery when Done (FIFO)
 	AvatarAnimalIdx    int    // index into avatarAnimals slice
 	AvatarColorIdx     int    // index into avatarColors slice
+	IsWorktree             bool   // session runs in a Claude Code worktree
+	WorktreeName           string // e.g. "ember-cat"
+	WorktreeRootProjectPath string // parent repo path (the real project root)
 }
 
 // DisplayName returns the session's display name using the standard priority:

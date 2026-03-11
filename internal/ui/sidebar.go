@@ -11,6 +11,12 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
+// Cached worktree icon styles (avoids per-frame style allocation in renderItem).
+var (
+	worktreeIconStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+	worktreeIconRendered = worktreeIconStyle.Render(IconWorktree) + " "
+)
+
 // SelectionLevel tracks whether the cursor is on a session or a project group.
 type SelectionLevel int
 
@@ -956,7 +962,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// prefix is always 4 cells: "  ▌ " (selected) or "    " (unselected)
 	const prefixWidth = 4
-	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph + "  ")
+	var worktreeIcon string
+	if s.IsWorktree {
+		worktreeIcon = worktreeIconRendered
+	}
+	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph+"  ") + worktreeIcon
 	iconWidth := lipgloss.Width(iconStr)
 
 	// 2 for outer padding, 2 for minimum gap
@@ -984,10 +994,15 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		} else {
 			styledName = bg.Render(displayName)
 		}
+		var selWorktreeIcon string
+		if s.IsWorktree {
+			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
+		}
 		namePart = bg.Render("  ") +
 			barSt.Render("▌") +
 			bg.Render(" ") +
-			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph + "  ") +
+			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
+			selWorktreeIcon +
 			styledName
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {

@@ -36,6 +36,8 @@ type PromptEditorModel struct {
 	active        bool
 	selectedModel string // "" = default (no --model flag)
 	planMode      bool   // true = pass --plan flag to claude
+	worktreeMode  bool   // true = pass --worktree flag to claude
+	worktreeName  string // generated worktree name (e.g. "ember-cat")
 	mode          PromptEditorMode
 }
 
@@ -57,6 +59,8 @@ func (m *PromptEditorModel) Activate() {
 	m.input.Focus()
 	m.selectedModel = ""
 	m.planMode = false
+	m.worktreeMode = false
+	m.worktreeName = ""
 }
 
 // ActivateForBacklog opens the editor in new-backlog mode.
@@ -96,6 +100,8 @@ func (m *PromptEditorModel) Deactivate() {
 	m.input.Placeholder = "Initial prompt (optional)…"
 	m.selectedModel = ""
 	m.planMode = false
+	m.worktreeMode = false
+	m.worktreeName = ""
 	m.mode = ModeNewSession
 }
 
@@ -150,6 +156,21 @@ func (m *PromptEditorModel) TogglePlan() { m.planMode = !m.planMode }
 
 func (m PromptEditorModel) PlanMode() bool { return m.planMode }
 
+// SetWorktree enables worktree mode with the given name.
+func (m *PromptEditorModel) SetWorktree(name string) {
+	m.worktreeMode = true
+	m.worktreeName = name
+}
+
+// ClearWorktree disables worktree mode.
+func (m *PromptEditorModel) ClearWorktree() {
+	m.worktreeMode = false
+	m.worktreeName = ""
+}
+
+func (m PromptEditorModel) WorktreeMode() bool   { return m.worktreeMode }
+func (m PromptEditorModel) WorktreeName() string  { return m.worktreeName }
+
 // ViewTextarea returns just the raw textarea view without any overlay chrome.
 func (m *PromptEditorModel) ViewTextarea() string {
 	return m.input.View()
@@ -195,6 +216,9 @@ func (m *PromptEditorModel) View(title string, width int) string {
 	if m.planMode {
 		header += "  " + peBadgeStyle.Render("[plan]")
 	}
+	if m.worktreeMode {
+		header += "  " + peBadgeStyle.Render("[worktree: "+m.worktreeName+"]")
+	}
 
 	body := m.input.View()
 
@@ -205,16 +229,21 @@ func (m *PromptEditorModel) View(title string, width int) string {
 		hint = keyStyle.Render("enter") + FooterDimStyle.Render(" save  ") +
 			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel")
 	} else {
-		var planToggle string
+		var planToggle, worktreeToggle string
 		if showModelHint {
 			if m.planMode {
 				planToggle = "  " + peActiveStyle.Render("alt+p") + " " + peActiveStyle.Render(IconCheckOn+" plan")
 			} else {
 				planToggle = "  " + keyStyle.Render("alt+p") + FooterDimStyle.Render(" "+IconCheckOff+" plan")
 			}
+			if m.worktreeMode {
+				worktreeToggle = "  " + peActiveStyle.Render("alt+w") + " " + peActiveStyle.Render(IconCheckOn+" worktree "+m.worktreeName)
+			} else {
+				worktreeToggle = "  " + keyStyle.Render("alt+w") + FooterDimStyle.Render(" "+IconCheckOff+" worktree")
+			}
 		}
 		hint = keyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
-			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + planToggle
+			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + planToggle + worktreeToggle
 	}
 
 	if showModelHint {
