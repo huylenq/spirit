@@ -204,6 +204,7 @@ func NewModel(client *daemon.Client) Model {
 		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",
 		rotateNext:        os.Getenv("CMC_ROTATE_NEXT") == "1",
 		binaryPath:        bin,
+		messageLog:        loadMessageLog(),
 	}
 }
 
@@ -217,10 +218,8 @@ func (m *Model) toast(text string, isError bool) tea.Cmd {
 	return tea.Tick(messageToastTTL, func(time.Time) tea.Msg { return ClearToastMsg{} })
 }
 
-// setFlash records a flash message and writes it to the footer flash bar.
-// When the flash bar is occupied by a transient state (StateMinimapSettings),
-// it routes to the toast overlay instead.
-func (m *Model) setFlash(text string, isError bool, ttl time.Duration) tea.Cmd {
+// appendMessageLog appends an entry to the message log, trims to maxMessageLog, and persists.
+func (m *Model) appendMessageLog(text string, isError bool) {
 	m.messageLog = append(m.messageLog, MessageLogEntry{
 		Text:    text,
 		IsError: isError,
@@ -229,6 +228,14 @@ func (m *Model) setFlash(text string, isError bool, ttl time.Duration) tea.Cmd {
 	if len(m.messageLog) > maxMessageLog {
 		m.messageLog = m.messageLog[len(m.messageLog)-maxMessageLog:]
 	}
+	saveMessageLog(m.messageLog)
+}
+
+// setFlash records a flash message and writes it to the footer flash bar.
+// When the flash bar is occupied by a transient state (StateMinimapSettings),
+// it routes to the toast overlay instead.
+func (m *Model) setFlash(text string, isError bool, ttl time.Duration) tea.Cmd {
+	m.appendMessageLog(text, isError)
 
 	if m.state == StateMinimapSettings {
 		return m.toast(text, isError)

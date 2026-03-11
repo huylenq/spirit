@@ -288,13 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					title = string(runes[:59]) + "…"
 				}
 				text := "synthesized: " + title
-				m.messageLog = append(m.messageLog, MessageLogEntry{
-					Text: text, Time: time.Now(),
-				})
-				if len(m.messageLog) > maxMessageLog {
-					m.messageLog = m.messageLog[len(m.messageLog)-maxMessageLog:]
-				}
-				saveMessageLog(m.messageLog)
+				m.appendMessageLog(text, false)
 				autoSynthCmds = append(autoSynthCmds, m.toast(text, false))
 			}
 		}
