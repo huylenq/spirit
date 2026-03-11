@@ -121,21 +121,21 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
-// selectDefaultPane picks the snap-target session (no exclusions).
+// selectDefaultPane picks the auto-jump target session (no exclusions).
 // Returns true if the cursor was moved.
 func (m *Model) selectDefaultPane() bool {
-	targetID := m.list.SnapTarget("")
+	targetID := m.list.AutoJumpTarget("")
 	if targetID == "" {
 		return false
 	}
 	return m.list.SelectByPaneID(targetID)
 }
 
-// snapToDefault selects the user-turn session with the oldest LastChanged
+// autoJump selects the user-turn session with the oldest LastChanged
 // (waiting longest), skipping Later and skipPaneID. Falls back to agent-turn.
 // Returns cmds from fetchForSelection for the newly selected session.
-func (m *Model) snapToDefault(skipPaneID string) []tea.Cmd {
-	targetID := m.list.SnapTarget(skipPaneID)
+func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
+	targetID := m.list.AutoJumpTarget(skipPaneID)
 	if targetID == "" {
 		return nil
 	}
@@ -241,6 +241,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		flashCmd := m.setFlash("reconnected", false, 2*time.Second)
 		return m, tea.Batch(m.subscribeToDaemon(), flashCmd)
 
+	case LuaEvalDoneMsg:
+		var cmds []tea.Cmd
+		for _, f := range msg.Msgs.Flashes {
+			cmds = append(cmds, m.setFlash(f, false, 8*time.Second))
+		}
+		for _, t := range msg.Msgs.Toasts {
+			cmds = append(cmds, m.toast(t, false))
+		}
+		if msg.Err != nil {
+			cmds = append(cmds, m.setFlash("lua: "+msg.Err.Error(), true, 10*time.Second))
+		} else {
+			result := msg.Result
+			if result == "" {
+				result = "ok"
+			}
+			cmds = append(cmds, m.setFlash("lua: "+result, false, 10*time.Second))
+		}
+		return m, tea.Batch(cmds...)
+
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
 		return m, cmd
@@ -292,14 +311,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.nonClaudePane != nil {
 			cmds = append(cmds, capturePreview(m.nonClaudePane.PaneID))
 		}
-		// Discover ideas from visible project CWDs
-		cmds = append(cmds, m.discoverIdeas(msg.Sessions))
+		// Discover backlog items from visible project CWDs (skip when hidden to avoid needless I/O)
+		if m.list.ShowBacklog() {
+			cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
+		}
 		// Wait for next daemon push
 		cmds = append(cmds, m.waitForDaemonUpdate())
 		return m, tea.Batch(cmds...)
 
-	case IdeasRefreshedMsg:
-		m.list.SetIdeas(msg.Ideas)
+	case BacklogsRefreshedMsg:
+		m.list.SetBacklog(msg.Backlogs)
 		return m, nil
 
 	case PreviewReadyMsg:
@@ -443,7 +464,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.EnterSessionLevel()
 			m.list.SelectByPaneID(m.newSessionPrevPaneID)
 		} else {
-			// Invoked from project level — snap to the new session
+			// Invoked from project level — auto-jump to the new session
 			m.pendingSelectPaneID = msg.PaneID
 		}
 		m.newSessionWasSession = false
@@ -552,8 +573,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyQueueRelay(msg)
 	case StateNewSessionPrompt:
 		return m.handleKeyNewSession(msg)
-	case StateIdeaPrompt:
-		return m.handleKeyIdeaPrompt(msg)
+	case StateBacklogPrompt:
+		return m.handleKeyBacklogPrompt(msg)
+	case StateBacklogDeleteConfirm:
+		return m.handleKeyBacklogDeleteConfirm(msg)
 	case StatePalette:
 		return m.handleKeyPalette(msg)
 	default:
@@ -730,7 +753,7 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if s, ok := m.list.SelectedItem(); ok {
 			cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
-			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -832,8 +855,8 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Escape):
 		m.state = StateNormal
 		m.promptEditor.Deactivate()
-		m.submittingIdeaID = ""
-		m.submittingIdeaCWD = ""
+		m.activeBacklogID = ""
+		m.activeBacklogCWD = ""
 		// Restore previous session-level selection if we came from there
 		if m.newSessionWasSession {
 			m.list.EnterSessionLevel()
@@ -854,18 +877,22 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "alt+h":
 		m.promptEditor.SetModel("haiku")
 		return m, nil
+	case msg.String() == "alt+p":
+		m.promptEditor.TogglePlan()
+		return m, nil
 	case msg.Type == tea.KeyEnter:
 		model := m.promptEditor.SelectedModel()
+		planning := m.promptEditor.PlanMode()
 		prompt := m.promptEditor.Confirm()
 		m.state = StateNormal
-		// If submitting an idea, delete the idea file after spawning
-		spawnCmd := m.spawnNewSession(prompt, model)
-		if m.submittingIdeaID != "" {
-			ideaCWD, ideaID := m.submittingIdeaCWD, m.submittingIdeaID
-			m.submittingIdeaID = ""
-			m.submittingIdeaCWD = ""
+		// If submitting a backlog item, delete the file after spawning
+		spawnCmd := m.spawnNewSession(prompt, model, planning)
+		if m.activeBacklogID != "" {
+			backlogCWD, backlogID := m.activeBacklogCWD, m.activeBacklogID
+			m.activeBacklogID = ""
+			m.activeBacklogCWD = ""
 			return m, tea.Batch(spawnCmd, func() tea.Msg {
-				claude.RemoveIdea(ideaCWD, ideaID) //nolint:errcheck
+				claude.RemoveBacklog(backlogCWD, backlogID) //nolint:errcheck
 				return nil
 			})
 		}
@@ -877,13 +904,13 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) handleKeyIdeaPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKeyBacklogPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, Keys.Escape):
 		m.state = StateNormal
 		m.promptEditor.Deactivate()
-		m.editingIdeaID = ""
-		m.editingIdeaCWD = ""
+		m.activeBacklogID = ""
+		m.activeBacklogCWD = ""
 		return m, nil
 	case msg.Type == tea.KeyEnter && msg.Alt:
 		// Alt+Enter: insert newline
@@ -893,28 +920,44 @@ func (m Model) handleKeyIdeaPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		body := m.promptEditor.Confirm()
 		m.state = StateNormal
 		if strings.TrimSpace(body) == "" {
-			m.editingIdeaID = ""
-			m.editingIdeaCWD = ""
+			m.activeBacklogID = ""
+			m.activeBacklogCWD = ""
 			return m, nil
 		}
-		id := m.editingIdeaID
-		cwd := m.editingIdeaCWD
+		id := m.activeBacklogID
+		cwd := m.activeBacklogCWD
 		if id == "" {
-			id = claude.GenerateIdeaID()
+			id = claude.GenerateBacklogID()
 		}
-		m.editingIdeaID = ""
-		m.editingIdeaCWD = ""
-		return m, func() tea.Msg {
-			err := claude.WriteIdea(cwd, claude.Idea{ID: id, Body: body})
-			if err != nil {
-				return flashErrorMsg("save idea: " + err.Error())
-			}
-			// Re-discover ideas
-			return flashInfoMsg("idea saved")
-		}
+		m.activeBacklogID = ""
+		m.activeBacklogCWD = ""
+		sessions := m.sessions
+		return m, tea.Batch(
+			func() tea.Msg {
+				err := claude.WriteBacklog(cwd, claude.Backlog{ID: id, Body: body})
+				if err != nil {
+					return flashErrorMsg("save backlog: " + err.Error())
+				}
+				return flashInfoMsg("backlog saved")
+			},
+			m.discoverBacklogs(sessions),
+		)
 	default:
 		cmd := m.promptEditor.Update(msg)
 		return m, cmd
+	}
+}
+
+func (m Model) handleKeyBacklogDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		return m.confirmDeleteBacklog()
+	case "n", "esc":
+		m.state = StateNormal
+		m.deleteTargetBacklog = claude.Backlog{}
+		return m, nil
+	default:
+		return m, nil
 	}
 }
 
@@ -925,6 +968,15 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.palette.Deactivate()
 		return m, nil
 	case key.Matches(msg, Keys.Enter):
+		if m.palette.IsLuaMode() {
+			script := m.palette.LuaScript()
+			m.state = StateNormal
+			m.palette.Deactivate()
+			if strings.TrimSpace(script) == "" {
+				return m, nil
+			}
+			return m, evalLua(m.client, script)
+		}
 		idx, ok := m.palette.SelectedIndex()
 		m.state = StateNormal
 		m.palette.Deactivate()
@@ -938,16 +990,27 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m, c := command.Execute(&m)
 		return m, c
 	case msg.String() == "up", key.Matches(msg, Keys.MsgPrev):
-		m.palette.MoveUp()
+		if !m.palette.IsLuaMode() {
+			m.palette.MoveUp()
+		}
 		return m, nil
 	case msg.String() == "down", key.Matches(msg, Keys.MsgNext):
-		m.palette.MoveDown()
+		if !m.palette.IsLuaMode() {
+			m.palette.MoveDown()
+		}
 		return m, nil
 	default:
+		// When input is empty and user types ":", enter Lua mode
+		if !m.palette.IsLuaMode() && m.palette.LuaScript() == "" && msg.String() == ":" {
+			m.palette.EnterLuaMode()
+			return m, nil
+		}
 		ti := m.palette.TextInput()
 		newTI, cmd := ti.Update(msg)
 		*ti = newTI
-		m.palette.Narrow()
+		if !m.palette.IsLuaMode() {
+			m.palette.Narrow()
+		}
 		return m, cmd
 	}
 }
@@ -1003,26 +1066,37 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Idea-specific keys (when cursor is in ideas zone)
-	if m.list.IsIdeaSelected() {
+	// Backlog-specific keys (when cursor is in backlog zone)
+	if m.list.IsBacklogSelected() {
 		switch {
 		case key.Matches(msg, Keys.Enter):
-			return m.execSubmitIdea()
+			return m.execSubmitBacklog()
 		case msg.String() == "i":
-			return m.execEditIdea()
+			return m.execEditBacklog()
 		case msg.String() == "e":
-			return m.execOpenIdeaInEditor()
+			return m.execOpenBacklogInEditor()
 		case key.Matches(msg, Keys.Kill), msg.String() == "x":
-			return m.execDeleteIdea()
+			return m.execDeleteBacklog()
 		}
 		// Fall through to common nav keys (up/down/h/l/q/esc/etc.)
 	}
 
-	// New idea from project level in IDEAS section
-	if m.list.SelectionLevel() == ui.LevelProject {
-		if pe, ok := m.list.SelectedProject(); ok && pe.StatusOrder == ui.OrderIdeas {
-			if msg.String() == "i" {
-				return m.execNewIdea()
+	// New backlog item via `i` key — works from session item, session project, or BACKLOG project level
+	if msg.String() == "i" {
+		// Session item selected
+		if s, ok := m.list.SelectedItem(); ok {
+			return m.execNewBacklogForCWD(s.CWD)
+		}
+		if m.list.SelectionLevel() == ui.LevelProject {
+			if pe, ok := m.list.SelectedProject(); ok {
+				if pe.StatusOrder == ui.OrderBacklog {
+					// Backlog project: derive CWD from existing backlog
+					return m.execNewBacklog()
+				}
+				// Session project: derive CWD from first session
+				if s, ok := m.list.SelectedProjectSession(); ok {
+					return m.execNewBacklogForCWD(s.CWD)
+				}
 			}
 		}
 	}
@@ -1090,9 +1164,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.JumpForward):
 		target := m.jumpForward()
-		// At the live head with no forward history: jump to snap target
+		// At the live head with no forward history: auto-jump to next target
 		if target == "" {
-			target = m.list.SnapTargetFromCursor()
+			target = m.list.AutoJumpTargetFromCursor()
 		}
 		if target != "" && m.list.SelectByPaneID(target) {
 			if s, ok := m.list.SelectedItem(); ok {
@@ -1266,9 +1340,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Toggle off (unlater): stay on current item
 				return m.execLater()
 			}
-			// Mark as later: execute + snap to next session
+			// Mark as later: execute + auto-jump to next session
 			model, cmd := m.execLater()
-			cmds := append([]tea.Cmd{cmd}, model.snapToDefault(s.PaneID)...)
+			cmds := append([]tea.Cmd{cmd}, model.autoJump(s.PaneID)...)
 			return model, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -1288,13 +1362,16 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "I":
-		newVal := !m.list.ShowIdeas()
-		m.list.SetShowIdeas(newVal)
-		savePrefBool("showIdeas", newVal)
+		newVal := !m.list.ShowBacklog()
+		m.list.SetShowBacklog(newVal)
+		savePrefBool("showBacklog", newVal)
 		if newVal {
-			return m, m.setFlash("IDEAS on", false, 2*time.Second)
+			// Trigger discovery so backlog items appear immediately
+			flashCmd := m.setFlash("BACKLOG on", false, 2*time.Second)
+			discoverCmd := m.discoverBacklogs(m.sessions)
+			return m, tea.Batch(flashCmd, discoverCmd)
 		}
-		return m, m.setFlash("IDEAS off", false, 2*time.Second)
+		return m, m.setFlash("BACKLOG off", false, 2*time.Second)
 
 	case key.Matches(msg, Keys.Minimap):
 		m.showMinimap = !m.showMinimap
@@ -1394,7 +1471,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit started")
 			}}
-			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -1414,7 +1491,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit+done started")
 			}}
-			cmds = append(cmds, m.snapToDefault(s.PaneID)...)
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil

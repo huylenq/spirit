@@ -62,6 +62,9 @@ type ListModel struct {
 	projectCursor        int
 	projects             []projectEntry // project headers in display order
 	selectedProjectRow   int            // line index of the selected project header (set during View)
+	backlogs             []claude.Backlog // all backlog items from visible projects
+	filteredBacklog      []claude.Backlog // backlog items matching narrow filter
+	showBacklog          bool             // toggle BACKLOG section visibility
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
@@ -71,6 +74,16 @@ func (m *ListModel) SetGroupByProject(v bool) {
 
 func (m ListModel) GroupByProject() bool {
 	return m.groupByProject
+}
+
+func (m *ListModel) SetShowBacklog(v bool) {
+	m.showBacklog = v
+	m.applyNarrowBacklog()
+	m.rebuildProjects()
+}
+
+func (m ListModel) ShowBacklog() bool {
+	return m.showBacklog
 }
 
 func NewListModel() ListModel {
@@ -112,9 +125,14 @@ func (m *ListModel) SetSpinnerView(s string) {
 }
 
 func (m *ListModel) SetItems(items []claude.ClaudeSession) {
-	// Remember currently selected PaneID before rebuilding
+	// Remember currently selected PaneID or backlog ID before rebuilding
 	var selectedPaneID string
-	if m.cursor >= 0 && m.cursor < len(m.filtered) {
+	var selectedBacklogID string
+	if m.IsBacklogSelected() {
+		if backlog, ok := m.SelectedBacklog(); ok {
+			selectedBacklogID = backlog.ID
+		}
+	} else if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		selectedPaneID = m.filtered[m.cursor].PaneID
 	}
 
@@ -128,10 +146,16 @@ func (m *ListModel) SetItems(items []claude.ClaudeSession) {
 	}
 	m.applyNarrow()
 
-	// Restore selection to same session; fall back to clamping
+	// Restore selection: backlog first, then session, then clamp
+	if selectedBacklogID != "" {
+		if m.selectByBacklogID(selectedBacklogID) {
+			return
+		}
+	}
 	if selectedPaneID == "" || !m.SelectByPaneID(selectedPaneID) {
-		if len(m.filtered) > 0 && m.cursor >= len(m.filtered) {
-			m.cursor = len(m.filtered) - 1
+		total := m.totalItems()
+		if total > 0 && m.cursor >= total {
+			m.cursor = total - 1
 		}
 		if m.cursor < 0 {
 			m.cursor = 0
@@ -157,10 +181,85 @@ func (m *ListModel) ClearNarrow() {
 }
 
 func (m ListModel) SelectedItem() (claude.ClaudeSession, bool) {
-	if len(m.filtered) == 0 || m.deselected {
+	if m.deselected || m.cursor >= len(m.filtered) || len(m.filtered) == 0 {
 		return claude.ClaudeSession{}, false
 	}
 	return m.filtered[m.cursor], true
+}
+
+// totalItems returns the combined count of sessions + backlog items for cursor range.
+func (m ListModel) totalItems() int {
+	return len(m.filtered) + len(m.filteredBacklog)
+}
+
+// IsBacklogSelected returns true if the cursor is in the backlog zone.
+func (m ListModel) IsBacklogSelected() bool {
+	return !m.deselected && len(m.filteredBacklog) > 0 && m.cursor >= len(m.filtered)
+}
+
+// SelectedBacklog returns the backlog item at the cursor, if in the backlog zone.
+func (m ListModel) SelectedBacklog() (claude.Backlog, bool) {
+	if !m.IsBacklogSelected() {
+		return claude.Backlog{}, false
+	}
+	idx := m.cursor - len(m.filtered)
+	if idx >= len(m.filteredBacklog) {
+		return claude.Backlog{}, false
+	}
+	return m.filteredBacklog[idx], true
+}
+
+// SetBacklog stores backlog items, sorts by project then CreatedAt, applies narrow.
+func (m *ListModel) SetBacklog(backlogs []claude.Backlog) {
+	// Preserve selected backlog item across refresh
+	var selectedBacklogID string
+	if m.IsBacklogSelected() {
+		if backlog, ok := m.SelectedBacklog(); ok {
+			selectedBacklogID = backlog.ID
+		}
+	}
+
+	m.backlogs = backlogs
+	m.applyNarrowBacklog()
+	m.rebuildProjects()
+
+	if selectedBacklogID != "" {
+		m.selectByBacklogID(selectedBacklogID)
+	}
+}
+
+// selectByBacklogID sets the cursor to the backlog item with the given ID. Returns true if found.
+func (m *ListModel) selectByBacklogID(id string) bool {
+	for i, backlog := range m.filteredBacklog {
+		if backlog.ID == id {
+			m.cursor = len(m.filtered) + i
+			m.deselected = false
+			return true
+		}
+	}
+	return false
+}
+
+// applyNarrowBacklog filters backlog items by the current narrow query.
+func (m *ListModel) applyNarrowBacklog() {
+	if !m.showBacklog {
+		m.filteredBacklog = nil
+		return
+	}
+	if m.narrow == "" {
+		m.filteredBacklog = make([]claude.Backlog, len(m.backlogs))
+		copy(m.filteredBacklog, m.backlogs)
+	} else {
+		f := strings.ToLower(m.narrow)
+		m.filteredBacklog = nil
+		for _, backlog := range m.backlogs {
+			title := strings.ToLower(backlog.DisplayTitle())
+			body := strings.ToLower(backlog.Body)
+			if strings.Contains(title, f) || strings.Contains(body, f) {
+				m.filteredBacklog = append(m.filteredBacklog, backlog)
+			}
+		}
+	}
 }
 
 // Deselect marks the list as having no active selection (minimap on non-Claude pane).
@@ -193,7 +292,7 @@ func (m *ListModel) MoveUp() {
 
 func (m *ListModel) MoveDown() {
 	m.deselected = false
-	if m.cursor < len(m.filtered)-1 {
+	if m.cursor < m.totalItems()-1 {
 		m.cursor++
 	}
 }
@@ -205,8 +304,9 @@ func (m *ListModel) MoveToTop() {
 
 func (m *ListModel) MoveToBottom() {
 	m.deselected = false
-	if len(m.filtered) > 0 {
-		m.cursor = len(m.filtered) - 1
+	total := m.totalItems()
+	if total > 0 {
+		m.cursor = total - 1
 	}
 }
 
@@ -228,6 +328,17 @@ func (m *ListModel) EnterProjectLevel() {
 		return
 	}
 	m.selectionLevel = LevelProject
+	// Derive project cursor from current backlog item
+	if m.IsBacklogSelected() {
+		if backlog, ok := m.SelectedBacklog(); ok {
+			for i, p := range m.projects {
+				if p.Name == backlog.Project && p.StatusOrder == OrderBacklog {
+					m.projectCursor = i
+					return
+				}
+			}
+		}
+	}
 	// Derive project cursor from current session
 	if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		s := m.filtered[m.cursor]
@@ -255,6 +366,16 @@ func (m *ListModel) EnterSessionLevel() {
 	}
 	m.selectionLevel = LevelSession
 	if pe, ok := m.SelectedProject(); ok {
+		// If this is a backlog project, jump to first backlog item in that project
+		if pe.StatusOrder == OrderBacklog {
+			for i, backlog := range m.filteredBacklog {
+				if backlog.Project == pe.Name {
+					m.cursor = len(m.filtered) + i
+					m.deselected = false
+					return
+				}
+			}
+		}
 		for i, s := range m.filtered {
 			if pe.matches(s) {
 				m.cursor = i
@@ -325,20 +446,41 @@ func (m ListModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
-// SnapTargetFromCursor returns the snap target, skipping the currently selected
-// session. Returns "" if no target exists.
-func (m ListModel) SnapTargetFromCursor() string {
+// BacklogsInProject returns all backlog items matching a project name.
+func (m ListModel) BacklogsInProject(projectName string) []claude.Backlog {
+	var result []claude.Backlog
+	for _, backlog := range m.filteredBacklog {
+		if backlog.Project == projectName {
+			result = append(result, backlog)
+		}
+	}
+	return result
+}
+
+// FirstBacklogCWDInProject returns the CWD from the first backlog item in a project.
+func (m ListModel) FirstBacklogCWDInProject(projectName string) string {
+	for _, backlog := range m.filteredBacklog {
+		if backlog.Project == projectName {
+			return backlog.CWD
+		}
+	}
+	return ""
+}
+
+// AutoJumpTargetFromCursor returns the auto-jump target, skipping the currently
+// selected session. Returns "" if no target exists.
+func (m ListModel) AutoJumpTargetFromCursor() string {
 	var skipPaneID string
 	if m.cursor >= 0 && m.cursor < len(m.filtered) {
 		skipPaneID = m.filtered[m.cursor].PaneID
 	}
-	return m.SnapTarget(skipPaneID)
+	return m.AutoJumpTarget(skipPaneID)
 }
 
-// SnapTarget finds the best snap-to-default target, skipping skipPaneID.
+// AutoJumpTarget finds the best auto-jump target, skipping skipPaneID.
 // Priority: user-turn with oldest LastChanged (waiting longest), then agent-turn
 // with oldest LastChanged. Excludes Later-bookmarked sessions.
-func (m ListModel) SnapTarget(skipPaneID string) string {
+func (m ListModel) AutoJumpTarget(skipPaneID string) string {
 	var bestUser, bestAgent string
 	var bestUserTime, bestAgentTime time.Time
 
@@ -405,6 +547,7 @@ func (m *ListModel) applyNarrow() {
 			sortByStatus(m.filtered)
 		}
 	}
+	m.applyNarrowBacklog()
 	m.rebuildProjects()
 }
 
@@ -451,6 +594,15 @@ func (m *ListModel) rebuildProjects() {
 		}
 	}
 
+	// Add backlog projects
+	for _, backlog := range m.filteredBacklog {
+		k := key{backlog.Project, OrderBacklog}
+		if !seen[k] {
+			seen[k] = true
+			m.projects = append(m.projects, projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog})
+		}
+	}
+
 	// Restore project cursor by matching previous entry
 	if havePrev {
 		for i, p := range m.projects {
@@ -467,7 +619,7 @@ func (m *ListModel) rebuildProjects() {
 
 func sortByProject(sessions []claude.ClaudeSession) {
 	// Primary: Later sessions sink to bottom; secondary: project name alphabetically;
-	// tertiary: newest created first
+	// tertiary: oldest created first (newest at bottom)
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
@@ -475,7 +627,7 @@ func sortByProject(sessions []claude.ClaudeSession) {
 			bLater := sessionOrder(b) == OrderLater
 			if (aLater && !bLater) ||
 				(aLater == bLater && a.Project > b.Project) ||
-				(aLater == bLater && a.Project == b.Project && a.CreatedAt.Before(b.CreatedAt)) {
+				(aLater == bLater && a.Project == b.Project && a.CreatedAt.After(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -485,12 +637,12 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: session order (UserTurn, AgentTurn, Later); secondary: newest created first
+	// Primary: session order (UserTurn, AgentTurn, Later); secondary: oldest created first (newest at bottom)
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
 			if sessionOrder(a) > sessionOrder(b) ||
-				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
+				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.After(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -505,6 +657,7 @@ const (
 	OrderAgentTurn = 1
 	OrderLater     = 2
 	OrderOther     = 3
+	OrderBacklog   = 4
 )
 
 func sessionOrder(s claude.ClaudeSession) int {
@@ -570,8 +723,8 @@ func (m ListModel) View() string {
 		selectedPaneID = m.filtered[m.cursor].PaneID
 	}
 
-	// Pre-calculate snap-to-default target
-	snapTargetID := m.SnapTargetFromCursor()
+	// Pre-calculate auto-jump target
+	autoJumpTargetID := m.AutoJumpTargetFromCursor()
 
 	// Project-level selection
 	selectedProject, atProjectLevel := m.SelectedProject()
@@ -583,8 +736,8 @@ func (m ListModel) View() string {
 		// Search mode: render from m.filtered directly (score-sorted, flat)
 		for _, s := range m.filtered {
 			isSelected := s.PaneID == selectedPaneID && !m.deselected
-			isSnapTarget := !isSelected && s.PaneID == snapTargetID
-			lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
+			isAutoJump := !isSelected && s.PaneID == autoJumpTargetID
+			lines = append(lines, m.renderItem(isSelected, isAutoJump, s, dw, query))
 		}
 	} else {
 		currentProject := ""
@@ -652,8 +805,33 @@ func (m ListModel) View() string {
 			}
 
 			isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
-			isSnapTarget := !isSelected && s.PaneID == snapTargetID
-			lines = append(lines, m.renderItem(isSelected, isSnapTarget, s, dw, query))
+			isAutoJump := !isSelected && s.PaneID == autoJumpTargetID
+			lines = append(lines, m.renderItem(isSelected, isAutoJump, s, dw, query))
+		}
+	}
+
+	// Render backlog section (after sessions)
+	if len(m.filteredBacklog) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+		}
+		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
+
+		currentBacklogProject := ""
+		for i, backlog := range m.filteredBacklog {
+			if backlog.Project != currentBacklogProject {
+				currentBacklogProject = backlog.Project
+				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
+				if atProjectLevel && selectedProject == backlogPE {
+					m.selectedProjectRow = len(lines)
+					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
+				} else {
+					lines = append(lines, renderProjectSubHeader(backlog.Project))
+				}
+			}
+			backlogCursor := len(m.filtered) + i
+			isSelected := backlogCursor == m.cursor && !m.deselected && !atProjectLevel
+			lines = append(lines, m.renderBacklogItem(isSelected, backlog))
 		}
 	}
 
@@ -690,12 +868,14 @@ func renderStatusGroupHeader(order int) string {
 		return GroupHeaderWorkingStyle.Render(IconBolt + " CLAUDING")
 	case OrderLater:
 		return GroupHeaderLaterStyle.Render(IconBookmark + " LATER")
+	case OrderBacklog:
+		return GroupHeaderBacklogStyle.Render(IconBacklog + " BACKLOG")
 	default:
 		return ""
 	}
 }
 
-func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
+func (m ListModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
 	// Display name priority: custom title → headline → first message → (new session)
 	displayName := s.DisplayName()
@@ -712,12 +892,12 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	// Avatar-colored selection styles (only allocated for the active state)
 	avatarColor := AvatarColor(s.AvatarColorIdx)
 	avatarBg := AvatarFillBg(s.AvatarColorIdx)
-	var selBgSt, barSt, snapBarSt lipgloss.Style
+	var selBgSt, barSt, autoJumpBarSt lipgloss.Style
 	if isSelected {
 		selBgSt = lipgloss.NewStyle().Background(avatarBg)
 		barSt = lipgloss.NewStyle().Foreground(avatarColor).Background(avatarBg)
-	} else if isSnapTarget {
-		snapBarSt = lipgloss.NewStyle().Foreground(avatarColor)
+	} else if isAutoJump {
+		autoJumpBarSt = lipgloss.NewStyle().Foreground(avatarColor)
 	}
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected, s.AvatarColorIdx) }
@@ -796,8 +976,8 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 		} else {
 			styledName = displayName
 		}
-		if isSnapTarget {
-			namePart = "  " + snapBarSt.Render("▯") + " " + iconStr + styledName
+		if isAutoJump {
+			namePart = "  " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
 			namePart = "    " + iconStr + styledName
 		}
@@ -813,17 +993,17 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 			withBg(style).Width(m.width - 5).Render(content)
 	}
 
-	// snapSubtitle wraps an unselected subtitle with the snap-target bar at col 2.
+	// autoJumpSubtitle wraps an unselected subtitle with the auto-jump bar at col 2.
 	// Visually: "  │" + content — same width as "      " (6 spaces).
-	snapSubtitle := func(style lipgloss.Style, content string) string {
-		return "  " + snapBarSt.Render("▯") + style.Render("   "+content)
+	autoJumpSubtitle := func(style lipgloss.Style, content string) string {
+		return "  " + autoJumpBarSt.Render("▯") + style.Render("   "+content)
 	}
 
 	if m.summaryLoadingPanes[s.PaneID] {
 		if isSelected {
 			line += "\n" + selSubtitle(selBgSt.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
-		} else if isSnapTarget {
-			line += "\n" + snapSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
+		} else if isAutoJump {
+			line += "\n" + autoJumpSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
 		} else {
 			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" synthesizing…")
 		}
@@ -832,26 +1012,26 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	// Show queue badge with count
 	if len(s.QueuePending) > 0 {
 		queueBadge := fmt.Sprintf("%s %d", IconQueue, len(s.QueuePending))
-		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isSnapTarget, false, s.AvatarColorIdx)
+		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isAutoJump, false, s.AvatarColorIdx)
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
-		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isSnapTarget, doHL, s.AvatarColorIdx)
+		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isAutoJump, doHL, s.AvatarColorIdx)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
 		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isSnapTarget, true, s.AvatarColorIdx)
+			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isAutoJump, true, s.AvatarColorIdx)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
 		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
-			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isSnapTarget, true, s.AvatarColorIdx)
+			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isAutoJump, true, s.AvatarColorIdx)
 		}
 	}
 
@@ -859,14 +1039,53 @@ func (m ListModel) renderItem(isSelected, isSnapTarget bool, s claude.ClaudeSess
 	if badges := renderBadges(s); badges != "" {
 		if isSelected {
 			line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
-		} else if isSnapTarget {
-			line += "\n" + snapSubtitle(ItemDetailStyle, badges)
+		} else if isAutoJump {
+			line += "\n" + autoJumpSubtitle(ItemDetailStyle, badges)
 		} else {
 			line += "\n" + ItemDetailStyle.Render("      "+badges)
 		}
 	}
 
 	return line
+}
+
+// renderBacklogItem renders a single backlog entry in the list.
+func (m ListModel) renderBacklogItem(isSelected bool, backlog claude.Backlog) string {
+	title := backlog.DisplayTitle()
+	title = strings.ReplaceAll(title, "\n", " ")
+
+	age := FormatAge(backlog.UpdatedAt)
+
+	const prefixWidth = 4
+	iconStr := ItemDetailStyle.Render(IconBacklog + "  ")
+	iconWidth := lipgloss.Width(iconStr)
+	ageStr := ItemDetailStyle.Render(age)
+	ageWidth := lipgloss.Width(ageStr)
+
+	maxNameWidth := m.width - prefixWidth - iconWidth - ageWidth - 4
+	if maxNameWidth < 4 {
+		maxNameWidth = 4
+	}
+	if lipgloss.Width(title) > maxNameWidth {
+		title = ansi.Truncate(title, maxNameWidth, "…")
+	}
+
+	titleWidth := lipgloss.Width(title)
+	gap := m.width - prefixWidth - iconWidth - titleWidth - ageWidth - 2
+	if gap < 1 {
+		gap = 1
+	}
+
+	if isSelected {
+		bg := lipgloss.NewStyle().Background(ColorSelectionBg)
+		return bg.Render("  ▌ ") +
+			bg.Render(IconBacklog+"  ") +
+			bg.Render(title) +
+			bg.Render(strings.Repeat(" ", gap)) +
+			bg.Render(age)
+	}
+
+	return "    " + iconStr + title + strings.Repeat(" ", gap) + ageStr
 }
 
 // subtitleMsgWidth returns the available text width for a subtitle line with the given icon.
@@ -889,7 +1108,7 @@ func (m ListModel) subtitleMsgWidth(icon string, isSelected bool) int {
 
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSnapTarget, doHighlight bool, avatarColorIdx int) string {
+func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
 
@@ -916,14 +1135,14 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSn
 		return bgStyle.Render("  ") + localBarSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
-	// Unselected — with optional snap-target bar at col 2
-	if isSnapTarget {
-		localSnapSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx))
+	// Unselected — with optional auto-jump bar at col 2
+	if isAutoJump {
+		localAutoJumpSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx))
 		prefix := "   " + icon + " "
 		if doHighlight && query != "" {
-			return "  " + localSnapSt.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
+			return "  " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 		}
-		return "  " + localSnapSt.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
+		return "  " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
 	}
 	prefix := "      " + icon + " "
 	if doHighlight && query != "" {
@@ -935,22 +1154,22 @@ func (m ListModel) renderSubtitleLine(text, query, icon string, isSelected, isSn
 // renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
 // at word boundaries. The first line gets the icon; the second is indented with
 // spaces matching the icon's width.
-func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isSnapTarget, doHighlight bool, avatarColorIdx int) string {
+func (m ListModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	if msgWidth < 1 {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
 	}
 
 	// Word-wrap at word boundary to split into two lines
 	line1, rest := wordWrapFirst(text, msgWidth)
 	if rest == "" {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
 	}
 
 	// Render first line, second line with blank icon of same width
-	first := m.renderSubtitleLine(line1, query, icon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
+	first := m.renderSubtitleLine(line1, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
-	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isSnapTarget, doHighlight, avatarColorIdx)
+	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
 	return first + "\n" + second
 }
 
@@ -1050,7 +1269,7 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	}
 	switch s.Status {
 	case claude.StatusUserTurn:
-		age := formatAge(s.LastChanged)
+		age := FormatAge(s.LastChanged)
 		if s.LaterBookmarkID != "" && s.IsPhantom {
 			return bg(StatLaterStyle).Render(IconBookmark + " " + age)
 		}
@@ -1068,7 +1287,8 @@ func (m ListModel) renderDetail(s claude.ClaudeSession, selected bool) string {
 	}
 }
 
-func formatAge(t time.Time) string {
+// FormatAge returns a human-friendly age string like "<1m", "5m", "2h", "3d".
+func FormatAge(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}

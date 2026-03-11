@@ -41,7 +41,8 @@ const (
 	StateNewSessionPrompt
 	StateMinimapSettings
 	StatePrefsEditor
-	StateIdeaPrompt // creating or editing an idea
+	StateBacklogPrompt       // creating or editing a backlog item
+	StateBacklogDeleteConfirm // confirming deletion of a backlog item
 )
 
 const defaultMinimapMaxH = 14
@@ -167,16 +168,15 @@ type Model struct {
 	palette              ui.PaletteModel
 	prefsEditor          ui.PrefsEditorModel
 	commands             []Command
-	editingIdeaID        string // non-empty when editing existing idea
-	editingIdeaCWD       string // CWD for idea being created/edited
-	submittingIdeaID     string // idea ID being submitted as session
-	submittingIdeaCWD    string // CWD for idea being submitted
+	activeBacklogID    string // backlog item being edited or submitted (empty = new item)
+	activeBacklogCWD   string // CWD for the active backlog operation
+	deleteTargetBacklog claude.Backlog // backlog item pending delete confirmation
 }
 
 func NewModel(client *daemon.Client) Model {
 	list := ui.NewListModel()
 	list.SetGroupByProject(loadPrefBool("groupByProject"))
-	list.SetShowIdeas(loadPrefBool("showIdeas"))
+	list.SetShowBacklog(loadPrefBool("showBacklog"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -542,7 +542,7 @@ func sendBangKey(paneID string) tea.Cmd {
 const maxJumpTrail = 100
 
 // recordJump saves the currently selected paneID to the jump trail.
-// Call before any programmatic jump (gg, G, spatial nav, clicks, snap-to-default, etc.).
+// Call before any programmatic jump (gg, G, spatial nav, clicks, autoJump, etc.).
 func (m *Model) recordJump() {
 	s, ok := m.list.SelectedItem()
 	if !ok {
@@ -601,27 +601,13 @@ func (m *Model) jumpForward() string {
 	return m.jumpTrail[m.jumpCursor]
 }
 
-// discoverIdeas scans unique CWDs from sessions for .cmc/ideas/ directories.
-func (m Model) discoverIdeas(sessions []claude.ClaudeSession) tea.Cmd {
-	// Collect unique CWDs
-	seen := make(map[string]bool)
-	var cwds []string
-	for _, s := range sessions {
-		if s.CWD != "" && !seen[s.CWD] {
-			seen[s.CWD] = true
-			cwds = append(cwds, s.CWD)
-		}
-	}
-	if len(cwds) == 0 {
+// discoverBacklogs scans unique CWDs from sessions for .cmc/backlog/ directories.
+func (m Model) discoverBacklogs(sessions []claude.ClaudeSession) tea.Cmd {
+	if len(sessions) == 0 {
 		return nil
 	}
 	return func() tea.Msg {
-		var all []claude.Idea
-		for _, cwd := range cwds {
-			ideas, _ := claude.ReadAllIdeas(cwd)
-			all = append(all, ideas...)
-		}
-		return IdeasRefreshedMsg{Ideas: all}
+		return BacklogsRefreshedMsg{Backlogs: claude.DiscoverBacklogs(sessions)}
 	}
 }
 
