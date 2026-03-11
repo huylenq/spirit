@@ -412,6 +412,7 @@ func (m Model) execNewBacklogForCWD(cwd string) (Model, tea.Cmd) {
 	m.state = StateBacklogPrompt
 	m.activeBacklogCWD = cwd
 	m.activeBacklogID = ""
+	m.backlogOverlay = true
 	m.promptEditor.ActivateForBacklog()
 	return m, nil
 }
@@ -421,12 +422,17 @@ func (m Model) execNewBacklog() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	// Backlog project level: get CWD from existing backlog items (no sessions in this project)
+	// Backlog project/section: use full right-pane editor
 	cwd := m.list.FirstBacklogCWDInProject(pe.Name)
 	if cwd == "" {
 		return m, func() tea.Msg { return flashErrorMsg("no working directory for project") }
 	}
-	return m.execNewBacklogForCWD(cwd)
+	m.state = StateBacklogPrompt
+	m.activeBacklogCWD = cwd
+	m.activeBacklogID = ""
+	m.backlogOverlay = false
+	m.promptEditor.ActivateForBacklog()
+	return m, nil
 }
 
 func (m Model) execEditBacklog() (Model, tea.Cmd) {
@@ -437,6 +443,7 @@ func (m Model) execEditBacklog() (Model, tea.Cmd) {
 	m.state = StateBacklogPrompt
 	m.activeBacklogID = backlog.ID
 	m.activeBacklogCWD = backlog.CWD
+	m.backlogOverlay = false
 	m.promptEditor.ActivateForBacklogEdit(backlog.Body)
 	return m, nil
 }

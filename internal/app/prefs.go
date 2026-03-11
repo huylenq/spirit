@@ -83,6 +83,22 @@ func savePrefs(prefs map[string]string) {
 	_ = os.WriteFile(prefsPath(), []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
+// migratePref renames oldKey to newKey in the prefs file if newKey is absent.
+func migratePref(oldKey, newKey string) {
+	prefs := loadPrefs()
+	if prefs == nil {
+		return
+	}
+	if _, hasNew := prefs[newKey]; hasNew {
+		return
+	}
+	if v, hasOld := prefs[oldKey]; hasOld {
+		delete(prefs, oldKey)
+		prefs[newKey] = v
+		savePrefs(prefs)
+	}
+}
+
 func loadPrefBool(key string) bool {
 	prefs := loadPrefs()
 	return prefs[key] == "true"

@@ -124,10 +124,26 @@ func CollectUniqueCWDs(sessions []ClaudeSession) []string {
 	return cwds
 }
 
+// migrateIdeaDir renames <cwd>/.cmc/ideas to <cwd>/.cmc/backlog if the old dir
+// exists and the new one does not. Silent no-op on any error.
+func migrateIdeaDir(cwd string) {
+	oldDir := filepath.Join(cwd, ".cmc", "ideas")
+	newDir := BacklogDir(cwd)
+	if _, err := os.Stat(oldDir); err != nil {
+		return // old dir doesn't exist
+	}
+	if _, err := os.Stat(newDir); err == nil {
+		return // new dir already exists, don't overwrite
+	}
+	os.Rename(oldDir, newDir) //nolint:errcheck
+}
+
 // DiscoverBacklogs reads all backlog items from the CWDs of the given sessions.
+// It also auto-migrates any legacy .cmc/ideas/ directories to .cmc/backlog/.
 func DiscoverBacklogs(sessions []ClaudeSession) []Backlog {
 	var all []Backlog
 	for _, cwd := range CollectUniqueCWDs(sessions) {
+		migrateIdeaDir(cwd)
 		backlogs, _ := ReadAllBacklog(cwd)
 		all = append(all, backlogs...)
 	}

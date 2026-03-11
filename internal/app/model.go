@@ -170,12 +170,14 @@ type Model struct {
 	commands             []Command
 	activeBacklogID    string // backlog item being edited or submitted (empty = new item)
 	activeBacklogCWD   string // CWD for the active backlog operation
+	backlogOverlay     bool   // true = show backlog prompt as overlay; false = right-pane editor
 	deleteTargetBacklog claude.Backlog // backlog item pending delete confirmation
 }
 
 func NewModel(client *daemon.Client) Model {
 	list := ui.NewListModel()
 	list.SetGroupByProject(loadPrefBool("groupByProject"))
+	migratePref("showIdeas", "showBacklog")
 	list.SetShowBacklog(loadPrefBool("showBacklog"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner

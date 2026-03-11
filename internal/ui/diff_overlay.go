@@ -5,9 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode/utf8"
-
-	"github.com/charmbracelet/lipgloss"
+"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
@@ -152,71 +150,19 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []string {
 	}
 	flushPairs()
 
-	// Phase 3: render changed pairs only (skip equal lines, show ··· for context gaps)
+	// Phase 3: render changed pairs only (skip equal lines silently)
 	var result []string
-	lastWasContext := false
 	for _, p := range pairs {
-		switch {
-		case p.old == p.new:
-			// Equal line — skip but mark context gap
-			if !lastWasContext && len(result) > 0 {
-				result = append(result, PreviewMetaStyle.Render("  ···"))
-				lastWasContext = true
-			}
+		if p.old == p.new {
 			continue
-		case p.old == "":
-			if strings.TrimSpace(p.new) == "" {
-				continue // skip blank inserts
-			}
-			result = append(result, ansi.Truncate(DiffAddBg.Render("+ "+p.new), maxWidth, "…"))
-		case p.new == "":
-			if strings.TrimSpace(p.old) == "" {
-				continue // skip blank deletes
-			}
-			result = append(result, ansi.Truncate(DiffDelBg.Render("- "+p.old), maxWidth, "…"))
-		default:
-			if strings.TrimSpace(p.old) == "" && strings.TrimSpace(p.new) == "" {
-				continue
-			}
-			charDiffs := differ.DiffMain(p.old, p.new, false)
-			charDiffs = differ.DiffCleanupSemantic(charDiffs)
-			// Similarity: ratio of equal chars to total
-			var eqC, totC int
-			for _, cd := range charDiffs {
-				n := utf8.RuneCountInString(cd.Text)
-				totC += n
-				if cd.Type == dmp.DiffEqual {
-					eqC += n
-				}
-			}
-			sim := 0.0
-			if totC > 0 {
-				sim = float64(eqC) / float64(totC)
-			}
-			if sim < 0.05 {
-				if strings.TrimSpace(p.old) != "" {
-					result = append(result, ansi.Truncate(DiffDelBg.Render("- "+p.old), maxWidth, "…"))
-				}
-				if strings.TrimSpace(p.new) != "" {
-					result = append(result, ansi.Truncate(DiffAddBg.Render("+ "+p.new), maxWidth, "…"))
-				}
-			} else {
-				var buf strings.Builder
-				buf.WriteString("~ ")
-				for _, cd := range charDiffs {
-					switch cd.Type {
-					case dmp.DiffEqual:
-						buf.WriteString(cd.Text)
-					case dmp.DiffDelete:
-						buf.WriteString(DiffInlineDelBg.Render(cd.Text))
-					case dmp.DiffInsert:
-						buf.WriteString(DiffInlineAddBg.Render(cd.Text))
-					}
-				}
-				result = append(result, ansi.Truncate(buf.String(), maxWidth, "…"))
-			}
 		}
-		lastWasContext = false
+		if strings.TrimSpace(p.old) != "" {
+			result = append(result, ansi.Truncate(DiffDelBg.Render("- "+p.old), maxWidth, "…"))
+		}
+		if strings.TrimSpace(p.new) != "" {
+			result = append(result, ansi.Truncate(DiffAddBg.Render("+ "+p.new), maxWidth, "…"))
+		}
+
 
 		if len(result) >= maxHunkDisplayLines {
 			remaining := len(pairs) - len(result)
@@ -240,48 +186,62 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 	if fileCount == 0 {
 		lines = append(lines, PreviewMetaStyle.Render("No file changes"))
 	} else {
-		innerWidth := width - 6 // border(2) + padding(2) + indent(2)
-		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
+		// innerWidth = total visual width of each file box line
+		innerWidth := width - 6 // outer border(2) + outer padding(2) + reserved(2)
+		contentW := innerWidth - 4 // │ _ content _ │
 
-		// Build flat list of all rendered lines (file headers + hunks)
+		borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
+		hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
+		rowSt := lipgloss.NewStyle().Width(contentW)
+
+		// Dashed separator between hunks within a file
+		hunkSepLine := borderSt.Render("│") + " " + hunkSepSt.Render(strings.Repeat("- ", contentW/2)) + " " + borderSt.Render("│")
+
+		bottomBorder := borderSt.Render("╰" + strings.Repeat("─", innerWidth-2) + "╯")
+
 		var allLines []string
 
 		for _, f := range m.diffHunkFiles {
-			// File type icon
 			icon := IconModified
 			if f.isNewFile {
 				icon = IconNewFile
 			}
-
-			// Stats
 			addStr := DiffAddedStyle.Render(fmt.Sprintf("+%d", f.added))
 			rmStr := StatWorkingStyle.Render(fmt.Sprintf("-%d", f.removed))
 
-			header := fmt.Sprintf("%s %s  %s %s", icon, f.name, addStr, rmStr)
-			allLines = append(allLines, clipStyle.Render(header))
+			// Top border with embedded filename + stats
+			titleRaw := fmt.Sprintf("%s %s  %s %s", icon, f.name, addStr, rmStr)
+			titleVisLen := ansi.StringWidth(titleRaw)
+			fill := innerWidth - titleVisLen - 5
+			if fill < 0 {
+				fill = 0
+			}
+			topBorder := borderSt.Render("╭─") + " " + titleRaw + " " + borderSt.Render(strings.Repeat("─", fill)+"╮")
+			allLines = append(allLines, topBorder)
 
-			// All hunks, always expanded
+			wrapLine := func(dl string) string {
+				return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
+			}
+
 			for hi, h := range f.hunks {
+				if hi > 0 {
+					allLines = append(allLines, hunkSepLine)
+				}
 				if h.IsWrite {
 					for _, dl := range strings.Split(h.NewString, "\n") {
 						if strings.TrimSpace(dl) == "" {
 							continue
 						}
-						styled := ansi.Truncate(DiffAddBg.Render("+ "+dl), innerWidth-4, "…")
-						allLines = append(allLines, "  "+styled)
+						allLines = append(allLines, wrapLine(ansi.Truncate(DiffAddBg.Render("+ "+dl), contentW, "…")))
 					}
 				} else {
-					for _, dl := range renderInlineDiff(h.OldString, h.NewString, innerWidth-4) {
-						allLines = append(allLines, "  "+dl)
+					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW) {
+						allLines = append(allLines, wrapLine(dl))
 					}
-				}
-				if hi < len(f.hunks)-1 {
-					sep := PreviewMetaStyle.Render("  " + strings.Repeat("·", min(innerWidth-6, 30)))
-					allLines = append(allLines, sep)
 				}
 			}
 
-			// Blank line between files
+			allLines = append(allLines, bottomBorder)
 			allLines = append(allLines, "")
 		}
 
@@ -290,13 +250,11 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 		if scrollIdx >= len(allLines) {
 			scrollIdx = max(0, len(allLines)-1)
 		}
-
 		visLines := m.diffVisLines()
 		end := scrollIdx + visLines
 		if end > len(allLines) {
 			end = len(allLines)
 		}
-
 		lines = append(lines, allLines[scrollIdx:end]...)
 
 		// Scroll indicator
@@ -306,8 +264,7 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 			if total-visLines > 0 {
 				pct = (scrollIdx * 100) / (total - visLines)
 			}
-			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d%% ──", pct))
-			lines = append(lines, indicator)
+			lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("── %d%% ──", pct)))
 		}
 	}
 

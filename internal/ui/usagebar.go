@@ -175,15 +175,14 @@ func (m *UsageBarModel) LabelView() string {
 	}
 	if s.WeekAllPct > 0 || s.WeekAllResets != "" {
 		seg := fmt.Sprintf("week %d%%", s.WeekAllPct)
+		if s.WeekSonnetPct > 0 {
+			seg += fmt.Sprintf(" (sonnet %d%%)", s.WeekSonnetPct)
+		}
 		if s.WeekAllResets != "" {
 			seg += " resets " + trimTZ(s.WeekAllResets)
 		}
-		parts = append(parts, seg)
-	}
-	if s.WeekSonnetPct > 0 || s.WeekSonnetResets != "" {
-		seg := fmt.Sprintf("sonnet %d%%", s.WeekSonnetPct)
 		if s.WeekSonnetResets != "" && s.WeekSonnetResets != s.WeekAllResets {
-			seg += " resets " + trimTZ(s.WeekSonnetResets)
+			seg += " · sonnet resets " + trimTZ(s.WeekSonnetResets)
 		}
 		parts = append(parts, seg)
 	}

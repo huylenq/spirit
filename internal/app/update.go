@@ -132,7 +132,7 @@ func (m *Model) selectDefaultPane() bool {
 }
 
 // autoJump selects the user-turn session with the oldest LastChanged
-// (waiting longest), skipping Later and skipPaneID. Falls back to agent-turn.
+// (waiting longest), skipping Later and skipPaneID.
 // Returns cmds from fetchForSelection for the newly selected session.
 func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	targetID := m.list.AutoJumpTarget(skipPaneID)
@@ -148,7 +148,11 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return m.fetchForSelection(s, true)
+	if skipPaneID != "" {
+		m.list.SetGhost(skipPaneID)
+	}
+	ghostTick := tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return ghostTickMsg{} })
+	return append(m.fetchForSelection(s, true), ghostTick)
 }
 
 // tryInitialSelection auto-selects a pane on launch.
@@ -263,6 +267,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
 		return m, cmd
+
+	case ghostTickMsg:
+		if m.list.AdvanceGhost() {
+			return m, tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return ghostTickMsg{} })
+		}
+		return m, nil
 
 	case SessionsRefreshedMsg:
 		if msg.Err != nil {
@@ -911,6 +921,7 @@ func (m Model) handleKeyBacklogPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.promptEditor.Deactivate()
 		m.activeBacklogID = ""
 		m.activeBacklogCWD = ""
+		m.backlogOverlay = false
 		return m, nil
 	case msg.Type == tea.KeyEnter && msg.Alt:
 		// Alt+Enter: insert newline
@@ -919,6 +930,7 @@ func (m Model) handleKeyBacklogPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyEnter:
 		body := m.promptEditor.Confirm()
 		m.state = StateNormal
+		m.backlogOverlay = false
 		if strings.TrimSpace(body) == "" {
 			m.activeBacklogID = ""
 			m.activeBacklogCWD = ""

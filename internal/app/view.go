@@ -92,7 +92,7 @@ func (m Model) View() string {
 	// Preview panel (reduced height when queue section visible)
 	previewH := contentHeight - queueHeight
 	var previewContent string
-	if m.state == StateBacklogPrompt {
+	if m.state == StateBacklogPrompt && !m.backlogOverlay {
 		project := ""
 		if m.activeBacklogCWD != "" {
 			project = filepath.Base(m.activeBacklogCWD)
@@ -176,17 +176,19 @@ func (m Model) View() string {
 		content = ui.OverlayCentered(content, m.prefsEditor.View(innerWidth), innerWidth)
 	}
 
-	// New session prompt editor overlay — positioned right next to the project name label
+	// Prompt editor overlays (new session / new backlog from session context)
 	if m.state == StateNewSessionPrompt {
-		// Column: right after "📁 project-name" text + padding + small gap
-		labelWidth := lipgloss.Width(ui.IconFolder+" "+m.newSessionProject) + 3 // 1 left pad + 1 right pad + 1 gap
-		overlayWidth := min(innerWidth-labelWidth, 72)
-		overlayView := m.promptEditor.View(m.newSessionProject, overlayWidth)
-		row := m.list.SelectedProjectRow()
+		row := max(m.list.SelectedProjectRow(), 0)
+		content = m.overlayPrompt(content, m.newSessionProject, row, innerWidth)
+	}
+	if m.state == StateBacklogPrompt && m.backlogOverlay {
+		project := filepath.Base(m.activeBacklogCWD)
+		row := m.list.SelectedItemRow()
 		if row < 0 {
-			row = 0
+			row = m.list.SelectedProjectRow()
 		}
-		content = ui.OverlayAt(content, overlayView, row, labelWidth)
+		row = max(row, 0)
+		content = m.overlayPrompt(content, project, row, innerWidth)
 	}
 
 	if m.flashMsg != "" {
@@ -551,6 +553,16 @@ func (m Model) renderMessageToast() string {
 		lines = append(lines, formatMessageEntry(entry))
 	}
 	return ui.ToastStyle.Render(strings.Join(lines, "\n"))
+}
+
+// overlayPrompt composites the prompt editor onto content, anchored at (row, col)
+// where col is right after the "📁 project" label — same positioning for both the
+// new-session and new-backlog overlays.
+func (m Model) overlayPrompt(content, project string, row, innerWidth int) string {
+	col := lipgloss.Width(ui.IconFolder+" "+project) + 3 // 1 left pad + 1 right pad + 1 gap
+	overlayWidth := min(innerWidth-col, 72)
+	overlayView := m.promptEditor.View(project, overlayWidth)
+	return ui.OverlayAt(content, overlayView, row, col)
 }
 
 // renderBacklogEditor renders the backlog textarea editor inline in the preview panel.

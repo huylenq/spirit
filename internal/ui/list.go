@@ -914,12 +914,16 @@ func (m ListModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSessio
 	// Avatar-colored selection styles (only allocated for the active state)
 	avatarColor := AvatarColor(s.AvatarColorIdx)
 	avatarBg := AvatarFillBg(s.AvatarColorIdx)
-	var selBgSt, barSt, autoJumpBarSt lipgloss.Style
+	isGhost := !isSelected && !isAutoJump && s.PaneID == m.ghostPaneID && m.ghostFrame < 3
+	var selBgSt, barSt, autoJumpBarSt, ghostBarSt lipgloss.Style
 	if isSelected {
 		selBgSt = lipgloss.NewStyle().Background(avatarBg)
 		barSt = lipgloss.NewStyle().Foreground(avatarColor).Background(avatarBg)
 	} else if isAutoJump {
 		autoJumpBarSt = lipgloss.NewStyle().Foreground(avatarColor)
+	} else if isGhost {
+		ghostColors := []lipgloss.TerminalColor{avatarColor, ColorMuted, ColorBorder}
+		ghostBarSt = lipgloss.NewStyle().Foreground(ghostColors[m.ghostFrame])
 	}
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected, s.AvatarColorIdx) }
@@ -1000,6 +1004,8 @@ func (m ListModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSessio
 		}
 		if isAutoJump {
 			namePart = "  " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
+		} else if isGhost {
+			namePart = "  " + ghostBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
 			namePart = "    " + iconStr + styledName
 		}

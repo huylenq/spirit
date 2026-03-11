@@ -24,9 +24,9 @@ type UsageStats struct {
 }
 
 var (
-	// Match "36% used" (old format) or standalone "36%" at end of line (new format)
-	rePct    = regexp.MustCompile(`(\d+)%(?:\s+used)?`)
-	reResets = regexp.MustCompile(`Resets\s+(.+)`)
+	rePct = regexp.MustCompile(`(\d+)%(?:\s+used)?`)
+	// Tolerates cursor-right ANSI mangling "Resets" → "Rese s" or "Rese ts"
+	reResets = regexp.MustCompile(`Rese\s*t?s\s+(.+)`)
 )
 
 // FetchUsageRaw returns the raw ANSI-stripped dialog text for debugging.
@@ -250,8 +250,25 @@ func parseUsageDialog(text string) (*UsageStats, error) {
 			if !strings.Contains(line, s.marker) {
 				continue
 			}
-			// Scan forward within this section only (stop at next section marker)
 			found := 0
+
+			// Check the marker line itself — new dialog collapses session data onto one line
+			trimmed := strings.TrimSpace(line)
+			if m := rePct.FindStringSubmatch(trimmed); m != nil {
+				fmt.Sscanf(m[1], "%d", s.pct)
+				found++
+			}
+			if found == 1 {
+				if m := reResets.FindStringSubmatch(trimmed); m != nil {
+					*s.resets = strings.TrimSpace(m[1])
+					found++
+				}
+			}
+			if found >= 2 {
+				continue
+			}
+
+			// Scan subsequent lines (older/week-section format: one item per line)
 			for _, l := range lines[i+1:] {
 				// Stop if we've crossed into another section
 				isBoundary := false
