@@ -1059,7 +1059,8 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 
 	// Badges line — outcome indicators (git commit, etc.)
-	if badges := renderBadges(s); badges != "" {
+	// Pass withBg so each badge's style gets the row background, avoiding transparent holes.
+	if badges := renderBadges(s, withBg); badges != "" {
 		if isSelected {
 			line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
 		} else if isAutoJump {
@@ -1199,37 +1200,51 @@ func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelecte
 // hasBadges returns true if the session has any outcome badges to display.
 // Delegates to renderBadges to avoid condition drift between the two.
 func hasBadges(s claude.ClaudeSession) bool {
-	return renderBadges(s) != ""
+	return renderBadges(s, nil) != ""
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
 // Returns empty string if no badges apply.
-func renderBadges(s claude.ClaudeSession) string {
+// transform, if non-nil, is applied to each badge's base style so callers can inject
+// a row background (e.g. selection tint) without leaving transparent holes.
+func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipgloss.Style) string {
+	applyTransform := func(st lipgloss.Style) lipgloss.Style {
+		if transform != nil {
+			return transform(st)
+		}
+		return st
+	}
 	var badges []string
 	if s.LastActionCommit && s.Status == claude.StatusUserTurn {
-		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
+		badges = append(badges, applyTransform(DiffAddedStyle).Render(IconGitCommit+" committed"))
 	}
 	// Skill badge: outcome indicator, shown after skill completes (user-turn).
 	// Cleared on next non-skill prompt.
 	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
-		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+skillBadgeLabel(s.SkillName)))
+		badges = append(badges, applyTransform(DiffAddedStyle).Render(IconSkill+" "+skillBadgeLabel(s.SkillName)))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {
-		badges = append(badges, StatDoneStyle.Render(s.StopReason))
+		badges = append(badges, applyTransform(StatDoneStyle).Render(s.StopReason))
 	}
 	if s.ProblemType != "" {
 		badges = append(badges, problemTypeBadge(s.ProblemType))
 	}
 	if s.HasOverlap {
-		badges = append(badges, OverlapStyle.Render(IconOverlap+" overlap"))
+		badges = append(badges, applyTransform(OverlapStyle).Render(IconOverlap))
 	}
 	if s.CompactCount > 0 {
-		badges = append(badges, ItemDetailStyle.Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
+		badges = append(badges, applyTransform(ItemDetailStyle).Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
 	}
 	if len(badges) == 0 {
 		return ""
 	}
-	return strings.Join(badges, "  ")
+	// Style the separator so it inherits the row background between pre-rendered badge spans.
+	// Without this, each badge's trailing reset (\x1b[0m) leaves the separating spaces transparent.
+	sep := "  "
+	if transform != nil {
+		sep = transform(lipgloss.NewStyle()).Render("  ")
+	}
+	return strings.Join(badges, sep)
 }
 
 // skillBadgeLabel maps a raw skill command name to a human-friendly past-tense label.
