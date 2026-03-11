@@ -13,14 +13,22 @@ import (
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 )
 
+// hunkHighlight holds pre-computed syntax-highlighted lines for one hunk.
+// Computed once in SetDiffHunks so renderDiffOverlay doesn't lex on every frame.
+type hunkHighlight struct {
+	old []string // highlighted OldString lines (Edit hunks only)
+	new []string // highlighted NewString lines (Write and Edit hunks)
+}
+
 // diffHunkFile groups hunks by file for the diff overlay.
 type diffHunkFile struct {
-	name      string // basename
-	added     int
-	removed   int
-	footprint int
-	isNewFile bool // all hunks are Write (no Edit)
-	hunks     []claude.FileDiffHunk
+	name       string // basename
+	added      int
+	removed    int
+	footprint  int
+	isNewFile  bool // all hunks are Write (no Edit)
+	hunks      []claude.FileDiffHunk
+	highlights []hunkHighlight // parallel to hunks, pre-computed
 }
 
 const defaultDiffSimThreshold = 0.3
@@ -93,6 +101,20 @@ func (m *DetailModel) SetDiffHunks(hunks []claude.FileDiffHunk, cwd string) {
 		return files[i].name < files[j].name
 	})
 	m.diffHunkFiles = files
+
+	// Pre-compute syntax highlighting for all hunks so renderDiffOverlay
+	// can reference cached lines instead of lexing on every frame.
+	for i := range m.diffHunkFiles {
+		f := &m.diffHunkFiles[i]
+		f.highlights = make([]hunkHighlight, len(f.hunks))
+		for j, h := range f.hunks {
+			f.highlights[j].new = highlightLines(h.NewString, f.name)
+			if !h.IsWrite {
+				f.highlights[j].old = highlightLines(h.OldString, f.name)
+			}
+		}
+	}
+
 	m.diffScroll = 0
 }
 
@@ -309,18 +331,37 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 				if hi > 0 {
 					allLines = append(allLines, hunkSepLine)
 				}
+				hl := f.highlights[hi]
 				if h.IsWrite {
+					rawLines := strings.Split(h.NewString, "\n")
 					lineNum := 1
-					for _, dl := range strings.Split(h.NewString, "\n") {
-						if strings.TrimSpace(dl) == "" {
+					for i, line := range hl.new {
+						raw := ""
+						if i < len(rawLines) {
+							raw = rawLines[i]
+						}
+						if strings.TrimSpace(raw) == "" {
 							lineNum++
 							continue
 						}
-						allLines = append(allLines, wrapTyped(diffLine{text: dl, kind: '+', lineNum: lineNum}))
+						allLines = append(allLines, wrapTyped(diffLine{text: line, kind: '+', lineNum: lineNum}))
 						lineNum++
 					}
 				} else {
-					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW-gutterW, simThreshold) {
+					dls := renderInlineDiff(h.OldString, h.NewString, contentW-gutterW, simThreshold)
+					for i, dl := range dls {
+						switch dl.kind {
+						case '-':
+							if dl.lineNum > 0 && dl.lineNum-1 < len(hl.old) {
+								dls[i].text = hl.old[dl.lineNum-1]
+							}
+						case '+':
+							if dl.lineNum > 0 && dl.lineNum-1 < len(hl.new) {
+								dls[i].text = hl.new[dl.lineNum-1]
+							}
+						}
+					}
+					for _, dl := range dls {
 						allLines = append(allLines, wrapTyped(dl))
 					}
 				}
