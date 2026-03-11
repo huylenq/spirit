@@ -1075,7 +1075,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Badges line — outcome indicators (git commit, etc.)
 	// Pass withBg so each badge's style gets the row background, avoiding transparent holes.
-	if badges := renderBadges(s, withBg); badges != "" {
+	if badges := renderBadges(s, withBg, query); badges != "" {
 		if isSelected {
 			line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
 		} else if isAutoJump {
@@ -1215,14 +1215,15 @@ func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelecte
 // hasBadges returns true if the session has any outcome badges to display.
 // Delegates to renderBadges to avoid condition drift between the two.
 func hasBadges(s claude.ClaudeSession) bool {
-	return renderBadges(s, nil) != ""
+	return renderBadges(s, nil, "") != ""
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
 // Returns empty string if no badges apply.
 // transform, if non-nil, is applied to each badge's base style so callers can inject
 // a row background (e.g. selection tint) without leaving transparent holes.
-func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipgloss.Style) string {
+// query, if non-empty, highlights matched characters in the ProblemType badge.
+func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipgloss.Style, query string) string {
 	applyTransform := func(st lipgloss.Style) lipgloss.Style {
 		if transform != nil {
 			return transform(st)
@@ -1242,7 +1243,7 @@ func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipglos
 		badges = append(badges, applyTransform(StatDoneStyle).Render(s.StopReason))
 	}
 	if s.ProblemType != "" {
-		badges = append(badges, problemTypeBadge(s.ProblemType))
+		badges = append(badges, problemTypeBadge(s.ProblemType, query))
 	}
 	if s.HasOverlap {
 		badges = append(badges, applyTransform(OverlapStyle).Render(IconOverlap))
@@ -1276,7 +1277,8 @@ func skillBadgeLabel(name string) string {
 }
 
 // problemTypeBadge renders a color-coded pill for the synthesized problem type.
-func problemTypeBadge(pt string) string {
+// query, if non-empty, highlights matched characters within the badge text.
+func problemTypeBadge(pt, query string) string {
 	var fg, bg lipgloss.AdaptiveColor
 	switch pt {
 	case "bug":
@@ -1307,10 +1309,8 @@ func problemTypeBadge(pt string) string {
 		fg = lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#d1d5db"}
 		bg = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#1f2937"}
 	}
-	return lipgloss.NewStyle().
-		Foreground(fg).
-		Background(bg).
-		Render(" " + pt + " ")
+	base := lipgloss.NewStyle().Foreground(fg).Background(bg)
+	return base.Render(" ") + highlightMatch(pt, query, base) + base.Render(" ")
 }
 
 func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string {
