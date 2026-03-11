@@ -1000,8 +1000,8 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		// When input is empty and user types ":", enter Lua mode
-		if !m.palette.IsLuaMode() && m.palette.LuaScript() == "" && msg.String() == ":" {
+		// When input is empty and user types ";", enter Lua mode (;; = open palette + enter Lua)
+		if !m.palette.IsLuaMode() && m.palette.LuaScript() == "" && msg.String() == ";" {
 			m.palette.EnterLuaMode()
 			return m, nil
 		}
