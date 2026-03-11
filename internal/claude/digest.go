@@ -66,6 +66,9 @@ func GenerateDigest(sessions []ClaudeSession) (*WorkspaceDigest, error) {
 		return nil, err
 	}
 
+	inputWords := len(strings.Fields(input))
+	go RecordSynthCall(SynthKindDigest, inputWords)
+
 	digest := &WorkspaceDigest{
 		Summary:      strings.TrimSpace(string(out)),
 		SessionCount: summarized,

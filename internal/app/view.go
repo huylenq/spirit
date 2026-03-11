@@ -169,6 +169,21 @@ func (m Model) View() string {
 		}
 	}
 
+	// Macro palette anchored next to sidebar selection, at the selected item's row
+	if m.state == StateMacro {
+		row := m.sidebar.SelectedItemRow()
+		if row < 0 {
+			row = 0
+		}
+		col := m.sidebarPanelWidth() // just after the sidebar's right border
+		content = ui.OverlayAt(content, m.renderMacroPalette(), row, col)
+	}
+
+	// Macro editor overlay centered
+	if m.state == StateMacroEdit {
+		content = ui.OverlayCentered(content, m.macroEditor.View(innerWidth), innerWidth)
+	}
+
 	// Command palette overlay centered
 	if m.state == StatePalette {
 		content = ui.OverlayCentered(content, m.palette.View(innerWidth), innerWidth)
@@ -381,6 +396,21 @@ func (m Model) renderSynthesizeDebugPanel() string {
 	} else {
 		lines = append(lines, line("Digest", "(none)"))
 	}
+
+	// Synthesizer usage stats
+	stats := claude.ReadSynthStats()
+	fmtPeriod := func(p claude.SynthPeriod) string {
+		if p.Calls == 0 {
+			return "—"
+		}
+		if p.Words < 1000 {
+			return fmt.Sprintf("%d calls / %d words", p.Calls, p.Words)
+		}
+		return fmt.Sprintf("%d calls / %dk words", p.Calls, p.Words/1000)
+	}
+	lines = append(lines, line("UsageToday", fmtPeriod(stats.Today)))
+	lines = append(lines, line("Usage7d", fmtPeriod(stats.Week)))
+	lines = append(lines, line("Usage30d", fmtPeriod(stats.Month)))
 
 	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
 }
@@ -697,6 +727,16 @@ func (m Model) renderSearchBar(width int) string {
 
 func (m Model) renderFooter(width int) string {
 	switch m.state {
+	case StateMacro:
+		h := ui.FooterKeyStyle.Render("<key>") + " run  " +
+			ui.FooterKeyStyle.Render("alt+<key>") + " edit  " +
+			ui.FooterKeyStyle.Render("=") + " create  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateMacroEdit:
+		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StatePalette:
 		var h string
 		if m.palette.IsLuaMode() {

@@ -104,6 +104,7 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 		summary = SessionSummary{Objective: raw}
 	}
 	summary.InputWords = inputWords
+	go RecordSynthCall(SynthKindSummary, inputWords)
 	// Fallback: derive headline from objective if model omitted it
 	if summary.Headline == "" && summary.Objective != "" {
 		h := summary.Objective
