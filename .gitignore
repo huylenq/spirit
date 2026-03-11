@@ -5,3 +5,6 @@ bin/
 .idea/
 .claude/
 dist/
+
+
+.cmc/backlog/
