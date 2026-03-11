@@ -373,7 +373,7 @@ var Keys = KeyMap{
 		key.WithHelp("a", "new session"),
 	),
 	JumpBack: key.NewBinding(
-		key.WithKeys("ctrl+o"),
+		key.WithKeys("ctrl+o", "shift+tab"),
 		key.WithHelp("ctrl+o/i", "jump back/fwd"),
 	),
 	JumpForward: key.NewBinding(
