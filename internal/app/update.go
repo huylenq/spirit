@@ -1487,9 +1487,13 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.execLaterKill()
 
 	case key.Matches(msg, Keys.Transcript):
-		m.hideTranscript = !m.hideTranscript
-		m.detail.SetHideTranscript(m.hideTranscript)
-		return m, nil
+		m.transcriptMode = nextTranscriptMode(m.transcriptMode)
+		savePrefString("transcriptMode", m.transcriptMode)
+		m.detail.SetTranscriptMode(m.transcriptMode)
+		m.flashMsg = transcriptModeFlash(m.transcriptMode)
+		m.flashIsError = false
+		m.flashExpiry = time.Now().Add(3 * time.Second)
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
 
 	case key.Matches(msg, Keys.GroupMode):
 		newMode := !m.sidebar.GroupByProject()

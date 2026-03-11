@@ -19,3 +19,10 @@ tmux bind-key -n C-Space run-shell "$BINARY popup --select-active"
 
 # Ctrl-Tab (prefix-less) → popup, skip current pane, rotate to next YOUR TURN
 tmux bind-key -n C-Tab run-shell "$BINARY popup --rotate-next"
+
+# <prefix>-Ctrl-Space / <prefix>-Ctrl-Tab → dev picker: fzf over git worktrees,
+# then launch the chosen worktree's bin/cmc inside the same popup.
+# Size matches the default non-fullscreen popup (80%×70%).
+# Fullscreen users: replace -w 80% -h 70% with -w 100% -h 100%.
+tmux bind-key C-Space display-popup -B -E -w 80% -h 70% "$BINARY dev --select-active"
+tmux bind-key C-Tab   display-popup -B -E -w 80% -h 70% "$BINARY dev --rotate-next"

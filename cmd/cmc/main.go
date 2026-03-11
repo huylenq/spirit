@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/claude-mission-control/internal/app"
@@ -46,6 +48,9 @@ func main() {
 			return
 		case "popup":
 			runPopup()
+			return
+		case "dev":
+			runDev()
 			return
 		case "usage-dump":
 			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
@@ -117,6 +122,7 @@ func printUsage() {
 Usage:
   cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
   cmc popup            Open TUI in a tmux popup (respects zoom pref)
+  cmc dev              Dev picker: fzf over git worktrees, launch chosen worktree's TUI
   cmc popup --select-active  Same, but auto-select the current pane (ctrl-space)
   cmc popup --rotate-next    Same, but skip current pane → next YOUR TURN (ctrl-tab)
   cmc eval <file.lua>        Evaluate a Lua script against the daemon
@@ -340,7 +346,8 @@ func runSetup() {
 	}
 
 	if !changed {
-		fmt.Println("Hooks already up to date.")
+		// Will flash on the tmux view, not nice!
+		// fmt.Println("Hooks already up to date.")
 		return
 	}
 
@@ -478,6 +485,198 @@ func runPopup() {
 	cmd.Run() //nolint:errcheck
 }
 
+// worktreeInfo holds a single entry from git worktree list --porcelain.
+type worktreeInfo struct {
+	path   string
+	branch string // short name, e.g. "main" or "feat-x"
+}
+
+// listWorktrees returns all git worktrees for the given repo root.
+func listWorktrees(repoRoot string) ([]worktreeInfo, error) {
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var result []worktreeInfo
+	var cur worktreeInfo
+	for _, line := range strings.Split(string(out), "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			cur.path = strings.TrimPrefix(line, "worktree ")
+		case strings.HasPrefix(line, "branch "):
+			ref := strings.TrimPrefix(line, "branch ")
+			cur.branch = strings.TrimPrefix(ref, "refs/heads/")
+		case line == "":
+			if cur.path != "" {
+				if cur.branch == "" {
+					cur.branch = filepath.Base(cur.path)
+				}
+				result = append(result, cur)
+				cur = worktreeInfo{}
+			}
+		}
+	}
+	// handle final entry with no trailing blank line
+	if cur.path != "" {
+		if cur.branch == "" {
+			cur.branch = filepath.Base(cur.path)
+		}
+		result = append(result, cur)
+	}
+	return result, nil
+}
+
+// ensureWorktreeBinary builds bin/cmc in the given worktree if it's missing
+// or stale (older than the current process's binary).
+func ensureWorktreeBinary(wtPath string) {
+	binPath := filepath.Join(wtPath, "bin", "cmc")
+	myExe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cmc dev: cannot resolve own executable: %v\n", err)
+		os.Exit(1)
+	}
+	myExe, _ = filepath.EvalSymlinks(myExe)
+
+	binInfo, statErr := os.Stat(binPath)
+	stale := false
+	if statErr == nil {
+		if myInfo, err := os.Stat(myExe); err == nil {
+			stale = binInfo.ModTime().Before(myInfo.ModTime())
+		}
+	}
+	if statErr == nil && !stale {
+		return // up to date
+	}
+
+	var action string
+	if statErr != nil {
+		action = "building (no binary)"
+	} else {
+		action = "rebuilding (stale)"
+	}
+	fmt.Fprintf(os.Stderr, "cmc dev: %s %s/bin/cmc...\n", action, filepath.Base(wtPath))
+
+	cmd := exec.Command("make", "build")
+	cmd.Dir = wtPath
+	cmd.Stdout = os.Stderr // show build output in popup
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "cmc dev: build failed in %s: %v\n", wtPath, err)
+		os.Exit(1)
+	}
+}
+
+// execWorktreeCMC builds (if needed) then execs into the given worktree's
+// bin/cmc, setting the appropriate env var for select-active or rotate-next mode.
+// This replaces the current process — caller must not return.
+func execWorktreeCMC(wtPath string, selectActive bool) {
+	ensureWorktreeBinary(wtPath)
+	binPath := filepath.Join(wtPath, "bin", "cmc")
+	env := os.Environ()
+	if selectActive {
+		env = append(env, "CMC_SELECT_ACTIVE=1")
+	} else {
+		env = append(env, "CMC_ROTATE_NEXT=1")
+	}
+	if err := syscall.Exec(binPath, []string{binPath}, env); err != nil {
+		fmt.Fprintln(os.Stderr, "cmc dev: exec:", err)
+		os.Exit(1)
+	}
+}
+
+// runDev is the dev-mode worktree picker.
+// It lists all git worktrees for this binary's repo, shows an fzf picker with
+// daemon status, and execs the chosen worktree's bin/cmc (auto-starting its
+// daemon on first connect as usual).
+func runDev() {
+	selectActive := false
+	rotateNext := false
+	for _, arg := range os.Args[2:] {
+		switch arg {
+		case "--select-active":
+			selectActive = true
+		case "--rotate-next":
+			rotateNext = true
+		}
+	}
+	if !selectActive && !rotateNext {
+		selectActive = true // default
+	}
+
+	// Resolve repo root from this binary's location.
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cmc dev: cannot resolve executable:", err)
+		os.Exit(1)
+	}
+	exe, _ = filepath.EvalSymlinks(exe)
+	repoRoot, err := daemon.RepoRootForDir(filepath.Dir(exe))
+	if err != nil {
+		// Fallback: try $PWD (useful when running `go run ./cmd/cmc dev`).
+		cwd, _ := os.Getwd()
+		repoRoot, err = daemon.RepoRootForDir(cwd)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cmc dev: not in a git repository")
+			os.Exit(1)
+		}
+	}
+
+	worktrees, err := listWorktrees(repoRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cmc dev: listing worktrees:", err)
+		os.Exit(1)
+	}
+
+	// Probe daemon liveness for all worktrees in parallel.
+	alive := make([]bool, len(worktrees))
+	var wg sync.WaitGroup
+	for i, wt := range worktrees {
+		wg.Add(1)
+		go func(i int, path string) {
+			defer wg.Done()
+			info := daemon.WorkdirDaemonInfo(path)
+			alive[i] = daemon.CheckAlive(info)
+		}(i, wt.path)
+	}
+	wg.Wait()
+
+	// Build fzf input lines: "N  branch  STATUS\t/path" (tab-delimited; fzf shows col 1 only).
+	var lines []string
+	for i, wt := range worktrees {
+		status := "○"
+		if alive[i] {
+			status = "●"
+		}
+		label := fmt.Sprintf("%d  %-30s %s", i+1, wt.branch, status)
+		lines = append(lines, label+"\t"+wt.path)
+	}
+
+	fzfCmd := exec.Command("fzf",
+		"--height=~12",
+		"--reverse",
+		"--no-sort",
+		"--delimiter=\t",
+		"--with-nth=1",
+		"--header=Select worktree  (● daemon running  ○ stopped)",
+	)
+	fzfCmd.Stdin = strings.NewReader(strings.Join(lines, "\n"))
+	fzfCmd.Stderr = os.Stderr
+
+	// fzf draws its UI to /dev/tty; stdout carries the selected line.
+	selected, err := fzfCmd.Output()
+	if err != nil {
+		return // user cancelled (exit 130) or fzf not available
+	}
+
+	parts := strings.SplitN(strings.TrimSpace(string(selected)), "\t", 2)
+	if len(parts) < 2 {
+		return
+	}
+	execWorktreeCMC(strings.TrimSpace(parts[1]), selectActive)
+}
+
 func runEval() {
 	var script string
 
@@ -603,4 +802,3 @@ Examples:
 	}
 	fmt.Print(text)
 }
-

@@ -36,7 +36,7 @@ type DetailModel struct {
 	relayView              string // when set, rendered inline after the ❯ prompt line
 	hookEvents             []claude.HookEvent
 	showHooks              bool
-	hideTranscript         bool
+	transcriptMode         string // "overlay", "docked", "hidden"
 	hookCursor             int
 	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
 	hookExpandedJSON       map[int]string // lazy pretty-print cache
@@ -75,10 +75,7 @@ func (m *DetailModel) SetSize(w, h int) {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
-	vpWidth := w - 6 // account for content box border (2) + padding from outer layout (4 total)
-	if vpWidth < 1 {
-		vpWidth = 1
-	}
+	vpWidth := m.effectiveVPWidth(w)
 	if !m.ready {
 		m.viewport = viewport.New(vpWidth, contentHeight)
 		m.ready = true
@@ -93,6 +90,30 @@ func (m *DetailModel) SetSize(w, h int) {
 			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), m.viewport.Width))
 		}
 	}
+}
+
+// effectiveVPWidth returns the viewport width accounting for transcript mode.
+// In docked mode, the viewport is narrower to make room for the side panel.
+func (m *DetailModel) effectiveVPWidth(w int) int {
+	contentWidth := w - 4
+	vpWidth := w - 6 // content box border (2) + outer padding (4)
+	if vpWidth < 1 {
+		vpWidth = 1
+	}
+	if m.transcriptMode == "docked" && (len(m.userMessages) > 0 || m.summary != nil) {
+		transcriptWidth := contentWidth * 40 / 100
+		if transcriptWidth < 20 {
+			transcriptWidth = 20
+		}
+		if transcriptWidth > 50 {
+			transcriptWidth = 50
+		}
+		vpWidth = contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
+		if vpWidth < 1 {
+			vpWidth = 1
+		}
+	}
+	return vpWidth
 }
 
 // ClearSession resets the preview to the empty "Select a session" state.
@@ -187,8 +208,15 @@ func (m *DetailModel) SetSummary(s *claude.SessionSummary) {
 	m.summary = s
 }
 
-func (m *DetailModel) SetHideTranscript(hide bool) {
-	m.hideTranscript = hide
+func (m *DetailModel) SetTranscriptMode(mode string) {
+	m.transcriptMode = mode
+	if m.ready {
+		vpWidth := m.effectiveVPWidth(m.width)
+		m.viewport.Width = vpWidth
+		if m.content != "" {
+			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), vpWidth))
+		}
+	}
 }
 
 func (m *DetailModel) SetShowHooks(show bool) {
@@ -697,7 +725,8 @@ func (m DetailModel) View() string {
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
-	if !m.hideTranscript && (len(m.userMessages) > 0 || m.summary != nil) {
+	showTranscript := m.transcriptMode != "hidden" && (len(m.userMessages) > 0 || m.summary != nil)
+	if showTranscript && m.transcriptMode == "docked" {
 		transcriptWidth := contentWidth * 40 / 100
 		if transcriptWidth < 20 {
 			transcriptWidth = 20
@@ -710,11 +739,22 @@ func (m DetailModel) View() string {
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
 		transcriptPanel := m.renderTranscript(transcriptWidth)
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", transcriptPanel)
-		// Hard clip the entire joined output so nothing overflows the content border
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
 		contentBox = contentStyle.Width(contentWidth).Render(vpRaw)
+		if showTranscript { // overlay mode
+			transcriptWidth := contentWidth * 40 / 100
+			if transcriptWidth < 20 {
+				transcriptWidth = 20
+			}
+			if transcriptWidth > 50 {
+				transcriptWidth = 50
+			}
+			transcriptPanel := m.renderTranscript(transcriptWidth)
+			col := lipgloss.Width(contentBox) - lipgloss.Width(transcriptPanel) - 1
+			contentBox = overlayAt(contentBox, transcriptPanel, col, 1)
+		}
 	}
 
 	// Hook events overlay on top of content

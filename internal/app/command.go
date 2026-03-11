@@ -140,8 +140,9 @@ func (m Model) execLaterKill() (Model, tea.Cmd) {
 }
 
 func (m Model) execTranscript() (Model, tea.Cmd) {
-	m.hideTranscript = !m.hideTranscript
-	m.detail.SetHideTranscript(m.hideTranscript)
+	m.transcriptMode = nextTranscriptMode(m.transcriptMode)
+	savePrefString("transcriptMode", m.transcriptMode)
+	m.detail.SetTranscriptMode(m.transcriptMode)
 	return m, nil
 }
 

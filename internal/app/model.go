@@ -60,6 +60,40 @@ const (
 
 var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart}
 
+// Transcript display modes (cycled with T key).
+const (
+	TranscriptOverlay = "overlay" // floats on top of viewport
+	TranscriptDocked  = "docked"  // side-by-side with viewport
+	TranscriptHidden  = "hidden"  // not shown
+)
+
+var transcriptModes = []string{TranscriptOverlay, TranscriptDocked, TranscriptHidden}
+
+func nextTranscriptMode(mode string) string {
+	switch mode {
+	case TranscriptOverlay:
+		return TranscriptDocked
+	case TranscriptDocked:
+		return TranscriptHidden
+	case TranscriptHidden:
+		return TranscriptOverlay
+	default:
+		return TranscriptOverlay
+	}
+}
+
+func transcriptModeFlash(active string) string {
+	var parts []string
+	for _, mode := range transcriptModes {
+		if mode == active {
+			parts = append(parts, ui.FooterKeyStyle.Render(mode))
+		} else {
+			parts = append(parts, ui.FooterDimStyle.Render(mode))
+		}
+	}
+	return "transcript: " + strings.Join(parts, ui.FooterDimStyle.Render(" · "))
+}
+
 // minimapModeFlash returns a styled string showing all modes with the active one highlighted,
 // plus a scale indicator showing the current max height.
 func minimapModeFlash(active string, maxH int, collapse bool) string {
@@ -119,7 +153,7 @@ type Model struct {
 	showHooks            bool
 	showRawTranscript    bool
 	showDiffs            bool
-	hideTranscript       bool
+	transcriptMode       string // TranscriptOverlay, TranscriptDocked, TranscriptHidden
 	showMinimap          bool
 	minimapMode          string       // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
 	minimapMaxH          int          // max minimap height (persisted pref, default 14)
@@ -188,7 +222,7 @@ func NewModel(client *daemon.Client) Model {
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
-	return Model{
+	m := Model{
 		client:            client,
 		sidebar:           sidebar,
 		detail:            ui.NewDetailModel(),
@@ -203,6 +237,7 @@ func NewModel(client *daemon.Client) Model {
 		promptEditor:      ui.NewPromptEditorModel(),
 		macroEditor:       ui.NewMacroEditorModel(),
 		macros:            claude.LoadMacros(nil),
+		transcriptMode:    loadPrefString("transcriptMode", TranscriptOverlay),
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
@@ -215,6 +250,8 @@ func NewModel(client *daemon.Client) Model {
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 	}
+	m.detail.SetTranscriptMode(m.transcriptMode)
+	return m
 }
 
 // toast enqueues a message for display in the toast overlay and schedules its removal.
