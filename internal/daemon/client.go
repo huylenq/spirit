@@ -339,8 +339,9 @@ func (c *Client) Kill(sessionID string) error {
 }
 
 // PendingPrompt registers a prompt to be delivered to a pane once its claude session is ready.
-func (c *Client) PendingPrompt(paneID, prompt string) error {
-	return c.rpcInto(Request{Type: ReqPendingPrompt, Data: marshalData(PendingPromptData{PaneID: paneID, Prompt: prompt})}, nil)
+// If planMode is true, the daemon will send "/plan <prompt>" instead of the raw prompt.
+func (c *Client) PendingPrompt(paneID, prompt string, planMode bool) error {
+	return c.rpcInto(Request{Type: ReqPendingPrompt, Data: marshalData(PendingPromptData{PaneID: paneID, Prompt: prompt, PlanMode: planMode})}, nil)
 }
 
 // RegisterOrchestrator marks a session ID for exclusion from eval sessions().
@@ -353,4 +354,9 @@ func (c *Client) UnregisterOrchestrator(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqUnregisterOrchestrator, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
 }
 
-
+// Digest fetches the cached workspace digest.
+func (c *Client) Digest() (*claude.WorkspaceDigest, error) {
+	var data DigestData
+	err := c.rpcInto(Request{Type: ReqDigest}, &data)
+	return data.Digest, err
+}

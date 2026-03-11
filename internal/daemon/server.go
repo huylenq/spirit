@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -144,6 +145,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqKill:
 		return d.handleKill(req.Data)
 
+	case ReqDigest:
+		return d.handleDigest()
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r
@@ -191,7 +195,7 @@ func (d *Daemon) handleNudge(data json.RawMessage) *Response {
 	} else {
 		result := d.patchSession(req)
 		if result == patchNotFound {
-			// Pane not in session list yet — need full discovery
+			// Pane not in sidebar yet — need full discovery
 			d.nudge()
 		}
 		if result == patchDeduped {
@@ -290,42 +294,67 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 		}
 	}
 
-	// Mark all target panes as synthesizing
-	d.synthesizingMu.Lock()
+	// Collect targets
+	type target struct {
+		paneID    string
+		sessionID string
+	}
+	var targets []target
 	for _, s := range sessions {
 		if s.PaneID != skipPaneID && s.SessionID != "" {
-			d.synthesizingPanes[s.PaneID] = true
+			targets = append(targets, target{s.PaneID, s.SessionID})
 		}
 	}
-	d.synthesizingMu.Unlock()
 
-	var results []SynthesizeResultData
-	var done []string
-	for _, s := range sessions {
-		if s.PaneID == skipPaneID || s.SessionID == "" {
-			continue
-		}
-		summary, fromCache, err := claude.Summarize(s.SessionID)
-		done = append(done, s.PaneID)
-		if err != nil {
-			log.Printf("synthesize %s: %v", s.SessionID, err)
-			continue
-		}
-		if !fromCache && summary != nil && summary.Headline != "" {
-			tmux.SendKeys(s.PaneID, "/rename "+summary.Headline, "Enter")
-		}
-		results = append(results, SynthesizeResultData{
-			PaneID:    s.PaneID,
-			Summary:   summary,
-			FromCache: fromCache,
-		})
-	}
+	// Mark all target panes as synthesizing and nudge for immediate spinner display
 	d.synthesizingMu.Lock()
-	for _, paneID := range done {
-		delete(d.synthesizingPanes, paneID)
+	for _, t := range targets {
+		d.synthesizingPanes[t.paneID] = true
 	}
 	d.synthesizingMu.Unlock()
 	d.nudge()
+
+	// Fan out with bounded concurrency (max 4 parallel)
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var results []SynthesizeResultData
+
+	for _, t := range targets {
+		wg.Add(1)
+		go func(paneID, sessionID string) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire
+			defer func() { <-sem }() // release
+
+			summary, fromCache, err := claude.Summarize(sessionID)
+
+			// Clear spinner for this pane immediately
+			d.synthesizingMu.Lock()
+			delete(d.synthesizingPanes, paneID)
+			d.synthesizingMu.Unlock()
+			d.nudge() // incremental UI update
+
+			if err != nil {
+				log.Printf("synthesize %s: %v", sessionID, err)
+				return
+			}
+			if !fromCache && summary != nil && summary.Headline != "" {
+				tmux.SendKeys(paneID, "/rename "+summary.Headline, "Enter")
+			}
+			mu.Lock()
+			results = append(results, SynthesizeResultData{
+				PaneID:    paneID,
+				Summary:   summary,
+				FromCache: fromCache,
+			})
+			mu.Unlock()
+		}(t.paneID, t.sessionID)
+	}
+	wg.Wait()
+
+	// Trigger digest after batch synthesis
+	go d.triggerDigest()
 
 	r := resultResponse(SynthesizeAllResultData{Results: results})
 	return &r
@@ -664,7 +693,7 @@ func (d *Daemon) handlePendingPrompt(data json.RawMessage) *Response {
 		return &r
 	}
 	d.pendingPromptMu.Lock()
-	d.pendingPromptPanes[req.PaneID] = pendingPromptEntry{Prompt: req.Prompt, CreatedAt: time.Now()}
+	d.pendingPromptPanes[req.PaneID] = pendingPromptEntry{Prompt: req.Prompt, PlanMode: req.PlanMode, CreatedAt: time.Now()}
 	d.pendingPromptMu.Unlock()
 	d.nudge()
 	log.Printf("pending-prompt: registered pane %s", req.PaneID)
@@ -856,6 +885,12 @@ func (d *Daemon) handleKill(data json.RawMessage) *Response {
 	d.nudge()
 	log.Printf("kill: killed session %s (pane %s)", req.SessionID, found.PaneID)
 	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleDigest() *Response {
+	digest := claude.ReadCachedDigest()
+	r := resultResponse(DigestData{Digest: digest})
 	return &r
 }
 

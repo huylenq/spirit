@@ -34,6 +34,7 @@ type commitDoneEntry struct {
 // pendingPromptEntry tracks a prompt to deliver to a newly spawned session.
 type pendingPromptEntry struct {
 	Prompt    string
+	PlanMode  bool
 	CreatedAt time.Time
 }
 
@@ -60,6 +61,16 @@ type Daemon struct {
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
 
+	autoSynthMu       sync.Mutex
+	lastAutoSynthTime map[string]time.Time // sessionID → last auto-synth time
+
+	overlapMu    sync.RWMutex
+	overlaps     []claude.FileOverlap
+	overlapPanes map[string]bool // paneIDs involved in any file overlap
+
+	digestMu      sync.Mutex
+	digestPending bool
+
 	orchestratorMu  sync.RWMutex
 	orchestratorIDs map[string]bool // session IDs to exclude from eval sessions()
 
@@ -80,12 +91,14 @@ type Daemon struct {
 // Run starts the daemon: acquires lock, cleans up stale socket, writes PID, listens, polls.
 func Run(info DaemonInfo) error {
 	d := &Daemon{
-		subscribers:      make(map[*subscriber]struct{}),
-		commitDonePanes:  make(map[string]commitDoneEntry),
-		queuePanes:       make(map[string][]string),
+		subscribers:        make(map[*subscriber]struct{}),
+		commitDonePanes:    make(map[string]commitDoneEntry),
+		queuePanes:         make(map[string][]string),
 		synthesizingPanes:  make(map[string]bool),
 		pendingPromptPanes: make(map[string]pendingPromptEntry),
-		orchestratorIDs:   make(map[string]bool),
+		orchestratorIDs:    make(map[string]bool),
+		lastAutoSynthTime:  make(map[string]time.Time),
+		overlapPanes:      make(map[string]bool),
 		nudgeCh:         make(chan struct{}, 1),
 		socketPath:  info.SocketPath,
 		pidPath:     info.PIDPath,
@@ -199,7 +212,7 @@ func (d *Daemon) usageLoop(stop chan struct{}) {
 		go d.fetchUsage()
 	}
 
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -251,7 +264,7 @@ func (d *Daemon) nudge() {
 	}
 }
 
-// notifySubscribers pushes the latest session list to all subscribers.
+// notifySubscribers pushes the latest sidebar to all subscribers.
 // Non-blocking per subscriber: drops stale update, sends latest.
 func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
 	d.subMu.Lock()
@@ -303,11 +316,17 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 			d.mu.Unlock()
 			return patchNotFound
 		}
+		// Capture paneID + sessionID before removal for auto-synthesis
+		endPaneID := d.sessions[idx].PaneID
+		endSessionID := d.sessions[idx].SessionID
 		d.sessions = append(d.sessions[:idx], d.sessions[idx+1:]...)
 		d.version++
 		sessions := d.sessions
 		d.mu.Unlock()
 		d.notifySubscribers(sessions)
+		if endSessionID != "" {
+			go d.autoSynthesize(endPaneID, endSessionID)
+		}
 		return patchApplied
 	}
 
@@ -318,6 +337,7 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 
 	s := &d.sessions[idx]
 	changed := false
+	becameUserTurn := false
 
 	// Session moved panes (e.g. --resume in a new pane)
 	if nudge.PaneID != "" && s.PaneID != nudge.PaneID {
@@ -328,6 +348,9 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	status := claude.ParseStatus(nudge.Status)
 
 	if nudge.Status != "" && s.Status != status {
+		if status == claude.StatusUserTurn && s.Status == claude.StatusAgentTurn {
+			becameUserTurn = true
+		}
 		s.Status = status
 		changed = true
 	}
@@ -380,10 +403,15 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	}
 
 	s.LastChanged = time.Now()
+	paneID := s.PaneID
+	sessionID := s.SessionID
 	d.version++
 	sessions := d.sessions
 	d.mu.Unlock()
 	d.notifySubscribers(sessions)
+	if becameUserTurn && sessionID != "" {
+		go d.autoSynthesize(paneID, sessionID)
+	}
 	return patchApplied
 }
 
@@ -402,10 +430,14 @@ func (d *Daemon) poll() {
 	// Resolve pending prompts for newly spawned sessions
 	d.resolvePendingPrompts(sessions)
 
+	// Refresh overlap detection (pure in-memory, uses cached DiffStats)
+	d.refreshOverlaps(sessions)
+
 	// Annotate sessions with daemon-side pending states
 	d.commitDoneMu.Lock()
 	d.queueMu.Lock()
 	d.synthesizingMu.Lock()
+	d.overlapMu.RLock()
 	for i := range sessions {
 		sid := sessions[i].SessionID
 		if sid != "" {
@@ -419,7 +451,11 @@ func (d *Daemon) poll() {
 		if d.synthesizingPanes[sessions[i].PaneID] {
 			sessions[i].SynthesizePending = true
 		}
+		if d.overlapPanes[sessions[i].PaneID] {
+			sessions[i].HasOverlap = true
+		}
 	}
+	d.overlapMu.RUnlock()
 	d.synthesizingMu.Unlock()
 	d.queueMu.Unlock()
 	d.commitDoneMu.Unlock()
@@ -616,7 +652,15 @@ func (d *Daemon) resolvePendingPrompts(sessions []claude.ClaudeSession) {
 		if s.Status != claude.StatusUserTurn {
 			continue // session not ready yet
 		}
-		if err := tmux.SendKeysLiteral(paneID, entry.Prompt); err != nil {
+		text := entry.Prompt
+		if entry.PlanMode {
+			if text != "" {
+				text = "/plan " + text
+			} else {
+				text = "/plan"
+			}
+		}
+		if err := tmux.SendKeysLiteral(paneID, text); err != nil {
 			log.Printf("pending-prompt: send to pane %s failed: %v (will retry)", paneID, err)
 			continue
 		}
@@ -710,6 +754,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].CompactCount != b[i].CompactCount ||
 			a[i].CommitDonePending != b[i].CommitDonePending ||
 			a[i].SynthesizePending != b[i].SynthesizePending ||
+			a[i].HasOverlap != b[i].HasOverlap ||
 			!slices.Equal(a[i].QueuePending, b[i].QueuePending) {
 			return false
 		}
@@ -742,4 +787,112 @@ func Stop(info DaemonInfo) error {
 		return fmt.Errorf("finding process %d: %w", pid, err)
 	}
 	return proc.Signal(syscall.SIGTERM)
+}
+
+// autoSynthesize runs synthesis for a session that just became idle.
+// Called as a goroutine from patchSession on agent-turn → user-turn transitions.
+func (d *Daemon) autoSynthesize(paneID, sessionID string) {
+	// Check pref — default on (only skip if explicitly "false")
+	if d.readPref("autoSynthesize") == "false" {
+		return
+	}
+
+	// Debounce: skip if last auto-synth for this session was < 30s ago
+	d.autoSynthMu.Lock()
+	if last, ok := d.lastAutoSynthTime[sessionID]; ok && time.Since(last) < 30*time.Second {
+		d.autoSynthMu.Unlock()
+		return
+	}
+	d.autoSynthMu.Unlock()
+
+	// Skip if already synthesizing this pane
+	d.synthesizingMu.Lock()
+	if d.synthesizingPanes[paneID] {
+		d.synthesizingMu.Unlock()
+		return
+	}
+	d.synthesizingPanes[paneID] = true
+	d.synthesizingMu.Unlock()
+
+	d.autoSynthMu.Lock()
+	d.lastAutoSynthTime[sessionID] = time.Now()
+	d.autoSynthMu.Unlock()
+
+	d.nudge() // show spinner immediately
+
+	_, _, err := claude.Summarize(sessionID)
+
+	d.synthesizingMu.Lock()
+	delete(d.synthesizingPanes, paneID)
+	d.synthesizingMu.Unlock()
+	d.nudge()
+
+	if err != nil {
+		log.Printf("auto-synth: session %s: %v", sessionID, err)
+		return
+	}
+
+	// No /rename SendKeys here — auto-synth must not inject keystrokes into
+	// the user's input buffer. The Headline will appear in the TUI on the
+	// next poll cycle via DiscoverSessions → ReadCachedSummary.
+
+	// Trigger digest regeneration after synthesis
+	go d.triggerDigest()
+}
+
+// readPref reads a single preference value from the prefs file.
+// Duplicates the parsePrefsText logic to avoid import cycles with app package.
+func (d *Daemon) readPref(key string) string {
+	home, _ := os.UserHomeDir()
+	data, err := os.ReadFile(home + "/.cache/cmc/prefs")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(k) == key {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// refreshOverlaps detects file-level overlaps between sessions.
+// Pure in-memory computation using cached DiffStats.
+func (d *Daemon) refreshOverlaps(sessions []claude.ClaudeSession) {
+	overlaps := claude.DetectOverlaps(sessions)
+	panes := make(map[string]bool)
+	for _, o := range overlaps {
+		for _, pid := range o.PaneIDs {
+			panes[pid] = true
+		}
+	}
+
+	d.overlapMu.Lock()
+	d.overlaps = overlaps
+	d.overlapPanes = panes
+	d.overlapMu.Unlock()
+}
+
+// triggerDigest regenerates the workspace digest after synthesis.
+// Uses TryLock to prevent overlap.
+func (d *Daemon) triggerDigest() {
+	if !d.digestMu.TryLock() {
+		return
+	}
+	defer d.digestMu.Unlock()
+
+	sessions := d.currentSessions()
+	_, err := claude.GenerateDigest(sessions)
+	if err != nil {
+		log.Printf("digest: %v", err)
+		return
+	}
+
+	// Bump version so subscribers receive digest update
+	d.mu.Lock()
+	d.version++
+	s := d.sessions
+	d.mu.Unlock()
+	d.notifySubscribers(s)
 }

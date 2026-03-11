@@ -56,6 +56,7 @@ const (
 	ReqSend                   = "send"
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
+	ReqDigest                 = "digest"
 )
 
 // Response type constants.
@@ -149,8 +150,9 @@ type CancelQueueItemData struct {
 }
 
 type PendingPromptData struct {
-	PaneID string `json:"paneID"`
-	Prompt string `json:"prompt"`
+	PaneID   string `json:"paneID"`
+	Prompt   string `json:"prompt"`
+	PlanMode bool   `json:"planMode,omitempty"`
 }
 
 // --- Response data payloads ---
@@ -227,6 +229,10 @@ type SpawnData struct {
 type SpawnResultData struct {
 	SessionID string `json:"sessionID"`
 	PaneID    string `json:"paneID"`
+}
+
+type DigestData struct {
+	Digest *claude.WorkspaceDigest `json:"digest"`
 }
 
 // --- Helpers ---
