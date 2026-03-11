@@ -49,31 +49,31 @@ func selBg(st lipgloss.Style, selected bool, colorIdx int) lipgloss.Style {
 }
 
 type SidebarModel struct {
-	items                []claude.ClaudeSession
-	filtered             []claude.ClaudeSession            // cursor-navigable matching items
-	allSorted            []claude.ClaudeSession            // all items sorted (for stable group rendering)
-	matchSet             map[string]bool                   // PaneIDs of narrow-matching items; nil = all match
-	matchScores          map[string]int                    // PaneID → best fuzzy score (only during search)
-	cursor               int
-	height               int
-	width                int
-	narrow               string
-	spinnerView          string
-	commitDoneFrame      int
-	diffStats            map[string]map[string]claude.FileDiffStat // sessionID -> file stats
-	summaryLoadingPanes  map[string]bool                           // pane IDs with in-flight synthesization
-	groupByProject       bool
-	deselected           bool // when true, SelectedItem() returns false (minimap on non-Claude pane)
-	selectionLevel       SelectionLevel
-	projectCursor        int
-	projects             []projectEntry // project headers in display order
-	selectedProjectRow   int            // line index of the selected project header (set during View)
-	selectedItemRow      int            // line index of the selected session item (set during View)
-	backlogs             []claude.Backlog // all backlog items from visible projects
-	filteredBacklog      []claude.Backlog // backlog items matching narrow filter
-	showBacklog          bool             // toggle BACKLOG section visibility
-	ghostPaneID          string           // pane that was just auto-jumped away from
-	ghostFrame           int              // animation frame (0–2 visible, 3 = done)
+	items               []claude.ClaudeSession
+	filtered            []claude.ClaudeSession // cursor-navigable matching items
+	allSorted           []claude.ClaudeSession // all items sorted (for stable group rendering)
+	matchSet            map[string]bool        // PaneIDs of narrow-matching items; nil = all match
+	matchScores         map[string]int         // PaneID → best fuzzy score (only during search)
+	cursor              int
+	height              int
+	width               int
+	narrow              string
+	spinnerView         string
+	commitDoneFrame     int
+	diffStats           map[string]map[string]claude.FileDiffStat // sessionID -> file stats
+	summaryLoadingPanes map[string]bool                           // pane IDs with in-flight synthesization
+	groupByProject      bool
+	deselected          bool // when true, SelectedItem() returns false (minimap on non-Claude pane)
+	selectionLevel      SelectionLevel
+	projectCursor       int
+	projects            []projectEntry   // project headers in display order
+	selectedProjectRow  int              // line index of the selected project header (set during View)
+	selectedItemRow     int              // line index of the selected session item (set during View)
+	backlogs            []claude.Backlog // all backlog items from visible projects
+	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
+	showBacklog         bool             // toggle BACKLOG section visibility
+	ghostPaneID         string           // pane that was just auto-jumped away from
+	ghostFrame          int              // animation frame (0–2 visible, 3 = done)
 }
 
 // SetGhost marks paneID as the ghost origin for the auto-jump fade animation.
@@ -728,7 +728,7 @@ func (m SidebarModel) computeDiffColWidths() diffColWidths {
 	return dw
 }
 
-func (m SidebarModel) View() string {
+func (m *SidebarModel) View() string {
 	if len(m.items) == 0 {
 		return EmptyStyle.Width(m.width).Render("No Claude sessions found\n\nStart Claude in a tmux pane to see it here.")
 	}
@@ -1028,7 +1028,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// bar(1) + sp("  ")(2) + content(m.width-5) = m.width-2 total, matching the main line.
 	selSubtitle := func(style lipgloss.Style, content string) string {
 		return sp("  ") + barSt.Render("▌") +
-			withBg(style).Width(m.width - 5).Render(content)
+			withBg(style).Width(m.width-5).Render(content)
 	}
 
 	// autoJumpSubtitle wraps an unselected subtitle with the auto-jump bar at col 2.
