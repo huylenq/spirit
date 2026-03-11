@@ -26,7 +26,7 @@ var (
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
-	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#fbbf24"} // yellow/amber — file overlap
+	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#9ca3af", Dark: "#6b7280"} // muted gray — file overlap
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
@@ -48,9 +48,9 @@ var (
 
 	// Sidebar panel
 	SidebarPanelStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderRight(true).
-			BorderForeground(ColorBorder)
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderRight(true).
+				BorderForeground(ColorBorder)
 
 	// Group headers in list
 	GroupHeaderStyle = lipgloss.NewStyle().
@@ -59,11 +59,11 @@ var (
 
 	ColorBacklog = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — backlog
 
-	GroupHeaderWorkingStyle  = GroupHeaderStyle.Foreground(ColorWorking)
-	GroupHeaderDoneStyle     = GroupHeaderStyle.Foreground(ColorDone)
-	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
-	GroupHeaderBacklogStyle  = GroupHeaderStyle.Foreground(ColorBacklog)
-	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
+	GroupHeaderWorkingStyle = GroupHeaderStyle.Foreground(ColorWorking)
+	GroupHeaderDoneStyle    = GroupHeaderStyle.Foreground(ColorDone)
+	GroupHeaderLaterStyle   = GroupHeaderStyle.Foreground(ColorLater)
+	GroupHeaderBacklogStyle = GroupHeaderStyle.Foreground(ColorBacklog)
+	GroupHeaderProjectStyle = GroupHeaderStyle.Foreground(ColorMuted)
 	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
 	// List items
@@ -83,8 +83,8 @@ var (
 				Foreground(ColorAccent)
 
 	DetailMetaStyle = lipgloss.NewStyle().
-				Foreground(ColorMuted).
-				Padding(0, 1)
+			Foreground(ColorMuted).
+			Padding(0, 1)
 
 	DetailContentStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
@@ -118,8 +118,8 @@ var (
 
 	// Queue relay prompt
 	QueuePromptStyle = lipgloss.NewStyle().
-			Foreground(ColorWorking).
-			Bold(true)
+				Foreground(ColorWorking).
+				Bold(true)
 
 	// Group separator
 	SeparatorStyle = lipgloss.NewStyle().
