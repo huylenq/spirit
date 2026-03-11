@@ -71,7 +71,7 @@ type KeyMap struct {
 	MsgNext key.Binding
 	MsgPrev key.Binding
 
-	// List panel resize
+	// Sidebar panel resize
 	ListShrink key.Binding
 	ListGrow   key.Binding
 
