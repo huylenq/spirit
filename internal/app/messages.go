@@ -86,7 +86,6 @@ type ClearFlashMsg struct{}
 // ClearToastMsg pops the oldest entry from the toast queue after its TTL expires.
 type ClearToastMsg struct{}
 
-
 // MinimapReadyMsg is sent when pane geometry is loaded for the minimap.
 type MinimapReadyMsg struct {
 	SessionName string
@@ -132,6 +131,9 @@ type DaemonDisconnectedMsg struct {
 type DaemonReconnectedMsg struct {
 	Client *daemon.Client
 }
+
+// MacroEditorExitedMsg is sent when the external $EDITOR process for a macro file exits.
+type MacroEditorExitedMsg struct{}
 
 // LuaEvalDoneMsg is sent when an async Lua eval completes.
 type LuaEvalDoneMsg struct {

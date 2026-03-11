@@ -41,8 +41,10 @@ const (
 	StateNewSessionPrompt
 	StateMinimapSettings
 	StatePrefsEditor
-	StateBacklogPrompt       // creating or editing a backlog item
+	StateBacklogPrompt        // creating or editing a backlog item
 	StateBacklogDeleteConfirm // confirming deletion of a backlog item
+	StateMacro                // macro palette shown, waiting for key
+	StateMacroEdit            // inline macro editor open
 )
 
 const defaultMinimapMaxH = 14
@@ -102,76 +104,78 @@ type originalPane struct {
 }
 
 type Model struct {
-	client         *daemon.Client
-	sidebar           ui.SidebarModel
-	detail        ui.DetailModel
-	search         ui.SearchModel
-	relay          ui.RelayModel
-	queueRelay     ui.RelayModel
-	minimap        ui.MinimapModel
-	usageBar       ui.UsageBarModel
-	sessions       []claude.ClaudeSession
-	state          AppState
-	showHooks         bool
-	showRawTranscript bool
-	showDiffs         bool
-	hideTranscript    bool
-	showMinimap       bool
-	minimapMode       string // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
-	minimapMaxH       int    // max minimap height (persisted pref, default 14)
-	minimapCollapse   bool   // collapse single-pane windows in minimap
-	inFullscreenPopup bool   // true when launched via CLAUDE_TUI_FULLSCREEN=1
-	binaryPath        string // cached os.Executable() result
-	minimapSession    string // tmux session currently shown in minimap
-	origPane       originalPane // tmux state to restore on ESC
-	spinner        spinner.Model
-	width          int
-	height         int
-	sidebarWidthPct   int // percentage of total width for the sidebar
-	ready          bool
-	err            error
-	flashMsg       string    // transient message overlay
-	flashIsError   bool      // true = error style, false = info style
-	flashExpiry    time.Time // when to auto-dismiss the flash
-	messageLog     []MessageLogEntry // ring buffer of past flash messages (permanent history)
-	toastQueue     []MessageLogEntry // entries actively displayed in the toast overlay
-	showMessageLog bool              // toggle full message log overlay
-	renaming       bool   // true while Haiku is generating a window name
-	pendingChord         string // accumulated chord prefix (e.g. "y" waiting for next key)
-	initialSelectionDone bool   // true after first smart cursor placement
-	killTargetPaneID     string // pane being confirmed for kill
-	killTargetSessionID  string // session ID of the pane being killed
-	killTargetPID        int    // PID of the claude process to kill
-	killTargetTitle      string // display title for kill confirmation
-	killTargetAnimalIdx  int    // avatar animal index for kill confirmation
-	killTargetColorIdx   int    // avatar color index for kill confirmation
-	killTargetBookmarkID string // bookmark ID to remove when killing a Later session
-	selectActive         bool   // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
-	rotateNext           bool   // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
-	pendingSelectPaneID  string // pane to auto-select once it appears in the sidebar
+	client               *daemon.Client
+	sidebar              ui.SidebarModel
+	detail               ui.DetailModel
+	search               ui.SearchModel
+	relay                ui.RelayModel
+	queueRelay           ui.RelayModel
+	minimap              ui.MinimapModel
+	usageBar             ui.UsageBarModel
+	sessions             []claude.ClaudeSession
+	state                AppState
+	showHooks            bool
+	showRawTranscript    bool
+	showDiffs            bool
+	hideTranscript       bool
+	showMinimap          bool
+	minimapMode          string       // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
+	minimapMaxH          int          // max minimap height (persisted pref, default 14)
+	minimapCollapse      bool         // collapse single-pane windows in minimap
+	inFullscreenPopup    bool         // true when launched via CLAUDE_TUI_FULLSCREEN=1
+	binaryPath           string       // cached os.Executable() result
+	minimapSession       string       // tmux session currently shown in minimap
+	origPane             originalPane // tmux state to restore on ESC
+	spinner              spinner.Model
+	width                int
+	height               int
+	sidebarWidthPct      int // percentage of total width for the sidebar
+	ready                bool
+	err                  error
+	flashMsg             string            // transient message overlay
+	flashIsError         bool              // true = error style, false = info style
+	flashExpiry          time.Time         // when to auto-dismiss the flash
+	messageLog           []MessageLogEntry // ring buffer of past flash messages (permanent history)
+	toastQueue           []MessageLogEntry // entries actively displayed in the toast overlay
+	showMessageLog       bool              // toggle full message log overlay
+	renaming             bool              // true while Haiku is generating a window name
+	pendingChord         string            // accumulated chord prefix (e.g. "y" waiting for next key)
+	initialSelectionDone bool              // true after first smart cursor placement
+	killTargetPaneID     string            // pane being confirmed for kill
+	killTargetSessionID  string            // session ID of the pane being killed
+	killTargetPID        int               // PID of the claude process to kill
+	killTargetTitle      string            // display title for kill confirmation
+	killTargetAnimalIdx  int               // avatar animal index for kill confirmation
+	killTargetColorIdx   int               // avatar color index for kill confirmation
+	killTargetBookmarkID string            // bookmark ID to remove when killing a Later session
+	selectActive         bool              // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
+	rotateNext           bool              // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
+	pendingSelectPaneID  string            // pane to auto-select once it appears in the sidebar
 	promptEditor         ui.PromptEditorModel
-	newSessionProject    string // project name for the new session being created
-	newSessionCWD        string // working directory for the new session
-	newSessionTmuxSess   string // tmux session for the new window
-	newSessionPrevPaneID string // session to restore if prompt is cancelled from session level
-	newSessionWasSession bool   // true if `a` was pressed from session level
-	queueCursor          int       // -1 = text input focused, >= 0 = highlighted item index
-	debugMode            bool      // toggle debug overlay (D key)
+	newSessionProject    string                    // project name for the new session being created
+	newSessionCWD        string                    // working directory for the new session
+	newSessionTmuxSess   string                    // tmux session for the new window
+	newSessionPrevPaneID string                    // session to restore if prompt is cancelled from session level
+	newSessionWasSession bool                      // true if `a` was pressed from session level
+	queueCursor          int                       // -1 = text input focused, >= 0 = highlighted item index
+	debugMode            bool                      // toggle debug overlay (D key)
 	globalEffects        []claude.GlobalHookEffect // latest handled effects across all sessions
-	showHelp             bool      // toggle help overlay (? key)
-	showSpiritAnimal     bool      // toggle spirit animal overlay (gs chord)
-	lastClickPaneID      string    // pane clicked last (for double-click detection)
-	lastClickTime        time.Time // when the last minimap click happened
-	jumpTrail            []string  // pane IDs for jump history (like Vim's jumplist)
-	jumpCursor           int       // position in jumpTrail; len(jumpTrail) = at head
-	nonClaudePane        *ui.MinimapPaneInfo // focused non-Claude pane (minimap nav)
+	showHelp             bool                      // toggle help overlay (? key)
+	showSpiritAnimal     bool                      // toggle spirit animal overlay (gs chord)
+	lastClickPaneID      string                    // pane clicked last (for double-click detection)
+	lastClickTime        time.Time                 // when the last minimap click happened
+	jumpTrail            []string                  // pane IDs for jump history (like Vim's jumplist)
+	jumpCursor           int                       // position in jumpTrail; len(jumpTrail) = at head
+	nonClaudePane        *ui.MinimapPaneInfo       // focused non-Claude pane (minimap nav)
 	palette              ui.PaletteModel
 	prefsEditor          ui.PrefsEditorModel
 	commands             []Command
-	activeBacklogID    string // backlog item being edited or submitted (empty = new item)
-	activeBacklogCWD   string // CWD for the active backlog operation
-	backlogOverlay     bool   // true = show backlog prompt as overlay; false = right-pane editor
-	deleteTargetBacklog claude.Backlog // backlog item pending delete confirmation
+	activeBacklogID      string         // backlog item being edited or submitted (empty = new item)
+	activeBacklogCWD     string         // CWD for the active backlog operation
+	backlogOverlay       bool           // true = show backlog prompt as overlay; false = right-pane editor
+	deleteTargetBacklog  claude.Backlog // backlog item pending delete confirmation
+	macros               []claude.Macro // loaded macros (built-in + user)
+	macroEditor          ui.MacroEditorModel
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -194,11 +198,13 @@ func NewModel(client *daemon.Client) Model {
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),
 		promptEditor:      ui.NewPromptEditorModel(),
+		macroEditor:       ui.NewMacroEditorModel(),
+		macros:            claude.LoadMacros(nil),
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
 		minimapCollapse:   loadPrefBool("minimapCollapse"),
-		sidebarWidthPct:      loadPrefInt("sidebarWidthPct", 30),
+		sidebarWidthPct:   loadPrefInt("sidebarWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
 		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",

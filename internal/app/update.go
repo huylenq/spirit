@@ -1149,7 +1149,6 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, Keys.Macro):
-		m.macros = claude.LoadMacros(nil) // refresh from disk
 		m.state = StateMacro
 		return m, nil
 

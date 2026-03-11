@@ -11,7 +11,7 @@ import (
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
-		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll,
+		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 		k.JumpBack,
 	}
@@ -30,24 +30,24 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 }
 
 type KeyMap struct {
-	Up      key.Binding
-	Down    key.Binding
-	Enter   key.Binding
-	Search    key.Binding
-	Later     key.Binding
-	LaterKill key.Binding
-	Refresh   key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Enter      key.Binding
+	Search     key.Binding
+	Later      key.Binding
+	LaterKill  key.Binding
+	Refresh    key.Binding
 	Transcript key.Binding
 	Quit       key.Binding
-	Escape  key.Binding
+	Escape     key.Binding
 
-	Minimap      key.Binding
-	MinimapMode  key.Binding
-	GroupMode    key.Binding
-	GoBottom     key.Binding
+	Minimap       key.Binding
+	MinimapMode   key.Binding
+	GroupMode     key.Binding
+	GoBottom      key.Binding
 	Synthesize    key.Binding
 	SynthesizeAll key.Binding
-	Rename       key.Binding
+	Rename        key.Binding
 
 	// Spatial navigation (minimap)
 	SpatialUp    key.Binding
@@ -118,6 +118,9 @@ type KeyMap struct {
 
 	// Preferences editor
 	Prefs key.Binding
+
+	// Macro palette
+	Macro key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -386,5 +389,9 @@ var Keys = KeyMap{
 	Prefs: key.NewBinding(
 		key.WithKeys("P"),
 		key.WithHelp("P", "preferences"),
+	),
+	Macro: key.NewBinding(
+		key.WithKeys("."),
+		key.WithHelp(".", "macros"),
 	),
 }

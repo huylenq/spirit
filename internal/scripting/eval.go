@@ -9,9 +9,19 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+// EvalContext carries TUI context into Lua script execution.
+type EvalContext struct {
+	SelectedSessionID string // session ID of the currently selected session (empty from CLI)
+}
+
 // RunEval executes a Lua script in a sandboxed VM with the cmc API available.
 // Returns the JSON-encoded result, any flash/toast messages emitted, and any error.
 func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, Msgs, error) {
+	return RunEvalWithContext(script, client, stderr, EvalContext{})
+}
+
+// RunEvalWithContext executes a Lua script with additional TUI context (e.g. selected session).
+func RunEvalWithContext(script string, client *daemon.Client, stderr io.Writer, ctx EvalContext) (string, Msgs, error) {
 	L := newSandboxedVM()
 	defer L.Close()
 
@@ -24,6 +34,7 @@ func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, Ms
 	registerLifecycleAPIs(L, client)
 	registerOrchestratorAPIs(L, client)
 	registerFeatureAPIs(L, client)
+	registerContextAPIs(L, ctx)
 
 	// Try wrapping in anonymous function to capture return value
 	wrapped := "return (function() " + script + " end)()"

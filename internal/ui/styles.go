@@ -250,4 +250,24 @@ var (
 	PrefsEditorTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorAccent)
+
+	// Macro palette and editor overlays (amber/yellow — distinct from other overlays)
+	ColorMacro = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"}
+
+	MacroPaletteOverlayStyle = lipgloss.NewStyle().
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(ColorMacro).
+					Padding(1, 2)
+
+	MacroPaletteTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorMacro)
+
+	MacroPaletteKeyStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorMacro)
+
+	MacroEditorOverlayStyle = promptEditorOverlay(ColorMacro)
+	MacroEditorTitleStyle   = promptEditorTitle(ColorMacro)
+	MacroEditorKeyStyle     = lipgloss.NewStyle().Foreground(ColorMacro)
 )
