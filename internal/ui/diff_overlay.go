@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-"github.com/charmbracelet/lipgloss"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
@@ -98,8 +100,9 @@ const maxHunkDisplayLines = 30
 // diffLine is a typed diff output line.
 // kind '+'/'-' get full-width background in the caller; '~' uses char-level highlights only.
 type diffLine struct {
-	text string // pre-rendered content (symbol + body); no full-width bg for +/-
-	kind byte
+	text    string // body text (no symbol prefix for +/-; pre-rendered for ~)
+	kind    byte
+	lineNum int // line number to show in gutter (old for -/~, new for +)
 }
 
 // renderInlineDiff computes a line-level diff, then for paired modified lines
@@ -149,34 +152,57 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
 	flushPairs()
 
 	var result []diffLine
+	oldLine, newLine := 1, 1
 	for _, p := range pairs {
 		if p.old == p.new {
+			// Equal line — skip but advance both counters
+			oldLine++
+			newLine++
 			continue
 		}
-		// Both sides non-empty → inline char-level '~' line (no full-width bg)
+		// Both sides non-empty: check similarity before using inline '~'
 		if strings.TrimSpace(p.old) != "" && strings.TrimSpace(p.new) != "" {
 			charDiffs := differ.DiffMain(p.old, p.new, false)
 			charDiffs = differ.DiffCleanupSemantic(charDiffs)
-			var buf strings.Builder
-			buf.WriteString(DiffModSymbol.Render("~") + " ")
+			var eqC, totC int
 			for _, cd := range charDiffs {
-				switch cd.Type {
-				case dmp.DiffEqual:
-					buf.WriteString(cd.Text)
-				case dmp.DiffDelete:
-					buf.WriteString(DiffInlineDelBg.Render(cd.Text))
-				case dmp.DiffInsert:
-					buf.WriteString(DiffInlineAddBg.Render(cd.Text))
+				n := utf8.RuneCountInString(cd.Text)
+				totC += n
+				if cd.Type == dmp.DiffEqual {
+					eqC += n
 				}
 			}
-			result = append(result, diffLine{text: ansi.Truncate(buf.String(), maxWidth, "…"), kind: '~'})
-			continue
+			sim := 0.0
+			if totC > 0 {
+				sim = float64(eqC) / float64(totC)
+			}
+			if sim >= 0.3 {
+				var buf strings.Builder
+				buf.WriteString(DiffModSymbol.Render("~") + " ")
+				for _, cd := range charDiffs {
+					switch cd.Type {
+					case dmp.DiffEqual:
+						buf.WriteString(cd.Text)
+					case dmp.DiffDelete:
+						buf.WriteString(DiffInlineDelBg.Render(cd.Text))
+					case dmp.DiffInsert:
+						buf.WriteString(DiffInlineAddBg.Render(cd.Text))
+					}
+				}
+				result = append(result, diffLine{text: ansi.Truncate(buf.String(), maxWidth, "…"), kind: '~', lineNum: oldLine})
+				oldLine++
+				newLine++
+				continue
+			}
+			// Too different — fall through to separate -/+ lines
 		}
 		if strings.TrimSpace(p.old) != "" {
-			result = append(result, diffLine{text: p.old, kind: '-'})
+			result = append(result, diffLine{text: p.old, kind: '-', lineNum: oldLine})
+			oldLine++
 		}
 		if strings.TrimSpace(p.new) != "" {
-			result = append(result, diffLine{text: p.new, kind: '+'})
+			result = append(result, diffLine{text: p.new, kind: '+', lineNum: newLine})
+			newLine++
 		}
 
 		if len(result) >= maxHunkDisplayLines {
@@ -202,11 +228,11 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 		lines = append(lines, DetailMetaStyle.Render("No file changes"))
 	} else {
 		// innerWidth = total visual width of each file box line
-		innerWidth := width - 6 // outer border(2) + outer padding(2) + reserved(2)
+		innerWidth := width - 6    // outer border(2) + outer padding(2) + reserved(2)
 		contentW := innerWidth - 4 // │ _ content _ │
 
 		borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
-		hunkSepSt := lipgloss.NewStyle()
+		hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
 		rowSt := lipgloss.NewStyle().Width(contentW)
 
 		// Dashed separator between hunks within a file
@@ -234,6 +260,9 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 			topBorder := borderSt.Render("╭─") + " " + titleRaw + " " + borderSt.Render(strings.Repeat("─", fill)+"╮")
 			allLines = append(allLines, topBorder)
 
+			gutterW := 4 // "123 " = 3 digits + 1 space
+			gutterSt := lipgloss.NewStyle().Foreground(ColorMuted)
+
 			wrapLine := func(dl string) string {
 				return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
 			}
@@ -241,18 +270,20 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 			// killed by the symbol's ANSI reset mid-line.
 			addSym := DiffAddBg.Inherit(DiffAddSymbol).Render("+ ")
 			delSym := DiffDelBg.Inherit(DiffDelSymbol).Render("- ")
-			bodyW := contentW - 2 // symbol takes 2 chars ("+ " / "- ")
+			bodyW := contentW - 2 - gutterW // symbol(2) + gutter
 
 			wrapTyped := func(dl diffLine) string {
+				gutter := gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
 				switch dl.kind {
 				case '+':
 					body := DiffAddBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
-					return borderSt.Render("│") + " " + addSym + body + " " + borderSt.Render("│")
+					return borderSt.Render("│") + " " + gutter + addSym + body + " " + borderSt.Render("│")
 				case '-':
 					body := DiffDelBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
-					return borderSt.Render("│") + " " + delSym + body + " " + borderSt.Render("│")
+					return borderSt.Render("│") + " " + gutter + delSym + body + " " + borderSt.Render("│")
 				default:
-					return wrapLine(dl.text)
+					gutter = gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
+					return wrapLine(gutter + dl.text)
 				}
 			}
 
@@ -261,14 +292,17 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 					allLines = append(allLines, hunkSepLine)
 				}
 				if h.IsWrite {
+					lineNum := 1
 					for _, dl := range strings.Split(h.NewString, "\n") {
 						if strings.TrimSpace(dl) == "" {
+							lineNum++
 							continue
 						}
-						allLines = append(allLines, wrapTyped(diffLine{text: dl, kind: '+'}))
+						allLines = append(allLines, wrapTyped(diffLine{text: dl, kind: '+', lineNum: lineNum}))
+						lineNum++
 					}
 				} else {
-					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW) {
+					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW-gutterW) {
 						allLines = append(allLines, wrapTyped(dl))
 					}
 				}
