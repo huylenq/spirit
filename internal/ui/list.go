@@ -62,9 +62,30 @@ type ListModel struct {
 	projectCursor        int
 	projects             []projectEntry // project headers in display order
 	selectedProjectRow   int            // line index of the selected project header (set during View)
+	selectedItemRow      int            // line index of the selected session item (set during View)
 	backlogs             []claude.Backlog // all backlog items from visible projects
 	filteredBacklog      []claude.Backlog // backlog items matching narrow filter
 	showBacklog          bool             // toggle BACKLOG section visibility
+	ghostPaneID          string           // pane that was just auto-jumped away from
+	ghostFrame           int              // animation frame (0–2 visible, 3 = done)
+}
+
+// SetGhost marks paneID as the ghost origin for the auto-jump fade animation.
+// Resets to frame 0 so the caller can tick it forward.
+func (m *ListModel) SetGhost(paneID string) {
+	m.ghostPaneID = paneID
+	m.ghostFrame = 0
+}
+
+// AdvanceGhost increments the ghost frame. Returns true while the animation
+// is still running (frame < 3), false when it should stop.
+func (m *ListModel) AdvanceGhost() bool {
+	m.ghostFrame++
+	if m.ghostFrame >= 3 {
+		m.ghostPaneID = ""
+		return false
+	}
+	return true
 }
 
 func (m *ListModel) SetGroupByProject(v bool) {
@@ -319,6 +340,12 @@ func (m ListModel) SelectionLevel() SelectionLevel {
 // within the list's rendered output. Returns -1 if no project is selected.
 func (m ListModel) SelectedProjectRow() int {
 	return m.selectedProjectRow
+}
+
+// SelectedItemRow returns the line index of the selected session item
+// within the list's rendered output. Returns -1 if no session item is selected.
+func (m ListModel) SelectedItemRow() int {
+	return m.selectedItemRow
 }
 
 // EnterProjectLevel switches to project-level navigation.
@@ -722,6 +749,7 @@ func (m ListModel) View() string {
 
 	var lines []string
 	m.selectedProjectRow = -1
+	m.selectedItemRow = -1
 
 	if m.narrow != "" {
 		// Search mode: render from m.filtered directly (score-sorted, flat)
@@ -797,6 +825,9 @@ func (m ListModel) View() string {
 
 			isSelected := s.PaneID == selectedPaneID && !m.deselected && !atProjectLevel
 			isAutoJump := !isSelected && s.PaneID == autoJumpTargetID
+			if isSelected {
+				m.selectedItemRow = len(lines)
+			}
 			lines = append(lines, m.renderItem(isSelected, isAutoJump, s, dw, query))
 		}
 	}
@@ -1178,9 +1209,8 @@ func renderBadges(s claude.ClaudeSession) string {
 		badges = append(badges, DiffAddedStyle.Render(IconGitCommit+" committed"))
 	}
 	// Skill badge: outcome indicator, shown after skill completes (user-turn).
-	// Cleared on next non-skill prompt. Suppressed when LastActionCommit already
-	// covers it (commit-commands:* skills are tracked mechanically via PostToolUse).
-	if s.SkillName != "" && s.Status == claude.StatusUserTurn && !s.LastActionCommit {
+	// Cleared on next non-skill prompt.
+	if s.SkillName != "" && s.Status == claude.StatusUserTurn {
 		badges = append(badges, DiffAddedStyle.Render(IconSkill+" "+skillBadgeLabel(s.SkillName)))
 	}
 	if s.StopReason != "" && s.Status == claude.StatusUserTurn {

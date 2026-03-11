@@ -81,16 +81,25 @@ func HandleHook(hookType string) {
 			nd.LastUserMessage = input.Prompt
 			effects = append(effects, "captured prompt")
 		}
-		// Detect slash-command skill invocation
+		// Detect slash-command skill invocation.
+		// commit-commands:* skills are intentionally excluded — commit badges are
+		// driven solely by PostToolUse git commit detection, not skill name tracking.
 		if skill, ok := strings.CutPrefix(input.Prompt, "/"); ok {
 			// Extract just the command name (before any space/args)
 			if idx := strings.IndexByte(skill, ' '); idx >= 0 {
 				skill = skill[:idx]
 			}
-			WriteSkillName(sessionID, skill)
-			nd.SkillName = skill
-			nd.SkillSet = true
-			effects = append(effects, "skill:"+skill)
+			if strings.HasPrefix(skill, "commit-commands") {
+				// Treat like a non-skill prompt: clear any previous skill name
+				RemoveSkillName(sessionID)
+				nd.SkillName = ""
+				nd.SkillSet = true
+			} else {
+				WriteSkillName(sessionID, skill)
+				nd.SkillName = skill
+				nd.SkillSet = true
+				effects = append(effects, "skill:"+skill)
+			}
 		} else {
 			RemoveSkillName(sessionID)
 			nd.SkillName = ""
