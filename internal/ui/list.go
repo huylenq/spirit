@@ -478,33 +478,24 @@ func (m ListModel) AutoJumpTargetFromCursor() string {
 }
 
 // AutoJumpTarget finds the best auto-jump target, skipping skipPaneID.
-// Priority: user-turn with oldest LastChanged (waiting longest), then agent-turn
-// with oldest LastChanged. Excludes Later-bookmarked sessions.
+// Returns the user-turn session with the oldest LastChanged (waiting longest).
+// Excludes Later-bookmarked sessions. Returns "" if no user-turn target exists.
 func (m ListModel) AutoJumpTarget(skipPaneID string) string {
-	var bestUser, bestAgent string
-	var bestUserTime, bestAgentTime time.Time
+	var bestUser string
+	var bestUserTime time.Time
 
 	for _, s := range m.filtered {
 		if s.PaneID == skipPaneID || s.LaterBookmarkID != "" || s.LastChanged.IsZero() {
 			continue
 		}
-		switch s.Status {
-		case claude.StatusUserTurn:
+		if s.Status == claude.StatusUserTurn {
 			if bestUser == "" || s.LastChanged.Before(bestUserTime) {
 				bestUser = s.PaneID
 				bestUserTime = s.LastChanged
 			}
-		case claude.StatusAgentTurn:
-			if bestAgent == "" || s.LastChanged.Before(bestAgentTime) {
-				bestAgent = s.PaneID
-				bestAgentTime = s.LastChanged
-			}
 		}
 	}
-	if bestUser != "" {
-		return bestUser
-	}
-	return bestAgent
+	return bestUser
 }
 
 func (m *ListModel) applyNarrow() {
@@ -619,7 +610,7 @@ func (m *ListModel) rebuildProjects() {
 
 func sortByProject(sessions []claude.ClaudeSession) {
 	// Primary: Later sessions sink to bottom; secondary: project name alphabetically;
-	// tertiary: oldest created first (newest at bottom)
+	// tertiary: newest created first (newest at top)
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
@@ -627,7 +618,7 @@ func sortByProject(sessions []claude.ClaudeSession) {
 			bLater := sessionOrder(b) == OrderLater
 			if (aLater && !bLater) ||
 				(aLater == bLater && a.Project > b.Project) ||
-				(aLater == bLater && a.Project == b.Project && a.CreatedAt.After(b.CreatedAt)) {
+				(aLater == bLater && a.Project == b.Project && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
@@ -637,12 +628,12 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: session order (UserTurn, AgentTurn, Later); secondary: oldest created first (newest at bottom)
+	// Primary: session order (UserTurn, AgentTurn, Later); secondary: newest created first (newest at top)
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
 			if sessionOrder(a) > sessionOrder(b) ||
-				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.After(b.CreatedAt)) {
+				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
