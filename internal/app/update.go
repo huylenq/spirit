@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	contentStartRow   = 2                       // rows 0-1 are top border + label
-	doubleClickWindow = 400 * time.Millisecond  // max gap between clicks for double-click
-	wheelScrollLines  = 3                       // lines to scroll per wheel tick
+	contentStartRow   = 2                      // rows 0-1 are top border + label
+	doubleClickWindow = 400 * time.Millisecond // max gap between clicks for double-click
+	wheelScrollLines  = 3                      // lines to scroll per wheel tick
 )
 
 // executeChord dispatches a completed chord sequence to its action.
@@ -150,6 +150,7 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	}
 	if skipPaneID != "" {
 		m.sidebar.SetGhost(skipPaneID)
+		return append(m.fetchForSelection(s, true), func() tea.Msg { return flashInfoMsg("ghost: " + skipPaneID) })
 	}
 	return m.fetchForSelection(s, true)
 }
@@ -272,6 +273,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.Err
 			return m, nil
 		}
+		// Detect auto-synthesis completions: SynthesizePending was true, now false
+		prevSynth := make(map[string]bool, len(m.sessions))
+		for _, s := range m.sessions {
+			if s.SynthesizePending {
+				prevSynth[s.PaneID] = true
+			}
+		}
+		var autoSynthCmds []tea.Cmd
+		for _, s := range msg.Sessions {
+			if prevSynth[s.PaneID] && !s.SynthesizePending && s.Headline != "" {
+				title := s.Headline
+				if runes := []rune(title); len(runes) > 60 {
+					title = string(runes[:59]) + "…"
+				}
+				text := "synthesized: " + title
+				m.messageLog = append(m.messageLog, MessageLogEntry{
+					Text: text, Time: time.Now(),
+				})
+				if len(m.messageLog) > maxMessageLog {
+					m.messageLog = m.messageLog[len(m.messageLog)-maxMessageLog:]
+				}
+				saveMessageLog(m.messageLog)
+				autoSynthCmds = append(autoSynthCmds, m.toast(text, false))
+			}
+		}
 		m.sessions = msg.Sessions
 		m.sidebar.SetItems(m.sessions)
 		m.tryInitialSelection()
@@ -318,6 +344,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sidebar.ShowBacklog() {
 			cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
 		}
+		// Auto-synthesis completion toasts
+		cmds = append(cmds, autoSynthCmds...)
 		// Wait for next daemon push
 		cmds = append(cmds, m.waitForDaemonUpdate())
 		return m, tea.Batch(cmds...)
@@ -1328,7 +1356,6 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Queue):
 		return m.execQueue()
 
-
 	case key.Matches(msg, Keys.Search):
 		m.recordJump()
 		// Exit project level when entering search
@@ -1599,8 +1626,8 @@ type mousePanel int
 
 const (
 	panelNone    mousePanel = iota
-	panelSidebar               // sidebar (left)
-	panelDetail            // content preview (right)
+	panelSidebar            // sidebar (left)
+	panelDetail             // content preview (right)
 	panelMinimap            // minimap overlay (bottom-left corner of list)
 )
 
