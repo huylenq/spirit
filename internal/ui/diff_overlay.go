@@ -173,10 +173,10 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
 			continue
 		}
 		if strings.TrimSpace(p.old) != "" {
-			result = append(result, diffLine{text: "- " + p.old, kind: '-'})
+			result = append(result, diffLine{text: p.old, kind: '-'})
 		}
 		if strings.TrimSpace(p.new) != "" {
-			result = append(result, diffLine{text: "+ " + p.new, kind: '+'})
+			result = append(result, diffLine{text: p.new, kind: '+'})
 		}
 
 		if len(result) >= maxHunkDisplayLines {
@@ -237,12 +237,20 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 			wrapLine := func(dl string) string {
 				return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
 			}
+			// Symbols rendered with bg+fg combined so the full line bg doesn't get
+			// killed by the symbol's ANSI reset mid-line.
+			addSym := DiffAddBg.Inherit(DiffAddSymbol).Render("+ ")
+			delSym := DiffDelBg.Inherit(DiffDelSymbol).Render("- ")
+			bodyW := contentW - 2 // symbol takes 2 chars ("+ " / "- ")
+
 			wrapTyped := func(dl diffLine) string {
 				switch dl.kind {
 				case '+':
-					return borderSt.Render("│") + " " + DiffAddBg.Width(contentW).Render(dl.text) + " " + borderSt.Render("│")
+					body := DiffAddBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
+					return borderSt.Render("│") + " " + addSym + body + " " + borderSt.Render("│")
 				case '-':
-					return borderSt.Render("│") + " " + DiffDelBg.Width(contentW).Render(dl.text) + " " + borderSt.Render("│")
+					body := DiffDelBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
+					return borderSt.Render("│") + " " + delSym + body + " " + borderSt.Render("│")
 				default:
 					return wrapLine(dl.text)
 				}
@@ -257,7 +265,7 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 						if strings.TrimSpace(dl) == "" {
 							continue
 						}
-						allLines = append(allLines, wrapTyped(diffLine{text: "+ " + dl, kind: '+'}))
+						allLines = append(allLines, wrapTyped(diffLine{text: dl, kind: '+'}))
 					}
 				} else {
 					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW) {

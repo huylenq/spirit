@@ -87,6 +87,7 @@ type ClaudeSession struct {
 	CompactCount     int    // number of PreCompact events fired
 	CommitDonePending  bool   // daemon is waiting for commit-and-done to resolve
 	SynthesizePending  bool   // daemon has in-flight synthesis for this pane
+	HasOverlap         bool   // 2+ sessions editing the same file
 	QueuePending       []string // daemon-annotated: messages queued for delivery when Done (FIFO)
 	AvatarAnimalIdx    int    // index into avatarAnimals slice
 	AvatarColorIdx     int    // index into avatarColors slice

@@ -108,8 +108,8 @@ func fetchUsagePTYRaw() (string, error) {
 	}
 	defer cleanup()
 
-	// Wait up to 10s for any usage data (%) to appear, then give the render a moment to finish
-	pollFor(snapshot, "%", 10*time.Second)
+	// Best-effort: wait for a "%" to signal data loaded; timeout is fine — parse will handle missing data
+	pollFor(snapshot, "%", 10*time.Second) //nolint:errcheck
 	time.Sleep(500 * time.Millisecond)
 
 	text := stripANSI(snapshot())

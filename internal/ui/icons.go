@@ -30,8 +30,13 @@ const (
 	IconSkill = "\uf0ad" // nf-fa-wrench — skill invocation badge
 	// Backlog
 	IconBacklog = "\uf0eb" // nf-fa-lightbulb_o — backlog item
+	// Overlap detection
+	IconOverlap = "\uf071" // nf-fa-warning — file overlap between sessions
+	// Usage bar pill caps (powerline round dividers)
+	IconPillLeft  = "\uE0B6" // nf-pl-left_hard_divider_inverse
+	IconPillRight = "\uE0B4" // nf-pl-right_hard_divider
 	// Toggle glyphs (prompt editor hints)
-	IconRadioOff  = "\uf10c" // nf-fa-circle_o — unselected radio
+	IconRadioOff = "\uf10c" // nf-fa-circle_o — unselected radio
 	IconRadioOn   = "\uf192" // nf-fa-dot_circle_o — selected radio
 	IconCheckOff  = "\uf096" // nf-fa-square_o — unchecked
 	IconCheckOn   = "\uf14a" // nf-fa-check_square — checked

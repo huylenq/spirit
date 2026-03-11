@@ -86,8 +86,6 @@ type ClearFlashMsg struct{}
 // ClearToastMsg pops the oldest entry from the toast queue after its TTL expires.
 type ClearToastMsg struct{}
 
-// ghostTickMsg advances the auto-jump ghost bar animation by one frame.
-type ghostTickMsg struct{}
 
 // MinimapReadyMsg is sent when pane geometry is loaded for the minimap.
 type MinimapReadyMsg struct {

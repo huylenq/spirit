@@ -804,6 +804,12 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 		return
 	}
 
+	// Skip if session already has a user-set custom title — synthesis
+	// headline wouldn't be displayed anyway (CustomTitle takes priority).
+	if claude.ReadCustomTitle(sessionID) != "" {
+		return
+	}
+
 	// Atomically check debounce + claim synthesizing slot.
 	// Single lock acquisition prevents TOCTOU between debounce check and slot claim.
 	d.autoSynthMu.Lock()

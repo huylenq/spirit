@@ -20,7 +20,8 @@ var PrefRegistry = []PrefDef{
 	{Key: "minimapMode", Label: "Minimap mode"},
 	{Key: "minimapMaxH", Label: "Minimap max height"},
 	{Key: "minimapCollapse", Label: "Minimap collapse"},
-	{Key: "listWidthPct", Label: "List width %"},
+	{Key: "sidebarWidthPct", Label: "Sidebar width %"},
+	{Key: "autoSynthesize", Label: "Auto-synthesize on idle"},
 }
 
 // prefsFileContent returns the raw prefs file content as a string.

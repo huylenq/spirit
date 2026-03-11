@@ -55,7 +55,7 @@ var (
 	// Group headers in list
 	GroupHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	ColorBacklog = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — backlog
 
@@ -64,7 +64,7 @@ var (
 	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
 	GroupHeaderBacklogStyle  = GroupHeaderStyle.Foreground(ColorBacklog)
 	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
-	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1, 1, 1)
+	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
 	// List items
 	ItemStyle = lipgloss.NewStyle()
@@ -76,7 +76,7 @@ var (
 
 	// Detail panel
 	DetailPanelStyle = lipgloss.NewStyle().
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	DetailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -84,7 +84,7 @@ var (
 
 	DetailMetaStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	DetailContentStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
@@ -93,7 +93,7 @@ var (
 	// Footer
 	FooterStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
-			Padding(0, 1, 1, 1)
+			Padding(0, 1)
 
 	FooterKeyStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -139,10 +139,10 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
 	TranscriptBulletStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"}).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 	TranscriptCursorStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	SummaryStyle = lipgloss.NewStyle().
 			Italic(true).
@@ -152,7 +152,7 @@ var (
 	DebugOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorWorking).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	DebugTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -175,7 +175,7 @@ var (
 	DiffOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorGreen).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	DiffTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -192,17 +192,17 @@ var (
 			Foreground(lipgloss.Color("#ff5555")).
 			Background(lipgloss.Color("#1a1a1a")).
 			Bold(true).
-			Padding(0, 1, 1, 1)
+			Padding(0, 1)
 
 	FlashInfoStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
-			Padding(0, 1, 1, 1)
+			Padding(0, 1)
 
 	// Toast notification overlay (transient, bottom-right)
 	ToastStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ColorMuted).
-			Padding(0, 1, 1, 1)
+			Padding(0, 1)
 
 	// Help overlay
 	HelpOverlayStyle = lipgloss.NewStyle().
@@ -223,7 +223,7 @@ var (
 	PaletteOverlayStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(ColorAccent).
-				Padding(0, 1, 1, 1)
+				Padding(0, 1)
 
 	PaletteSelectedStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).

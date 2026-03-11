@@ -65,7 +65,7 @@ func buildCommands() []Command {
 		{
 			Name: "New session", Hotkey: "a",
 			Enabled: func(m *Model) bool {
-				_, ok := m.list.SelectedProject()
+				_, ok := m.sidebar.SelectedProject()
 				return ok
 			},
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
