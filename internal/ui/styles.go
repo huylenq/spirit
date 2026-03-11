@@ -121,6 +121,14 @@ var (
 				Foreground(ColorWorking).
 				Bold(true)
 
+	// Tag relay prompt and badge
+	TagPromptStyle = lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Bold(true)
+
+	TagBadgeStyle = lipgloss.NewStyle().
+			Foreground(ColorMuted)
+
 	// Group separator
 	SeparatorStyle = lipgloss.NewStyle().
 			Foreground(ColorBorder)

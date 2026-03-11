@@ -57,6 +57,7 @@ const (
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
 	ReqDigest                 = "digest"
+	ReqSetTags                = "set_tags"
 )
 
 // Response type constants.
@@ -235,6 +236,11 @@ type DigestData struct {
 	Digest *claude.WorkspaceDigest `json:"digest"`
 }
 
+type SetTagsData struct {
+	SessionID string   `json:"sessionID"`
+	Tags      []string `json:"tags"`
+}
+
 // --- Helpers ---
 
 func marshalData(v any) json.RawMessage {
@@ -256,13 +262,8 @@ type DaemonInfo struct {
 	PIDPath    string
 }
 
-func DefaultDaemonInfo() DaemonInfo {
-	dir := claude.StatusDir()
-	return DaemonInfo{
-		SocketPath: dir + "/daemon.sock",
-		PIDPath:    dir + "/daemon.pid",
-	}
-}
+// DefaultDaemonInfo is defined in workdir.go — it auto-detects from the
+// binary's location and falls back to ~/.cache/cmc/daemon.sock.
 
 // IdleTimeout is how long the daemon stays alive with zero clients.
 const IdleTimeout = 10 * time.Minute

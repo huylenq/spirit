@@ -15,7 +15,8 @@ const (
 	rippleInterval = 60 * time.Millisecond
 	rippleWidth    = 5 // characters wide for the bright wave
 
-	colorWeeklyBg = "#1e1608" // dark amber background for weekly fill
+	colorWeeklyBg      = "#1e1608" // dark amber background for weekly fill
+	colorWeeklyTail    = "#3d2b00" // muted amber tail for weekly gradient
 )
 
 var (
@@ -163,10 +164,12 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 			var cap string
 			if isPillLeft {
 				cap = IconPillLeft
+				sb.WriteString(pillCapStyle.Render(cap))
 			} else {
 				cap = IconPillRight
+				// Right cap fg = tail gradient color (t=1, cubic ease-in → colorWeeklyTail)
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(colorWeeklyTail)).Render(cap))
 			}
-			sb.WriteString(pillCapStyle.Render(cap))
 			continue
 		}
 
@@ -191,7 +194,13 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 			}
 			sb.WriteString(style.Render(glyph))
 		} else if inWeekly {
-			sb.WriteString(weeklyFillStyle.Render(glyph))
+			t := float64(i-thickStart) / float64(max(weeklyFilledChars-thickStart, 1))
+			t = t * t * t // cubic ease-in: stays near bg, accelerates sharply at tail
+			bg := blendHex(colorWeeklyBg, colorWeeklyTail, t)
+			style := lipgloss.NewStyle().
+				Background(lipgloss.Color(bg)).
+				Foreground(ColorBorder)
+			sb.WriteString(style.Render(glyph))
 		} else {
 			sb.WriteString(BorderCharStyle.Render(glyph))
 		}

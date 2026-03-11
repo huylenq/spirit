@@ -45,6 +45,7 @@ const (
 	StateBacklogDeleteConfirm // confirming deletion of a backlog item
 	StateMacro                // macro palette shown, waiting for key
 	StateMacroEdit            // inline macro editor open
+	StateTagRelay             // tag input relay open
 )
 
 const defaultMinimapMaxH = 14
@@ -110,6 +111,7 @@ type Model struct {
 	search               ui.SearchModel
 	relay                ui.RelayModel
 	queueRelay           ui.RelayModel
+	tagRelay             ui.RelayModel
 	minimap              ui.MinimapModel
 	usageBar             ui.UsageBarModel
 	sessions             []claude.ClaudeSession
@@ -193,6 +195,7 @@ func NewModel(client *daemon.Client) Model {
 		search:            ui.NewSearchModel(),
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
+		tagRelay:          ui.NewTagRelayModel(),
 		palette:           ui.NewPaletteModel(),
 		prefsEditor:       ui.NewPrefsEditorModel(prefRegistryKeys(), prefRegistryLabels()),
 		commands:          buildCommands(),

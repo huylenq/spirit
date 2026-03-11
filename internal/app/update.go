@@ -600,6 +600,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPromptRelay(msg)
 	case StateQueueRelay:
 		return m.handleKeyQueueRelay(msg)
+	case StateTagRelay:
+		return m.handleKeyTagRelay(msg)
 	case StateNewSessionPrompt:
 		return m.handleKeyNewSession(msg)
 	case StateBacklogPrompt:
@@ -883,6 +885,71 @@ func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// applyTagsCmd sends updated tags to the daemon and shows a flash confirmation.
+func (m Model) applyTagsCmd(sessionID string, tags []string, flash string) tea.Cmd {
+	client := m.client
+	return tea.Batch(
+		func() tea.Msg {
+			client.SetTags(sessionID, tags) //nolint:errcheck
+			return nil
+		},
+		m.setFlash(flash, false, 3*time.Second),
+	)
+}
+
+func (m Model) handleKeyTagRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s, ok := m.sidebar.SelectedItem()
+	if !ok {
+		m.state = StateNormal
+		m.tagRelay.Deactivate()
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.tagRelay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		val := m.tagRelay.Confirm()
+		m.state = StateNormal
+		if val == "" {
+			return m, nil
+		}
+		// Toggle tag: add if absent, remove if present
+		tags := make([]string, len(s.Tags))
+		copy(tags, s.Tags)
+		found := false
+		for i, t := range tags {
+			if t == val {
+				tags = append(tags[:i], tags[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if !found {
+			tags = append(tags, val)
+		}
+		flash := "+#" + val
+		if found {
+			flash = "-#" + val
+		}
+		return m, m.applyTagsCmd(s.SessionID, tags, flash)
+	case msg.String() == "backspace" && m.tagRelay.Value() == "":
+		// Pop last tag on backspace with empty input
+		if len(s.Tags) == 0 {
+			return m, nil
+		}
+		lastTag := s.Tags[len(s.Tags)-1]
+		tags := s.Tags[:len(s.Tags)-1:len(s.Tags)-1] // cap to prevent backing-array reuse
+		return m, m.applyTagsCmd(s.SessionID, tags, "-#"+lastTag)
+	default:
+		ti := m.tagRelay.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		return m, cmd
+	}
+}
+
 func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, Keys.Escape):
@@ -1050,6 +1117,23 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.palette.IsLuaMode() && m.palette.LuaScript() == "" && msg.String() == ";" {
 			m.palette.EnterLuaMode()
 			return m, nil
+		}
+		// Digit 1–9 with empty input: jump directly to that position
+		if !m.palette.IsLuaMode() && m.palette.LuaScript() == "" {
+			if len(msg.String()) == 1 && msg.String() >= "1" && msg.String() <= "9" {
+				n := int(msg.String()[0] - '0')
+				if idx, ok := m.palette.IndexByPosition(n); ok {
+					m.state = StateNormal
+					m.palette.Deactivate()
+					command := m.commands[idx]
+					if command.Enabled != nil && !command.Enabled(&m) {
+						return m, nil
+					}
+					m, c := command.Execute(&m)
+					return m, c
+				}
+				return m, nil
+			}
 		}
 		ti := m.palette.TextInput()
 		newTI, cmd := ti.Update(msg)
@@ -1369,6 +1453,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.relay.Activate()
 		}
 		return m, nil
+
+	case key.Matches(msg, Keys.PromptTag):
+		return m.execTagRelay()
 
 	case key.Matches(msg, Keys.Queue):
 		return m.execQueue()
@@ -1809,6 +1896,10 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	listLocalY := msg.Y - contentStartRow
 	paneID := m.sidebar.PaneIDAtLine(listLocalY)
 	if paneID == "" {
+		// Check if the click landed on a backlog item.
+		if id := m.sidebar.BacklogIDAtLine(listLocalY); id != "" {
+			m.sidebar.SelectByBacklogID(id)
+		}
 		return m, nil
 	}
 

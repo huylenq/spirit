@@ -121,6 +121,9 @@ type KeyMap struct {
 
 	// Macro palette
 	Macro key.Binding
+
+	// Tag relay (toggle session tags)
+	PromptTag key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -393,5 +396,9 @@ var Keys = KeyMap{
 	Macro: key.NewBinding(
 		key.WithKeys("."),
 		key.WithHelp(".", "macros"),
+	),
+	PromptTag: key.NewBinding(
+		key.WithKeys("#"),
+		key.WithHelp("#", "tag"),
 	),
 }

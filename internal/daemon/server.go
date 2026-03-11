@@ -148,6 +148,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqDigest:
 		return d.handleDigest()
 
+	case ReqSetTags:
+		return d.handleSetTags(req.Data)
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r
@@ -891,6 +894,35 @@ func (d *Daemon) handleKill(data json.RawMessage) *Response {
 func (d *Daemon) handleDigest() *Response {
 	digest := claude.ReadCachedDigest()
 	r := resultResponse(DigestData{Digest: digest})
+	return &r
+}
+
+func (d *Daemon) handleSetTags(data json.RawMessage) *Response {
+	var req SetTagsData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if req.SessionID == "" {
+		r := errResponse("sessionID required")
+		return &r
+	}
+	if err := claude.WriteTags(req.SessionID, req.Tags); err != nil {
+		r := errResponse("write tags: " + err.Error())
+		return &r
+	}
+	d.mu.Lock()
+	for i := range d.sessions {
+		if d.sessions[i].SessionID == req.SessionID {
+			d.sessions[i].Tags = req.Tags
+			break
+		}
+	}
+	sessions := d.sessions
+	d.version++
+	d.mu.Unlock()
+	d.notifySubscribers(sessions)
+	r := resultResponse(nil)
 	return &r
 }
 

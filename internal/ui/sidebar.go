@@ -72,8 +72,10 @@ type SidebarModel struct {
 	backlogs            []claude.Backlog // all backlog items from visible projects
 	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
 	showBacklog         bool             // toggle BACKLOG section visibility
-	ghostPaneID         string           // pane that was just auto-jumped away from
-	ghostFrame          int              // animation frame (0–2 visible, 3 = done)
+	ghostPaneID          string // pane that was just auto-jumped away from
+	ghostFrame           int    // animation frame (0–2 visible, 3 = done)
+	inlineTagSessionID   string // session with active inline tag input (empty = none)
+	inlineTagInputView   string // rendered textinput view for the active tag session
 }
 
 // SetGhost marks paneID as the ghost origin for the auto-jump fade animation.
@@ -188,6 +190,11 @@ func (m *SidebarModel) SetItems(items []claude.ClaudeSession) {
 func (m *SidebarModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+}
+
+func (m *SidebarModel) SetInlineTagInput(sessionID, view string) {
+	m.inlineTagSessionID = sessionID
+	m.inlineTagInputView = view
 }
 
 func (m *SidebarModel) SetNarrow(f string) {
@@ -576,6 +583,11 @@ func bestNarrowScore(s claude.ClaudeSession, query string) int {
 	best := -1
 	for _, text := range []string{s.CustomTitle, s.Headline, s.FirstMessage, s.LastUserMessage, s.ProblemType} {
 		if score := fuzzyScore(text, query); score > best {
+			best = score
+		}
+	}
+	for _, tag := range s.Tags {
+		if score := fuzzyScore("#"+tag, query); score > best {
 			best = score
 		}
 	}
@@ -1073,11 +1085,24 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		}
 	}
 
-	// Badges line — outcome indicators (git commit, etc.)
+	// Badges line — outcome indicators (git commit, etc.) + optional inline tag input.
 	// Pass withBg so each badge's style gets the row background, avoiding transparent holes.
-	if badges := renderBadges(s, withBg, query); badges != "" {
+	badges := renderBadges(s, withBg, query)
+	showTagInput := isSelected && m.inlineTagSessionID == s.SessionID && m.inlineTagInputView != ""
+	if badges != "" || showTagInput {
 		if isSelected {
-			line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
+			if showTagInput {
+				// Tag input is active: render badges with background + append raw input view.
+				// Don't use fixed width so the cursor isn't clipped by lipgloss padding.
+				sep := ""
+				if badges != "" {
+					sep = "  "
+				}
+				line += "\n" + sp("  ") + barSt.Render("▌") +
+					withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
+			} else {
+				line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
+			}
 		} else if isAutoJump {
 			line += "\n" + autoJumpSubtitle(ItemDetailStyle, badges)
 		} else {
@@ -1250,6 +1275,9 @@ func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipglos
 	}
 	if s.CompactCount > 0 {
 		badges = append(badges, applyTransform(ItemDetailStyle).Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
+	}
+	for _, tag := range s.Tags {
+		badges = append(badges, applyTransform(TagBadgeStyle).Render("#"+tag))
 	}
 	if len(badges) == 0 {
 		return ""
@@ -1428,6 +1456,86 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 	}
 
 	return ""
+}
+
+// BacklogIDAtLine returns the ID of the backlog item at the given display line,
+// or "" if the line is a header, separator, or session line.
+// Mirrors the rendering logic of View() for the backlog section.
+func (m SidebarModel) BacklogIDAtLine(line int) string {
+	if line < 0 || len(m.filteredBacklog) == 0 {
+		return ""
+	}
+
+	query := strings.ToLower(m.narrow)
+	currentLine := 0
+
+	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
+	if m.narrow != "" {
+		for _, s := range m.filtered {
+			currentLine += m.itemLineCount(s, query)
+		}
+	} else {
+		currentProject := ""
+		currentOrder := -1
+		anyLinesEmitted := false
+
+		for _, s := range m.allSorted {
+			if m.groupByProject {
+				if s.Project != currentProject {
+					currentProject = s.Project
+					if anyLinesEmitted {
+						currentLine++ // separator
+					}
+					anyLinesEmitted = true
+					currentLine++ // group header
+				}
+			} else {
+				order := sessionOrder(s)
+				if order != currentOrder {
+					currentOrder = order
+					currentProject = ""
+					if anyLinesEmitted {
+						currentLine++ // separator
+					}
+					anyLinesEmitted = true
+					currentLine++ // status group header
+				}
+				if s.Project != currentProject {
+					currentProject = s.Project
+					currentLine++ // project sub-header
+				}
+			}
+			if m.matchSet != nil && !m.matchSet[s.PaneID] {
+				continue
+			}
+			currentLine += m.itemLineCount(s, query)
+		}
+	}
+
+	// Backlog section: separator (if sessions exist) + group header.
+	if currentLine > 0 {
+		currentLine++ // "─────" separator
+	}
+	currentLine++ // "BACKLOG" group header
+
+	// Walk backlog items (each project gets a 1-line sub-header, each item is 1 line).
+	currentBacklogProject := ""
+	for _, backlog := range m.filteredBacklog {
+		if backlog.Project != currentBacklogProject {
+			currentBacklogProject = backlog.Project
+			currentLine++ // project sub-header (or selected project header — same 1 line)
+		}
+		if line == currentLine {
+			return backlog.ID
+		}
+		currentLine++
+	}
+	return ""
+}
+
+// SelectByBacklogID sets the cursor to the backlog item with the given ID.
+func (m *SidebarModel) SelectByBacklogID(id string) bool {
+	return m.selectByBacklogID(id)
 }
 
 // itemLineCount returns the number of terminal lines a rendered item occupies.

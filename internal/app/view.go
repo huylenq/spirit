@@ -57,6 +57,25 @@ func (m Model) View() string {
 		}
 	}
 
+	// Set relay views before rendering panels (sidebar.View() and detail.View() consume them)
+	var tagSessionID, tagInputView string
+	if m.state == StateTagRelay {
+		if s, ok := m.sidebar.SelectedItem(); ok {
+			tagSessionID = s.SessionID
+			tagInputView = m.tagRelay.View()
+		}
+	}
+	m.sidebar.SetInlineTagInput(tagSessionID, tagInputView)
+
+	switch m.state {
+	case StatePromptRelay:
+		m.detail.SetRelayView(m.relay.View())
+	case StateQueueRelay:
+		m.detail.SetRelayView(m.queueRelay.View())
+	default:
+		m.detail.SetRelayView("")
+	}
+
 	// Sidebar panel
 	sidebarWidth := m.sidebarPanelWidth()
 	detailWidth := innerWidth - sidebarWidth
@@ -67,16 +86,6 @@ func (m Model) View() string {
 		Height(contentHeight).
 		MaxHeight(contentHeight).
 		Render(sidebarContent)
-
-	// Set inline relay prompt on preview when active
-	switch m.state {
-	case StatePromptRelay:
-		m.detail.SetRelayView(m.relay.View())
-	case StateQueueRelay:
-		m.detail.SetRelayView(m.queueRelay.View())
-	default:
-		m.detail.SetRelayView("")
-	}
 
 	// Queue section below preview (always visible when items pending, interactive in queue mode)
 	var queueView string

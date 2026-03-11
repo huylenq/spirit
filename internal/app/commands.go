@@ -17,6 +17,11 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execPromptRelay() },
 		},
 		{
+			Name: "Tag session", Hotkey: "#",
+			Enabled: hasSessionID,
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execTagRelay() },
+		},
+		{
 			Name: "Queue message", Hotkey: "<",
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execQueue() },

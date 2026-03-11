@@ -128,6 +128,15 @@ func (m PaletteModel) SelectedEnabled() bool {
 	return m.filtered[m.cursor].Enabled
 }
 
+// IndexByPosition returns the original command index for the 1-based position n in the filtered list.
+func (m PaletteModel) IndexByPosition(n int) (int, bool) {
+	idx := n - 1
+	if idx < 0 || idx >= len(m.filtered) {
+		return 0, false
+	}
+	return m.filtered[idx].Index, true
+}
+
 func (m *PaletteModel) TextInput() *textinput.Model {
 	return &m.input
 }

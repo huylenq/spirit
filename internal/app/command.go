@@ -73,6 +73,14 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execTagRelay() (Model, tea.Cmd) {
+	if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
+		m.state = StateTagRelay
+		m.tagRelay.Activate()
+	}
+	return m, nil
+}
+
 func (m Model) execQueue() (Model, tea.Cmd) {
 	if _, ok := m.sidebar.SelectedItem(); ok {
 		m.state = StateQueueRelay

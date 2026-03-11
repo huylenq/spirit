@@ -27,6 +27,15 @@ func NewQueueRelayModel() RelayModel {
 	return RelayModel{input: ti, origPrompt: "❮ "}
 }
 
+func NewTagRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = ""
+	ti.Prompt = "# "
+	ti.PromptStyle = TagPromptStyle
+	ti.CharLimit = 64
+	return RelayModel{input: ti, origPrompt: "# "}
+}
+
 func (m *RelayModel) Activate() {
 	m.active = true
 	m.bangMode = false

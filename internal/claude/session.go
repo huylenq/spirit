@@ -94,6 +94,7 @@ type ClaudeSession struct {
 	IsWorktree             bool   // session runs in a Claude Code worktree
 	WorktreeName           string // e.g. "ember-cat"
 	WorktreeRootProjectPath string // parent repo path (the real project root)
+	Tags                   []string // user-defined labels (persisted to ~/.cache/cmc/{sessionID}.tags)
 }
 
 // DisplayName returns the session's display name using the standard priority:

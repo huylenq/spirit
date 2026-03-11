@@ -360,3 +360,8 @@ func (c *Client) Digest() (*claude.WorkspaceDigest, error) {
 	err := c.rpcInto(Request{Type: ReqDigest}, &data)
 	return data.Digest, err
 }
+
+// SetTags updates the tags for a session (persisted and broadcast to subscribers).
+func (c *Client) SetTags(sessionID string, tags []string) error {
+	return c.rpcInto(Request{Type: ReqSetTags, Data: marshalData(SetTagsData{SessionID: sessionID, Tags: tags})}, nil)
+}

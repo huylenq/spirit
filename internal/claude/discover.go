@@ -267,6 +267,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		s.SkillName = ReadSkillName(sessionID)
 		s.IsWaiting = ReadWaiting(sessionID)
 		s.CompactCount = ReadCompactCount(sessionID)
+		s.Tags = ReadTags(sessionID)
 	}
 
 	s.LaterBookmarkID = bookmarkByPane[p.PaneID]

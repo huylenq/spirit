@@ -227,6 +227,32 @@ func RemoveQueueMessage(sessionID string) {
 	os.Remove(queueFilePath(sessionID))
 }
 
+func tagsFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".tags")
+}
+
+func ReadTags(sessionID string) []string {
+	data, err := os.ReadFile(tagsFilePath(sessionID))
+	if err != nil {
+		return nil
+	}
+	var tags []string
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			tags = append(tags, line)
+		}
+	}
+	return tags
+}
+
+func WriteTags(sessionID string, tags []string) error {
+	if len(tags) == 0 {
+		os.Remove(tagsFilePath(sessionID))
+		return nil
+	}
+	return os.WriteFile(tagsFilePath(sessionID), []byte(strings.Join(tags, "\n")+"\n"), 0o644)
+}
+
 func stopReasonFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".stopreason")
 }
@@ -324,6 +350,7 @@ func RemoveSessionFiles(sessionID string) {
 	os.Remove(compactCountFilePath(sessionID))
 	os.Remove(lastActionFilePath(sessionID))
 	os.Remove(skillFilePath(sessionID))
+	os.Remove(tagsFilePath(sessionID))
 }
 
 // RemovePaneMapping removes the pane→session reverse mapping file.
@@ -338,7 +365,7 @@ func MigrateToSessionKey(paneID, sessionID string) {
 		return
 	}
 	dir := statusDir()
-	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill"}
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags"}
 	for _, ext := range exts {
 		oldPath := filepath.Join(dir, paneID+ext)
 		newPath := filepath.Join(dir, sessionID+ext)
