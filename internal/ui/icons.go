@@ -28,4 +28,11 @@ const (
 	IconModified = "\uf040" // nf-fa-pencil — modified file (has Edit)
 	// Badge icons
 	IconSkill = "\uf0ad" // nf-fa-wrench — skill invocation badge
+	// Backlog
+	IconBacklog = "\uf0eb" // nf-fa-lightbulb_o — backlog item
+	// Toggle glyphs (prompt editor hints)
+	IconRadioOff  = "\uf10c" // nf-fa-circle_o — unselected radio
+	IconRadioOn   = "\uf192" // nf-fa-dot_circle_o — selected radio
+	IconCheckOff  = "\uf096" // nf-fa-square_o — unchecked
+	IconCheckOn   = "\uf14a" // nf-fa-check_square — checked
 )

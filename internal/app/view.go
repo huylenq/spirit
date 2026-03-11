@@ -3,8 +3,8 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -92,18 +92,14 @@ func (m Model) View() string {
 	// Preview panel (reduced height when queue section visible)
 	previewH := contentHeight - queueHeight
 	var previewContent string
-	if m.state == StateIdeaPrompt {
+	if m.state == StateBacklogPrompt {
 		project := ""
-		if m.editingIdeaCWD != "" {
-			// Extract basename manually to avoid filepath import
-			parts := strings.Split(m.editingIdeaCWD, "/")
-			if len(parts) > 0 {
-				project = parts[len(parts)-1]
-			}
+		if m.activeBacklogCWD != "" {
+			project = filepath.Base(m.activeBacklogCWD)
 		}
-		previewContent = m.renderIdeaEditor(project, previewWidth, previewH)
-	} else if idea, ok := m.list.SelectedIdea(); ok {
-		previewContent = m.renderIdeaPreview(idea, previewWidth)
+		previewContent = m.renderBacklogEditor(project, previewWidth, previewH)
+	} else if backlog, ok := m.list.SelectedBacklog(); ok {
+		previewContent = m.renderBacklogPreview(backlog)
 	} else {
 		previewContent = m.preview.View()
 	}
@@ -403,18 +399,18 @@ func hint(k, desc string) string {
 func (m Model) renderNormalFooterHints() string {
 	var parts []string
 
-	// Idea-specific footer
-	if m.list.IsIdeaSelected() {
+	// Backlog-specific footer
+	if m.list.IsBacklogSelected() {
 		parts = append(parts, hint("j/k", "nav"))
-		parts = append(parts, hint("enter", "submit"), hint("i", "edit"), hint("e", "$EDITOR"), hint("d", "delete"))
+		parts = append(parts, hint("enter", "submit"), hint("b", "edit"), hint("e", "$EDITOR"), hint("d", "delete"))
 		parts = append(parts, hint("?", "help"), hint("q", "quit"))
 		return strings.Join(parts, "  ")
 	}
 
-	// IDEAS project-level footer
+	// Project-level footer
 	if m.list.SelectionLevel() == ui.LevelProject {
-		if pe, ok := m.list.SelectedProject(); ok && pe.StatusOrder == ui.OrderIdeas {
-			parts = append(parts, hint("j/k", "nav"), hint("i", "new idea"), hint("l", "enter"))
+		if _, ok := m.list.SelectedProject(); ok {
+			parts = append(parts, hint("j/k", "nav"), hint("b", "new backlog"), hint("l", "enter"))
 			parts = append(parts, hint("?", "help"), hint("q", "quit"))
 			return strings.Join(parts, "  ")
 		}
@@ -446,7 +442,7 @@ func (m Model) renderNormalFooterHints() string {
 		}
 	}
 
-	parts = append(parts, hint("d", "kill"))
+	parts = append(parts, hint("d", "kill"), hint("b", "new backlog"))
 
 	if m.showMinimap {
 		parts = append(parts, hint("H/J/K/L", "spatial"))
@@ -557,33 +553,16 @@ func (m Model) renderMessageToast() string {
 	return ui.ToastStyle.Render(strings.Join(lines, "\n"))
 }
 
-func ideaAge(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "<1m"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-}
-
-// renderIdeaEditor renders the idea textarea editor inline in the preview panel.
-func (m Model) renderIdeaEditor(project string, width, height int) string {
+// renderBacklogEditor renders the backlog textarea editor inline in the preview panel.
+func (m Model) renderBacklogEditor(project string, width, height int) string {
 	var modeLabel string
 	switch m.promptEditor.Mode() {
-	case ui.ModeNewIdea:
-		modeLabel = "New idea"
-	case ui.ModeEditIdea:
-		modeLabel = "Edit idea"
+	case ui.ModeNewBacklog:
+		modeLabel = "New backlog"
+	case ui.ModeEditBacklog:
+		modeLabel = "Edit backlog"
 	default:
-		modeLabel = "Idea"
+		modeLabel = "Backlog"
 	}
 
 	header := ui.PromptEditorTitleStyle.Render(modeLabel + ": " + project)
@@ -608,13 +587,13 @@ func (m Model) renderIdeaEditor(project string, width, height int) string {
 	return header + "\n\n" + body + "\n\n" + hint
 }
 
-// renderIdeaPreview renders the full idea body as plain text for the preview panel.
-func (m Model) renderIdeaPreview(idea claude.Idea, width int) string {
-	header := ui.PromptEditorTitleStyle.Render(ui.IconIdea + " " + idea.DisplayTitle())
-	project := ui.ItemDetailStyle.Render(ui.IconFolder + " " + idea.Project)
-	age := ui.ItemDetailStyle.Render("created " + ideaAge(idea.CreatedAt) + " ago")
+// renderBacklogPreview renders the full backlog item body as plain text for the preview panel.
+func (m Model) renderBacklogPreview(backlog claude.Backlog) string {
+	header := ui.PromptEditorTitleStyle.Render(ui.IconBacklog + " " + backlog.DisplayTitle())
+	project := ui.ItemDetailStyle.Render(ui.IconFolder + " " + backlog.Project)
+	age := ui.ItemDetailStyle.Render("created " + ui.FormatAge(backlog.CreatedAt) + " ago")
 
-	body := idea.Body
+	body := backlog.Body
 	if body == "" {
 		body = ui.ItemDetailStyle.Render("(empty)")
 	}
@@ -637,9 +616,17 @@ func (m Model) renderSearchBar(width int) string {
 func (m Model) renderFooter(width int) string {
 	switch m.state {
 	case StatePalette:
-		h := ui.FooterKeyStyle.Render("enter") + " execute  " +
-			ui.FooterKeyStyle.Render("↑/↓") + " navigate  " +
-			ui.FooterKeyStyle.Render("esc") + " cancel"
+		var h string
+		if m.palette.IsLuaMode() {
+			h = ui.FooterKeyStyle.Render("enter") + " run lua  " +
+				ui.FooterKeyStyle.Render("esc") + " cancel  " +
+				ui.FooterDimStyle.Render("(: to enter lua mode)")
+		} else {
+			h = ui.FooterKeyStyle.Render("enter") + " execute  " +
+				ui.FooterKeyStyle.Render("↑/↓") + " navigate  " +
+				ui.FooterKeyStyle.Render("esc") + " cancel  " +
+				ui.FooterDimStyle.Render(": lua")
+		}
 		return ui.FooterStyle.Width(width).Render(h)
 	case StatePrefsEditor:
 		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
@@ -669,10 +656,18 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("ctrl+d") + " remove  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
-	case StateIdeaPrompt:
+	case StateBacklogPrompt:
 		h := ui.FooterKeyStyle.Render("enter") + " save  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
+	case StateBacklogDeleteConfirm:
+		titleStr := lipgloss.NewStyle().Bold(true).Render(m.deleteTargetBacklog.DisplayTitle())
+		prompt := ui.FooterDimStyle.Render("Delete backlog ") +
+			titleStr +
+			ui.FooterDimStyle.Render(" ? ") +
+			ui.FooterKeyStyle.Render("[y]") + "es " +
+			ui.FooterKeyStyle.Render("[n]") + "o"
+		return ui.FooterStyle.Width(width).Render(prompt)
 	case StateKillConfirm:
 		avatarColor := ui.AvatarColor(m.killTargetColorIdx)
 		avatarStr := ui.AvatarStyle(m.killTargetColorIdx).Render(ui.AvatarGlyph(m.killTargetAnimalIdx))

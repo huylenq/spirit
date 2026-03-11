@@ -40,6 +40,9 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	m.list.SetItems(sessions)
 	m.applyLayout()
 
+	// Discover backlog items from session CWDs
+	m.list.SetBacklog(claude.DiscoverBacklogs(sessions))
+
 	// Load minimap geometry if minimap is enabled
 	if m.showMinimap {
 		if s, ok := m.list.SelectedItem(); ok {

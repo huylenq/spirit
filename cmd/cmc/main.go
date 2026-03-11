@@ -47,6 +47,14 @@ func main() {
 		case "popup":
 			runPopup()
 			return
+		case "usage-dump":
+			raw, err := claude.FetchUsageRaw()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Print(raw)
+			return
 		case "--agent-help":
 			printAgentHelp()
 			return
@@ -491,7 +499,13 @@ func runEval() {
 	}
 	defer client.Close()
 
-	result, err := scripting.RunEval(script, client, os.Stderr)
+	result, msgs, err := scripting.RunEval(script, client, os.Stderr)
+	for _, f := range msgs.Flashes {
+		fmt.Fprintln(os.Stderr, f)
+	}
+	for _, t := range msgs.Toasts {
+		fmt.Fprintln(os.Stderr, t)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

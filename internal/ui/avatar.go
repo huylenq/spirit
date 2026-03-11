@@ -37,7 +37,6 @@ var avatarAnimals = []avatarAnimalDef{
 
 // avatarColorDef is the single source of truth for each avatar color.
 type avatarColorDef struct {
-	Name      string                 // mnemonic name (V1: elemental theme)
 	Fg        lipgloss.AdaptiveColor // primary foreground
 	BadgeBgDk string                 // badge pill background (dark mode only; light uses Fg.Light)
 	FillBg    lipgloss.AdaptiveColor // subtle selected-pane fill background
@@ -46,56 +45,80 @@ type avatarColorDef struct {
 // avatarColorDefs is the 8-color palette (avoids status colors: amber/blue/purple).
 var avatarColorDefs = []avatarColorDef{
 	{
-		Name:      "Fire",
 		Fg:        lipgloss.AdaptiveColor{Light: "#c0284a", Dark: "#fb7185"},
 		BadgeBgDk: "#3b1525",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#fce7eb", Dark: "#2a1520"},
 	},
 	{
-		Name:      "Blaze",
 		Fg:        lipgloss.AdaptiveColor{Light: "#c2410c", Dark: "#fb923c"},
 		BadgeBgDk: "#3b2010",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#ffedd5", Dark: "#2a1e10"},
 	},
 	{
-		Name:      "Solar",
 		Fg:        lipgloss.AdaptiveColor{Light: "#a16207", Dark: "#fbbf24"},
 		BadgeBgDk: "#3b2e10",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#fef9c3", Dark: "#2a2510"},
 	},
 	{
-		Name:      "Acid",
 		Fg:        lipgloss.AdaptiveColor{Light: "#4d7c0f", Dark: "#a3e635"},
 		BadgeBgDk: "#253b15",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#ecfccb", Dark: "#1e2a15"},
 	},
 	{
-		Name:      "Frost",
 		Fg:        lipgloss.AdaptiveColor{Light: "#0e7490", Dark: "#22d3ee"},
 		BadgeBgDk: "#153035",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#cffafe", Dark: "#102a2a"},
 	},
 	{
-		Name:      "Storm",
 		Fg:        lipgloss.AdaptiveColor{Light: "#4338ca", Dark: "#818cf8"},
 		BadgeBgDk: "#252535",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#e0e7ff", Dark: "#1e1e2a"},
 	},
 	{
-		Name:      "Bloom",
 		Fg:        lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"},
 		BadgeBgDk: "#351525",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#fce7f3", Dark: "#2a1525"},
 	},
 	{
-		Name:      "Reef",
 		Fg:        lipgloss.AdaptiveColor{Light: "#0f766e", Dark: "#2dd4bf"},
 		BadgeBgDk: "#153530",
 		FillBg:    lipgloss.AdaptiveColor{Light: "#ccfbf1", Dark: "#102a25"},
 	},
 }
 
+// avatarAdjectives maps [colorIdx][animalIdx] to a unique adjective.
+// Each of the 184 adjectives is unique across the entire table.
+//
+//	Animals: Cat Dog Fish Frog Horse Crow Dove Dragon Hippo Otter Spider Kiwi Snake Bat Bee Bird Duck Owl Penguin Pig Rabbit Shark Cow
+var avatarAdjectives = [8][23]string{
+	// Fire (rose)
+	{"Ember", "Molten", "Scorch", "Sear", "Kindle", "Char", "Smolder", "Inferno", "Flicker", "Singe", "Cinder", "Torch", "Ignite", "Pyre", "Spark", "Flare", "Fuse", "Brand", "Furnace", "Sizzle", "Burnt", "Blister", "Glow"},
+	// Blaze (orange)
+	{"Amber", "Russet", "Copper", "Tawny", "Sienna", "Auburn", "Sunset", "Bronze", "Ochre", "Ginger", "Maple", "Brass", "Rusty", "Topaz", "Cayenne", "Nutmeg", "Hazel", "Peach", "Spice", "Sorrel", "Coral", "Henna", "Buff"},
+	// Solar (yellow)
+	{"Golden", "Radiant", "Gleam", "Sunny", "Gilt", "Luster", "Dawn", "Glint", "Honey", "Saffron", "Lumen", "Lucent", "Flash", "Dazzle", "Ray", "Shimmer", "Noon", "Prism", "Beam", "Canary", "Aura", "Glare", "Maize"},
+	// Acid (lime)
+	{"Toxic", "Venom", "Neon", "Blight", "Caustic", "Plague", "Hazard", "Wicked", "Sting", "Sap", "Fungal", "Lichen", "Feral", "Viper", "Swamp", "Thorn", "Moss", "Pest", "Lurk", "Brute", "Crude", "Slime", "Murk"},
+	// Frost (cyan)
+	{"Frozen", "Glacial", "Arctic", "Frigid", "Polar", "Boreal", "Rime", "Crystal", "Alpine", "Sleet", "Hail", "Tundra", "Gelid", "Brisk", "Shiver", "Bitter", "Floe", "Drift", "Pale", "Chilled", "Flurry", "Icicle", "Crisp"},
+	// Storm (indigo)
+	{"Thunder", "Arcane", "Mystic", "Tempest", "Vortex", "Phantom", "Wraith", "Astral", "Eclipse", "Shade", "Void", "Nebula", "Twilight", "Specter", "Shadow", "Gale", "Bolt", "Lunar", "Abyss", "Cobalt", "Dusk", "Surge", "Rune"},
+	// Bloom (pink)
+	{"Petal", "Blush", "Flora", "Nectar", "Velvet", "Orchid", "Silk", "Peony", "Dainty", "Satin", "Dahlia", "Lotus", "Plush", "Tulip", "Cherub", "Fairy", "Pastel", "Posy", "Lace", "Blossom", "Suede", "Rouge", "Grace"},
+	// Reef (teal)
+	{"Tide", "Lagoon", "Kelp", "Surf", "Marina", "Tropic", "Shoal", "Atoll", "Brine", "Pearl", "Coastal", "Vapor", "Marsh", "Dew", "Spring", "Ripple", "Cove", "Isle", "Current", "Foam", "Brook", "Depth", "Eddy"},
+}
+
 const avatarBadgeFgLight = "#ffffff"
+
+func init() {
+	if len(avatarColorDefs) != len(avatarAdjectives) {
+		panic("avatarAdjectives rows must match avatarColorDefs length")
+	}
+	if len(avatarAnimals) != len(avatarAdjectives[0]) {
+		panic("avatarAdjectives columns must match avatarAnimals length")
+	}
+}
 
 func animalDef(idx int) avatarAnimalDef {
 	return avatarAnimals[idx%len(avatarAnimals)]
@@ -125,15 +148,17 @@ func AvatarStyle(idx int) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(AvatarColor(idx))
 }
 
-// AvatarMnemonicName returns the mnemonic name for an avatar, e.g. "Fire Cat".
+// AvatarMnemonicName returns the unique mnemonic name for an avatar, e.g. "Ember Cat".
 func AvatarMnemonicName(animalIdx, colorIdx int) string {
-	return colorDef(colorIdx).Name + " " + animalDef(animalIdx).Name
+	ci := colorIdx % len(avatarAdjectives)
+	ai := animalIdx % len(avatarAdjectives[0])
+	return avatarAdjectives[ci][ai] + " " + animalDef(animalIdx).Name
 }
 
 // AvatarMnemonicBadge renders a colored pill badge with the mnemonic name.
 func AvatarMnemonicBadge(animalIdx, colorIdx int) string {
 	def := colorDef(colorIdx)
-	name := def.Name + " " + animalDef(animalIdx).Name
+	name := AvatarMnemonicName(animalIdx, colorIdx)
 	fg := lipgloss.AdaptiveColor{Light: avatarBadgeFgLight, Dark: def.Fg.Dark}
 	bg := lipgloss.AdaptiveColor{Light: def.Fg.Light, Dark: def.BadgeBgDk}
 	return lipgloss.NewStyle().

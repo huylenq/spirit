@@ -402,7 +402,7 @@ func (m Model) fetchHooks(paneID, sessionID string) tea.Cmd {
 }
 
 // fetchVisibleOverlays returns commands to refresh any active overlay (hooks, raw transcript).
-func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
+func (m Model) fetchVisibleOverlays(paneID, sessionID, cwd string) []tea.Cmd {
 	var cmds []tea.Cmd
 	if m.showHooks {
 		cmds = append(cmds, m.fetchHooks(paneID, sessionID))
@@ -411,7 +411,7 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID string) []tea.Cmd {
 		cmds = append(cmds, m.fetchRawTranscript(paneID, sessionID))
 	}
 	if m.showDiffs {
-		cmds = append(cmds, m.fetchDiffHunks(paneID, sessionID))
+		cmds = append(cmds, m.fetchDiffHunks(paneID, sessionID, cwd))
 	}
 	if m.debugMode {
 		cmds = append(cmds, m.fetchGlobalEffects())
@@ -431,7 +431,7 @@ func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []te
 		m.fetchCachedSummary(s.PaneID, s.SessionID),
 		switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),
 	}
-	cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID)...)
+	cmds = append(cmds, m.fetchVisibleOverlays(s.PaneID, s.SessionID, s.CWD)...)
 	if syncMinimap && m.showMinimap {
 		if s.TmuxSession != m.minimapSession {
 			cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -462,13 +462,13 @@ func (m Model) fetchAllDiffStats(sessions []claude.ClaudeSession) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m Model) fetchDiffHunks(paneID, sessionID string) tea.Cmd {
+func (m Model) fetchDiffHunks(paneID, sessionID, cwd string) tea.Cmd {
 	if sessionID == "" {
 		return nil
 	}
 	return func() tea.Msg {
 		hunks, _ := m.client.DiffHunks(sessionID)
-		return DiffHunksReadyMsg{PaneID: paneID, Hunks: hunks}
+		return DiffHunksReadyMsg{PaneID: paneID, CWD: cwd, Hunks: hunks}
 	}
 }
 

@@ -19,6 +19,7 @@ type PaletteItem struct {
 type PaletteModel struct {
 	input    textinput.Model
 	active   bool
+	luaMode  bool // true when in Lua eval mode (triggered by ":" prefix)
 	items    []PaletteItem
 	filtered []PaletteItem
 	cursor   int
@@ -35,6 +36,9 @@ func NewPaletteModel() PaletteModel {
 
 func (m *PaletteModel) Activate(items []PaletteItem) {
 	m.active = true
+	m.luaMode = false
+	m.input.Placeholder = "type to search..."
+	m.input.Prompt = "; "
 	m.items = items
 	m.filtered = items
 	m.cursor = 0
@@ -44,6 +48,7 @@ func (m *PaletteModel) Activate(items []PaletteItem) {
 
 func (m *PaletteModel) Deactivate() {
 	m.active = false
+	m.luaMode = false
 	m.items = nil
 	m.filtered = nil
 	m.cursor = 0
@@ -53,6 +58,27 @@ func (m *PaletteModel) Deactivate() {
 
 func (m PaletteModel) Active() bool {
 	return m.active
+}
+
+// EnterLuaMode switches the palette to Lua eval mode.
+// The command list is hidden; the user types Lua code and presses Enter to run it.
+func (m *PaletteModel) EnterLuaMode() {
+	m.luaMode = true
+	m.items = nil
+	m.filtered = nil
+	m.input.Placeholder = "lua expression..."
+	m.input.Prompt = "lua> "
+	m.input.SetValue("")
+}
+
+// IsLuaMode returns true when the palette is in Lua eval mode.
+func (m PaletteModel) IsLuaMode() bool {
+	return m.luaMode
+}
+
+// LuaScript returns the current Lua input text.
+func (m PaletteModel) LuaScript() string {
+	return m.input.Value()
 }
 
 // Narrow re-evaluates the item list based on current input text using fuzzy matching.
@@ -114,6 +140,12 @@ func (m PaletteModel) View(width int) string {
 	contentWidth := min(50, width*60/100)
 	if contentWidth < 30 {
 		contentWidth = 30
+	}
+
+	if m.luaMode {
+		hint := PaletteSepStyle.Render("  :help  for API reference")
+		body := m.input.View() + "\n" + PaletteSepStyle.Render(strings.Repeat("─", contentWidth)) + "\n" + hint
+		return PaletteOverlayStyle.Render(body)
 	}
 
 	var lines []string

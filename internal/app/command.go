@@ -1,12 +1,17 @@
 package app
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/daemon"
+	"github.com/huylenq/claude-mission-control/internal/scripting"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
@@ -340,7 +345,7 @@ func (m Model) execNewSession() (Model, tea.Cmd) {
 
 // spawnNewSession creates the tmux window, launches claude, and optionally
 // registers a pending prompt with the daemon for delivery once the session is ready.
-func (m Model) spawnNewSession(prompt, model string) tea.Cmd {
+func (m Model) spawnNewSession(prompt, model string, planning bool) tea.Cmd {
 	cwd, tmuxSession := m.newSessionCWD, m.newSessionTmuxSess
 	return func() tea.Msg {
 		paneID, err := tmux.NewWindow(tmuxSession, cwd)
@@ -350,6 +355,9 @@ func (m Model) spawnNewSession(prompt, model string) tea.Cmd {
 		cmd := "claude --dangerously-skip-permissions"
 		if model != "" {
 			cmd += " --model " + model
+		}
+		if planning {
+			cmd += " --plan"
 		}
 		tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 		if prompt != "" {
@@ -384,6 +392,7 @@ func (m *Model) applyPrefsFromText(text string) int {
 
 	// Apply each known key to live model state
 	m.list.SetGroupByProject(prefs["groupByProject"] == "true")
+	m.list.SetShowBacklog(prefs["showBacklog"] == "true")
 	m.showMinimap = prefs["minimap"] == "true"
 	if v := prefs["minimapMode"]; v != "" {
 		m.minimapMode = v
@@ -399,6 +408,116 @@ func (m *Model) applyPrefsFromText(text string) int {
 	return unknowns
 }
 
+func (m Model) execNewBacklogForCWD(cwd string) (Model, tea.Cmd) {
+	m.state = StateBacklogPrompt
+	m.activeBacklogCWD = cwd
+	m.activeBacklogID = ""
+	m.promptEditor.ActivateForBacklog()
+	return m, nil
+}
+
+func (m Model) execNewBacklog() (Model, tea.Cmd) {
+	pe, ok := m.list.SelectedProject()
+	if !ok {
+		return m, nil
+	}
+	// Backlog project level: get CWD from existing backlog items (no sessions in this project)
+	cwd := m.list.FirstBacklogCWDInProject(pe.Name)
+	if cwd == "" {
+		return m, func() tea.Msg { return flashErrorMsg("no working directory for project") }
+	}
+	return m.execNewBacklogForCWD(cwd)
+}
+
+func (m Model) execEditBacklog() (Model, tea.Cmd) {
+	backlog, ok := m.list.SelectedBacklog()
+	if !ok {
+		return m, nil
+	}
+	m.state = StateBacklogPrompt
+	m.activeBacklogID = backlog.ID
+	m.activeBacklogCWD = backlog.CWD
+	m.promptEditor.ActivateForBacklogEdit(backlog.Body)
+	return m, nil
+}
+
+func (m Model) execDeleteBacklog() (Model, tea.Cmd) {
+	backlog, ok := m.list.SelectedBacklog()
+	if !ok {
+		return m, nil
+	}
+	m.state = StateBacklogDeleteConfirm
+	m.deleteTargetBacklog = backlog
+	return m, nil
+}
+
+func (m Model) confirmDeleteBacklog() (Model, tea.Cmd) {
+	b := m.deleteTargetBacklog
+	m.state = StateNormal
+	m.deleteTargetBacklog = claude.Backlog{}
+	sessions := m.sessions
+	return m, tea.Batch(
+		func() tea.Msg {
+			if err := claude.RemoveBacklog(b.CWD, b.ID); err != nil {
+				return flashErrorMsg("delete backlog: " + err.Error())
+			}
+			return flashInfoMsg("backlog deleted")
+		},
+		m.discoverBacklogs(sessions),
+	)
+}
+
+func (m Model) execSubmitBacklog() (Model, tea.Cmd) {
+	backlog, ok := m.list.SelectedBacklog()
+	if !ok {
+		return m, nil
+	}
+
+	// Need a tmux session to create the window in
+	var tmuxSession string
+	for _, s := range m.sessions {
+		if s.CWD == backlog.CWD && s.TmuxSession != "" {
+			tmuxSession = s.TmuxSession
+			break
+		}
+	}
+	if tmuxSession == "" && m.origPane.Captured {
+		tmuxSession = m.origPane.Session
+	}
+	if tmuxSession == "" {
+		return m, func() tea.Msg { return flashErrorMsg("no tmux session detected") }
+	}
+
+	m.state = StateNewSessionPrompt
+	m.newSessionProject = backlog.Project
+	m.newSessionCWD = backlog.CWD
+	m.newSessionTmuxSess = tmuxSession
+	m.activeBacklogID = backlog.ID
+	m.activeBacklogCWD = backlog.CWD
+	m.promptEditor.ActivateForBacklogSubmit(backlog.Body)
+	return m, nil
+}
+
+func (m Model) execOpenBacklogInEditor() (Model, tea.Cmd) {
+	backlog, ok := m.list.SelectedBacklog()
+	if !ok {
+		return m, nil
+	}
+	path := claude.BacklogFilePath(backlog.CWD, backlog.ID)
+	tmuxSession := m.origPane.Session
+	return m, func() tea.Msg {
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vim"
+		}
+		cmd := fmt.Sprintf("%s %s", editor, path)
+		if err := exec.Command("tmux", "split-window", "-t", tmuxSession, cmd).Run(); err != nil {
+			return flashErrorMsg("open editor: " + err.Error())
+		}
+		return tea.QuitMsg{}
+	}
+}
+
 func (m Model) execToggleDiffs() (Model, tea.Cmd) {
 	m.showDiffs = !m.showDiffs
 	m.showHooks = false
@@ -408,7 +527,7 @@ func (m Model) execToggleDiffs() (Model, tea.Cmd) {
 	m.preview.SetShowRawTranscript(false)
 	if m.showDiffs {
 		if s, ok := m.list.SelectedItem(); ok {
-			return m, m.fetchDiffHunks(s.PaneID, s.SessionID)
+			return m, m.fetchDiffHunks(s.PaneID, s.SessionID, s.CWD)
 		}
 	}
 	return m, nil
@@ -442,4 +561,20 @@ func (m Model) execToggleRawTranscript() (Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) execShowSpiritAnimal() (Model, tea.Cmd) {
+	if _, ok := m.list.SelectedItem(); !ok {
+		return m, nil
+	}
+	m.showSpiritAnimal = true
+	return m, nil
+}
+
+// evalLua runs a Lua script async against the daemon and returns a LuaEvalDoneMsg.
+func evalLua(client *daemon.Client, script string) tea.Cmd {
+	return func() tea.Msg {
+		result, msgs, err := scripting.RunEval(script, client, os.Stderr)
+		return LuaEvalDoneMsg{Result: result, Msgs: msgs, Err: err}
+	}
 }

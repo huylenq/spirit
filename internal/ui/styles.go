@@ -44,12 +44,12 @@ var (
 				Bold(true).
 				Padding(0, 1)
 
-	ColorIdea = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — ideas
+	ColorBacklog = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — backlog
 
 	GroupHeaderWorkingStyle  = GroupHeaderStyle.Foreground(ColorWorking)
 	GroupHeaderDoneStyle     = GroupHeaderStyle.Foreground(ColorDone)
 	GroupHeaderLaterStyle    = GroupHeaderStyle.Foreground(ColorLater)
-	GroupHeaderIdeaStyle     = GroupHeaderStyle.Foreground(ColorIdea)
+	GroupHeaderBacklogStyle  = GroupHeaderStyle.Foreground(ColorBacklog)
 	GroupHeaderProjectStyle  = GroupHeaderStyle.Foreground(ColorMuted)
 	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 

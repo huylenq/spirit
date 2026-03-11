@@ -10,13 +10,15 @@ import (
 )
 
 // RunEval executes a Lua script in a sandboxed VM with the cmc API available.
-// Returns the JSON-encoded result of the last expression, or "" if no return value.
-func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, error) {
+// Returns the JSON-encoded result, any flash/toast messages emitted, and any error.
+func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, Msgs, error) {
 	L := newSandboxedVM()
 	defer L.Close()
 
+	var msgs Msgs
+
 	// Register all API functions
-	registerUtilAPIs(L, stderr)
+	registerUtilAPIs(L, stderr, &msgs)
 	registerSessionAPIs(L, client)
 	registerSendAPIs(L, client)
 	registerLifecycleAPIs(L, client)
@@ -31,25 +33,25 @@ func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, er
 		// work inside a function wrapper)
 		err = L.DoString(script)
 		if err != nil {
-			return "", err
+			return "", msgs, err
 		}
 	}
 
 	// Get return value from stack
 	ret := L.Get(-1)
 	if ret == nil || ret == lua.LNil {
-		return "", nil
+		return "", msgs, nil
 	}
 
 	// Convert to JSON
 	goVal := luaValueToGo(ret)
 	if goVal == nil {
-		return "", nil
+		return "", msgs, nil
 	}
 
 	data, err := json.Marshal(goVal)
 	if err != nil {
-		return "", fmt.Errorf("marshal result: %w", err)
+		return "", msgs, fmt.Errorf("marshal result: %w", err)
 	}
-	return string(data), nil
+	return string(data), msgs, nil
 }

@@ -359,7 +359,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DiffHunksReadyMsg:
 		if s, ok := m.list.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.preview.SetDiffHunks(msg.Hunks)
+			m.preview.SetDiffHunks(msg.Hunks, msg.CWD)
 		}
 		return m, nil
 
@@ -1071,7 +1071,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, Keys.Enter):
 			return m.execSubmitBacklog()
-		case msg.String() == "i":
+		case msg.String() == "b":
 			return m.execEditBacklog()
 		case msg.String() == "e":
 			return m.execOpenBacklogInEditor()
@@ -1081,8 +1081,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to common nav keys (up/down/h/l/q/esc/etc.)
 	}
 
-	// New backlog item via `i` key — works from session item, session project, or BACKLOG project level
-	if msg.String() == "i" {
+	// New backlog item via `b` key — works from session item, session project, or BACKLOG project level
+	if msg.String() == "b" {
 		// Session item selected
 		if s, ok := m.list.SelectedItem(); ok {
 			return m.execNewBacklogForCWD(s.CWD)
@@ -1361,7 +1361,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefBool("groupByProject", newMode)
 		return m, nil
 
-	case msg.String() == "I":
+	case msg.String() == "B":
 		newVal := !m.list.ShowBacklog()
 		m.list.SetShowBacklog(newVal)
 		savePrefBool("showBacklog", newVal)

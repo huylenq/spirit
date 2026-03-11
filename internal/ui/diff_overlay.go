@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -25,9 +26,7 @@ type diffHunkFile struct {
 // SetShowDiffs toggles the diff hunks overlay.
 func (m *PreviewModel) SetShowDiffs(show bool) {
 	m.showDiffs = show
-	m.diffFileCursor = 0
 	m.diffScroll = 0
-	m.diffExpanded = nil
 	if !show {
 		m.diffHunks = nil
 		m.diffHunkFiles = nil
@@ -35,7 +34,8 @@ func (m *PreviewModel) SetShowDiffs(show bool) {
 }
 
 // SetDiffHunks sets the diff hunks and groups them by file.
-func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk) {
+// cwd is the session's working directory, used to compute relative display paths.
+func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk, cwd string) {
 	m.diffHunks = hunks
 
 	// Group by file path
@@ -44,9 +44,14 @@ func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk) {
 	for _, h := range hunks {
 		f, exists := fileMap[h.FilePath]
 		if !exists {
-			parts := strings.Split(h.FilePath, "/")
+			displayPath := h.FilePath
+			if cwd != "" {
+				if rel, err := filepath.Rel(cwd, h.FilePath); err == nil {
+					displayPath = rel
+				}
+			}
 			f = &diffHunkFile{
-				name:      parts[len(parts)-1],
+				name:      displayPath,
 				isNewFile: true, // assume new until we see an Edit
 			}
 			fileMap[h.FilePath] = f
@@ -74,26 +79,11 @@ func (m *PreviewModel) SetDiffHunks(hunks []claude.FileDiffHunk) {
 		return files[i].name < files[j].name
 	})
 	m.diffHunkFiles = files
-
-	// Auto-expand first file
-	m.diffExpanded = make(map[int]bool)
-	if len(files) > 0 {
-		m.diffExpanded[0] = true
-	}
-	m.diffFileCursor = 0
 	m.diffScroll = 0
 }
 
-// ToggleDiffExpand toggles expansion of the file at the current cursor.
-func (m *PreviewModel) ToggleDiffExpand() {
-	if !m.showDiffs || len(m.diffHunkFiles) == 0 {
-		return
-	}
-	if m.diffExpanded == nil {
-		m.diffExpanded = make(map[int]bool)
-	}
-	m.diffExpanded[m.diffFileCursor] = !m.diffExpanded[m.diffFileCursor]
-}
+// ToggleDiffExpand is a no-op — the flat view is always fully expanded.
+func (m *PreviewModel) ToggleDiffExpand() {}
 
 // diffVisLines returns the number of file rows visible in the diff overlay.
 func (m *PreviewModel) diffVisLines() int {
@@ -250,29 +240,13 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 	if fileCount == 0 {
 		lines = append(lines, PreviewMetaStyle.Render("No file changes"))
 	} else {
-		innerWidth := width - 6 // border(2) + padding(2) + cursor(2)
+		innerWidth := width - 6 // border(2) + padding(2) + indent(2)
 		clipStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
 
-		// Build all rendered lines (files + expanded hunks)
-		type renderedLine struct {
-			text    string
-			fileIdx int // which file this line belongs to (-1 for separators)
-		}
-		var allLines []renderedLine
+		// Build flat list of all rendered lines (file headers + hunks)
+		var allLines []string
 
-		for i, f := range m.diffHunkFiles {
-			// Cursor indicator
-			cursor := "  "
-			if i == m.diffFileCursor {
-				cursor = "> "
-			}
-
-			// Expand/collapse indicator
-			expandIcon := "▸ "
-			if m.diffExpanded[i] {
-				expandIcon = "▾ "
-			}
-
+		for _, f := range m.diffHunkFiles {
 			// File type icon
 			icon := IconModified
 			if f.isNewFile {
@@ -283,64 +257,56 @@ func (m PreviewModel) renderDiffOverlay(width, height int) string {
 			addStr := DiffAddedStyle.Render(fmt.Sprintf("+%d", f.added))
 			rmStr := StatWorkingStyle.Render(fmt.Sprintf("-%d", f.removed))
 
-			line := fmt.Sprintf("%s%s%s %s  %s %s", cursor, expandIcon, icon, f.name, addStr, rmStr)
-			allLines = append(allLines, renderedLine{text: clipStyle.Render(line), fileIdx: i})
+			header := fmt.Sprintf("%s %s  %s %s", icon, f.name, addStr, rmStr)
+			allLines = append(allLines, clipStyle.Render(header))
 
-			// Expanded hunks with inline diffs
-			if m.diffExpanded[i] {
-				for hi, h := range f.hunks {
-					if h.IsWrite {
-						// Write (new file): just show + lines
-						for _, dl := range strings.Split(h.NewString, "\n") {
-							if strings.TrimSpace(dl) == "" {
-								continue
-							}
-							styled := ansi.Truncate(DiffAddBg.Render("+ "+dl), innerWidth-4, "…")
-							allLines = append(allLines, renderedLine{text: "    " + styled, fileIdx: i})
+			// All hunks, always expanded
+			for hi, h := range f.hunks {
+				if h.IsWrite {
+					for _, dl := range strings.Split(h.NewString, "\n") {
+						if strings.TrimSpace(dl) == "" {
+							continue
 						}
-					} else {
-						// Edit: inline diff with word-level highlighting
-						for _, dl := range renderInlineDiff(h.OldString, h.NewString, innerWidth-4) {
-							allLines = append(allLines, renderedLine{text: "    " + dl, fileIdx: i})
-						}
+						styled := ansi.Truncate(DiffAddBg.Render("+ "+dl), innerWidth-4, "…")
+						allLines = append(allLines, "  "+styled)
 					}
-					// Separator between hunks (skip after last)
-					if hi < len(f.hunks)-1 {
-						sep := PreviewMetaStyle.Render("    " + strings.Repeat("·", min(innerWidth-8, 30)))
-						allLines = append(allLines, renderedLine{text: sep, fileIdx: i})
+				} else {
+					for _, dl := range renderInlineDiff(h.OldString, h.NewString, innerWidth-4) {
+						allLines = append(allLines, "  "+dl)
 					}
 				}
+				if hi < len(f.hunks)-1 {
+					sep := PreviewMetaStyle.Render("  " + strings.Repeat("·", min(innerWidth-6, 30)))
+					allLines = append(allLines, sep)
+				}
 			}
+
+			// Blank line between files
+			allLines = append(allLines, "")
 		}
 
-		// Apply scroll: find the first line of the scroll-start file
-		scrollLineIdx := 0
-		if m.diffScroll > 0 {
-			for idx, rl := range allLines {
-				if rl.fileIdx >= m.diffScroll {
-					scrollLineIdx = idx
-					break
-				}
-			}
+		// Line-based scroll
+		scrollIdx := m.diffScroll
+		if scrollIdx >= len(allLines) {
+			scrollIdx = max(0, len(allLines)-1)
 		}
 
 		visLines := m.diffVisLines()
-		end := scrollLineIdx + visLines
+		end := scrollIdx + visLines
 		if end > len(allLines) {
 			end = len(allLines)
 		}
 
-		for _, rl := range allLines[scrollLineIdx:end] {
-			lines = append(lines, rl.text)
-		}
+		lines = append(lines, allLines[scrollIdx:end]...)
 
 		// Scroll indicator
-		if len(allLines) > visLines {
+		total := len(allLines)
+		if total > visLines {
 			pct := 0
-			if len(allLines)-visLines > 0 {
-				pct = (scrollLineIdx * 100) / (len(allLines) - visLines)
+			if total-visLines > 0 {
+				pct = (scrollIdx * 100) / (total - visLines)
 			}
-			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d/%d files (%d%%) ──", min(m.diffFileCursor+1, fileCount), fileCount, pct))
+			indicator := PreviewMetaStyle.Render(fmt.Sprintf("── %d%% ──", pct))
 			lines = append(lines, indicator)
 		}
 	}

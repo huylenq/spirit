@@ -38,6 +38,14 @@ func ListAllPanes() ([]PaneInfo, error) {
 		winIdx, _ := strconv.Atoi(parts[4])
 		paneIdx, _ := strconv.Atoi(parts[5])
 		created, _ := strconv.ParseInt(parts[6], 10, 64)
+		paneCreated := time.Unix(created, 0)
+		if created == 0 {
+			// pane_created unavailable (e.g. tmux 3.6+): use pane ID
+			// sequence number (%N) as a monotonic creation-order proxy.
+			if seq, err := strconv.Atoi(strings.TrimPrefix(parts[0], "%")); err == nil {
+				paneCreated = time.Unix(int64(seq), 0)
+			}
+		}
 		panes = append(panes, PaneInfo{
 			PaneID:      parts[0],
 			PanePID:     pid,
@@ -45,7 +53,7 @@ func ListAllPanes() ([]PaneInfo, error) {
 			SessionName: parts[3],
 			WindowIndex: winIdx,
 			PaneIndex:   paneIdx,
-			PaneCreated: time.Unix(created, 0),
+			PaneCreated: paneCreated,
 		})
 	}
 	return panes, nil
@@ -147,6 +155,14 @@ func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
 		winIdx, _ := strconv.Atoi(parts[4])
 		paneIdx, _ := strconv.Atoi(parts[5])
 		created, _ := strconv.ParseInt(parts[6], 10, 64)
+		paneCreated := time.Unix(created, 0)
+		if created == 0 {
+			// pane_created unavailable (e.g. tmux 3.6+): use pane ID
+			// sequence number (%N) as a monotonic creation-order proxy.
+			if seq, err := strconv.Atoi(strings.TrimPrefix(parts[0], "%")); err == nil {
+				paneCreated = time.Unix(int64(seq), 0)
+			}
+		}
 		panes = append(panes, PaneInfo{
 			PaneID:      parts[0],
 			PanePID:     pid,
@@ -154,7 +170,7 @@ func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
 			SessionName: parts[3],
 			WindowIndex: winIdx,
 			PaneIndex:   paneIdx,
-			PaneCreated: time.Unix(created, 0),
+			PaneCreated: paneCreated,
 		})
 	}
 	return panes, nil

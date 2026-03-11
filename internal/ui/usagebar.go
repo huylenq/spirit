@@ -20,8 +20,8 @@ var labelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 
 // UsageBarModel renders a thin progress bar showing account-level session usage.
 type UsageBarModel struct {
-	sessionPct int    // 0-100
-	resets     string // e.g. "6pm (Asia/Saigon)"
+	sessionPct int              // cached separately for ripple delta detection
+	stats      *claude.UsageStats // full stats for display
 	hasData    bool
 
 	// Ripple animation
@@ -38,7 +38,12 @@ func (m *UsageBarModel) HasData() bool {
 func (m *UsageBarModel) SessionPct() int { return m.sessionPct }
 
 // Resets returns the reset time string (for debug display).
-func (m *UsageBarModel) Resets() string { return m.resets }
+func (m *UsageBarModel) Resets() string {
+	if m.stats == nil {
+		return ""
+	}
+	return m.stats.SessionResets
+}
 
 // RippleActive returns whether the ripple animation is running (for debug display).
 func (m *UsageBarModel) RippleActive() bool { return m.rippleActive }
@@ -51,7 +56,7 @@ func (m *UsageBarModel) SetUsage(stats *claude.UsageStats) tea.Cmd {
 	}
 	oldPct := m.sessionPct
 	m.sessionPct = stats.SessionPct
-	m.resets = stats.SessionResets
+	m.stats = stats
 	wasEmpty := !m.hasData
 	m.hasData = true
 
@@ -155,15 +160,35 @@ func (m *UsageBarModel) LabelView() string {
 	if !m.hasData {
 		return ""
 	}
-	label := fmt.Sprintf("session %d%%", m.sessionPct)
-	if m.resets != "" {
-		resets := m.resets
-		if i := strings.Index(resets, " ("); i >= 0 {
-			resets = resets[:i]
+
+	trimTZ := func(s string) string {
+		if i := strings.Index(s, " ("); i >= 0 {
+			return s[:i]
 		}
-		label += " · resets " + resets
+		return s
 	}
-	return labelStyle.Render(label)
+
+	s := m.stats
+	parts := []string{fmt.Sprintf("session %d%%", m.sessionPct)}
+	if s.SessionResets != "" {
+		parts[0] += " resets " + trimTZ(s.SessionResets)
+	}
+	if s.WeekAllPct > 0 || s.WeekAllResets != "" {
+		seg := fmt.Sprintf("week %d%%", s.WeekAllPct)
+		if s.WeekAllResets != "" {
+			seg += " resets " + trimTZ(s.WeekAllResets)
+		}
+		parts = append(parts, seg)
+	}
+	if s.WeekSonnetPct > 0 || s.WeekSonnetResets != "" {
+		seg := fmt.Sprintf("sonnet %d%%", s.WeekSonnetPct)
+		if s.WeekSonnetResets != "" && s.WeekSonnetResets != s.WeekAllResets {
+			seg += " resets " + trimTZ(s.WeekSonnetResets)
+		}
+		parts = append(parts, seg)
+	}
+
+	return labelStyle.Render(strings.Join(parts, " · "))
 }
 
 // blendHex linearly interpolates between two hex colors.

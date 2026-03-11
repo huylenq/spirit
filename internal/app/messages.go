@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/daemon"
+	"github.com/huylenq/claude-mission-control/internal/scripting"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
 
@@ -41,6 +42,7 @@ type RawTranscriptReadyMsg struct {
 // DiffHunksReadyMsg is sent when file diff hunks are loaded for a session.
 type DiffHunksReadyMsg struct {
 	PaneID string
+	CWD    string
 	Hunks  []claude.FileDiffHunk
 }
 
@@ -110,9 +112,9 @@ type NewSessionCreatedMsg struct {
 	PaneID string
 }
 
-// IdeasRefreshedMsg is sent when idea discovery completes.
-type IdeasRefreshedMsg struct {
-	Ideas []claude.Idea
+// BacklogsRefreshedMsg is sent when backlog discovery completes.
+type BacklogsRefreshedMsg struct {
+	Backlogs []claude.Backlog
 }
 
 // PaneKilledMsg is sent after attempting to kill a session and close its pane.
@@ -128,4 +130,11 @@ type DaemonDisconnectedMsg struct {
 // DaemonReconnectedMsg is sent when reconnection to the daemon succeeds.
 type DaemonReconnectedMsg struct {
 	Client *daemon.Client
+}
+
+// LuaEvalDoneMsg is sent when an async Lua eval completes.
+type LuaEvalDoneMsg struct {
+	Result string
+	Msgs   scripting.Msgs // flash/toast messages emitted during script execution
+	Err    error
 }

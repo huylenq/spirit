@@ -51,12 +51,10 @@ type PreviewModel struct {
 	transcriptMaxTypeW     int            // cached max width of Type column
 	transcriptMaxCTypeW    int            // cached max width of ContentType column
 	showRawTranscript      bool
-	showDiffs       bool
-	diffHunks       []claude.FileDiffHunk
-	diffHunkFiles   []diffHunkFile
-	diffFileCursor  int
-	diffExpanded    map[int]bool
-	diffScroll      int
+	showDiffs     bool
+	diffHunks     []claude.FileDiffHunk
+	diffHunkFiles []diffHunkFile
+	diffScroll    int
 	width           int
 	height          int
 	ready           bool
@@ -402,16 +400,7 @@ func truncateLines(content string, maxWidth int) string {
 
 func (m *PreviewModel) scrollDown(n int) {
 	if m.showDiffs {
-		total := len(m.diffHunkFiles)
-		for range n {
-			if m.diffFileCursor < total-1 {
-				m.diffFileCursor++
-			}
-		}
-		visLines := m.diffVisLines()
-		if m.diffFileCursor >= m.diffScroll+visLines {
-			m.diffScroll = m.diffFileCursor - visLines + 1
-		}
+		m.diffScroll += n
 		return
 	}
 	if m.showRawTranscript {
@@ -439,13 +428,9 @@ func (m *PreviewModel) scrollDown(n int) {
 
 func (m *PreviewModel) scrollUp(n int) {
 	if m.showDiffs {
-		for range n {
-			if m.diffFileCursor > 0 {
-				m.diffFileCursor--
-			}
-		}
-		if m.diffFileCursor < m.diffScroll {
-			m.diffScroll = m.diffFileCursor
+		m.diffScroll -= n
+		if m.diffScroll < 0 {
+			m.diffScroll = 0
 		}
 		return
 	}
@@ -691,11 +676,12 @@ func (m PreviewModel) View() string {
 	}
 	line1 := leftPart + strings.Repeat(" ", gap) + gitInfo
 
-	// Header line 2: avatar + session title (neutral, matching list item color)
+	// Header line 2: avatar + mnemonic badge + session title
 	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
-	sessionTitle := avatar
+	badge := AvatarMnemonicBadge(s.AvatarAnimalIdx, s.AvatarColorIdx)
+	sessionTitle := avatar + " " + badge
 	if name := s.DisplayName(); name != "" {
-		sessionTitle += "  " + name
+		sessionTitle += " " + name
 	}
 
 	header := line1 + "\n" + sessionTitle + "\n"
@@ -756,7 +742,7 @@ func (m PreviewModel) View() string {
 		metaParts = append(metaParts, IconID+" "+short)
 	}
 	if !s.LastChanged.IsZero() {
-		age := formatAge(s.LastChanged)
+		age := FormatAge(s.LastChanged)
 		metaParts = append(metaParts, IconClock+" "+age+" ago")
 	}
 	meta := PreviewMetaStyle.Render(strings.Join(metaParts, "  "))

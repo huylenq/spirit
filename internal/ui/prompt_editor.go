@@ -19,11 +19,23 @@ var (
 	peBadgeStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
 )
 
+// PromptEditorMode distinguishes how the prompt editor is being used.
+type PromptEditorMode int
+
+const (
+	ModeNewSession PromptEditorMode = iota
+	ModeNewBacklog
+	ModeEditBacklog
+	ModeSubmitBacklog
+)
+
 // PromptEditorModel wraps a textarea for multiline prompt input (new session).
 type PromptEditorModel struct {
 	input         textarea.Model
 	active        bool
 	selectedModel string // "" = default (no --model flag)
+	planMode      bool   // true = pass --plan flag to claude
+	mode          PromptEditorMode
 }
 
 func NewPromptEditorModel() PromptEditorModel {
@@ -39,7 +51,39 @@ func NewPromptEditorModel() PromptEditorModel {
 
 func (m *PromptEditorModel) Activate() {
 	m.active = true
+	m.mode = ModeNewSession
 	m.input.SetValue("")
+	m.input.Focus()
+	m.selectedModel = ""
+	m.planMode = false
+}
+
+// ActivateForBacklog opens the editor in new-backlog mode.
+func (m *PromptEditorModel) ActivateForBacklog() {
+	m.active = true
+	m.mode = ModeNewBacklog
+	m.input.SetValue("")
+	m.input.Placeholder = "Backlog…"
+	m.input.Focus()
+	m.selectedModel = ""
+}
+
+// ActivateForBacklogEdit opens the editor in edit-backlog mode with pre-filled body.
+func (m *PromptEditorModel) ActivateForBacklogEdit(body string) {
+	m.active = true
+	m.mode = ModeEditBacklog
+	m.input.SetValue(body)
+	m.input.Placeholder = "Backlog…"
+	m.input.Focus()
+	m.selectedModel = ""
+}
+
+// ActivateForBacklogSubmit opens the editor in submit-backlog mode (becomes a session).
+func (m *PromptEditorModel) ActivateForBacklogSubmit(body string) {
+	m.active = true
+	m.mode = ModeSubmitBacklog
+	m.input.SetValue(body)
+	m.input.Placeholder = "Submit as prompt…"
 	m.input.Focus()
 	m.selectedModel = ""
 }
@@ -48,7 +92,10 @@ func (m *PromptEditorModel) Deactivate() {
 	m.active = false
 	m.input.Blur()
 	m.input.SetValue("")
+	m.input.Placeholder = "Initial prompt (optional)…"
 	m.selectedModel = ""
+	m.planMode = false
+	m.mode = ModeNewSession
 }
 
 func (m *PromptEditorModel) Confirm() string {
@@ -60,6 +107,10 @@ func (m *PromptEditorModel) Confirm() string {
 
 func (m PromptEditorModel) Active() bool {
 	return m.active
+}
+
+func (m PromptEditorModel) Mode() PromptEditorMode {
+	return m.mode
 }
 
 func (m PromptEditorModel) Value() string {
@@ -88,6 +139,16 @@ func (m *PromptEditorModel) SetModel(model string) {
 
 func (m PromptEditorModel) SelectedModel() string { return m.selectedModel }
 
+// TogglePlan toggles plan mode (--plan flag) on/off.
+func (m *PromptEditorModel) TogglePlan() { m.planMode = !m.planMode }
+
+func (m PromptEditorModel) PlanMode() bool { return m.planMode }
+
+// ViewTextarea returns just the raw textarea view without any overlay chrome.
+func (m *PromptEditorModel) ViewTextarea() string {
+	return m.input.View()
+}
+
 // View returns the styled overlay for the prompt editor.
 func (m *PromptEditorModel) View(title string, width int) string {
 	if !m.active {
@@ -100,27 +161,60 @@ func (m *PromptEditorModel) View(title string, width int) string {
 		m.input.SetWidth(innerWidth)
 	}
 
-	header := PromptEditorTitleStyle.Render("New session: " + title)
+	var headerPrefix string
+	switch m.mode {
+	case ModeNewBacklog:
+		headerPrefix = "New backlog: "
+	case ModeEditBacklog:
+		headerPrefix = "Edit backlog: "
+	case ModeSubmitBacklog:
+		headerPrefix = "Submit backlog: "
+	default:
+		headerPrefix = "New session: "
+	}
+
+	header := PromptEditorTitleStyle.Render(headerPrefix + title)
 	if m.selectedModel != "" {
 		header += "  " + peBadgeStyle.Render("["+m.selectedModel+"]")
+	}
+	if m.planMode {
+		header += "  " + peBadgeStyle.Render("[plan]")
 	}
 
 	body := m.input.View()
 
-	// Compact model hint: "alt+ opus · sonnet · haiku" with key letter green
-	var modelParts []string
-	for _, name := range ModelOptions {
-		if name == m.selectedModel {
-			modelParts = append(modelParts, peActiveStyle.Render(name))
-		} else {
-			modelParts = append(modelParts, peKeyStyle.Render(string(name[0]))+FooterDimStyle.Render(name[1:]))
-		}
-	}
-	sep := FooterDimStyle.Render(" · ")
-	modelHint := peKeyStyle.Render("alt+ ") + strings.Join(modelParts, sep)
+	showModelHint := m.mode == ModeNewSession || m.mode == ModeSubmitBacklog
 
-	hint := peKeyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
-		peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + "\n" + modelHint
+	var hint string
+	if m.mode == ModeNewBacklog || m.mode == ModeEditBacklog {
+		hint = peKeyStyle.Render("enter") + FooterDimStyle.Render(" save  ") +
+			peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel")
+	} else {
+		var planToggle string
+		if showModelHint {
+			if m.planMode {
+				planToggle = "  " + peActiveStyle.Render("alt+p") + " " + peActiveStyle.Render(IconCheckOn+" plan")
+			} else {
+				planToggle = "  " + peKeyStyle.Render("alt+p") + FooterDimStyle.Render(" "+IconCheckOff+" plan")
+			}
+		}
+		hint = peKeyStyle.Render("enter") + FooterDimStyle.Render(" send  ") +
+			peKeyStyle.Render("esc") + FooterDimStyle.Render(" cancel") + planToggle
+	}
+
+	if showModelHint {
+		var modelParts []string
+		for _, name := range ModelOptions {
+			if name == m.selectedModel {
+				modelParts = append(modelParts, peActiveStyle.Render(IconRadioOn+" "+name))
+			} else {
+				modelParts = append(modelParts, FooterDimStyle.Render(IconRadioOff+" ")+peKeyStyle.Render(string(name[0]))+FooterDimStyle.Render(name[1:]))
+			}
+		}
+		sep := FooterDimStyle.Render(" · ")
+		modelHint := peKeyStyle.Render("alt+ ") + strings.Join(modelParts, sep)
+		hint += "\n" + modelHint
+	}
 
 	content := header + "\n\n" + body + "\n\n" + hint
 
