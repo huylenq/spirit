@@ -1594,6 +1594,14 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detail.NavigateMsg(-1)
 		}
 		return m, nil
+
+	case msg.String() == "[" && m.showDiffs:
+		m.detail.AdjustDiffSimThreshold(-0.05)
+		return m, nil
+
+	case msg.String() == "]" && m.showDiffs:
+		m.detail.AdjustDiffSimThreshold(0.05)
+		return m, nil
 	}
 
 	return m, nil

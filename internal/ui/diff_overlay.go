@@ -23,6 +23,8 @@ type diffHunkFile struct {
 	hunks     []claude.FileDiffHunk
 }
 
+const defaultDiffSimThreshold = 0.3
+
 // SetShowDiffs toggles the diff hunks overlay.
 func (m *DetailModel) SetShowDiffs(show bool) {
 	m.showDiffs = show
@@ -31,6 +33,18 @@ func (m *DetailModel) SetShowDiffs(show bool) {
 		m.diffHunks = nil
 		m.diffHunkFiles = nil
 	}
+}
+
+// AdjustDiffSimThreshold nudges the similarity threshold by delta, clamped to [0, 1].
+func (m *DetailModel) AdjustDiffSimThreshold(delta float64) {
+	t := m.diffSimThreshold + delta
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	m.diffSimThreshold = t
 }
 
 // SetDiffHunks sets the diff hunks and groups them by file.
@@ -107,7 +121,8 @@ type diffLine struct {
 
 // renderInlineDiff computes a line-level diff, then for paired modified lines
 // does a char-level pass to produce '~' inline-highlight lines.
-func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
+// simThreshold is the minimum similarity ratio [0,1] to render as '~' rather than separate -/+.
+func renderInlineDiff(oldStr, newStr string, maxWidth int, simThreshold float64) []diffLine {
 	differ := dmp.New()
 
 	chars1, chars2, lineArray := differ.DiffLinesToChars(oldStr, newStr)
@@ -176,7 +191,7 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
 			if totC > 0 {
 				sim = float64(eqC) / float64(totC)
 			}
-			if sim >= 0.3 {
+			if sim >= simThreshold {
 				var buf strings.Builder
 				buf.WriteString(DiffModSymbol.Render("~") + " ")
 				for _, cd := range charDiffs {
@@ -218,7 +233,9 @@ func renderInlineDiff(oldStr, newStr string, maxWidth int) []diffLine {
 
 func (m DetailModel) renderDiffOverlay(width, height int) string {
 	fileCount := len(m.diffHunkFiles)
-	titleLine := DiffTitleStyle.Render(fmt.Sprintf(" File Changes (%d files)", fileCount))
+	simThreshold := m.diffSimThreshold
+	thresholdHint := lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("  ~/≥%.0f%%  [/]", simThreshold*100))
+	titleLine := DiffTitleStyle.Render(fmt.Sprintf(" File Changes (%d files)", fileCount)) + thresholdHint
 
 	var lines []string
 	lines = append(lines, titleLine)
@@ -235,8 +252,9 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 		hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
 		rowSt := lipgloss.NewStyle().Width(contentW)
 
-		// Dashed separator between hunks within a file
-		hunkSepLine := borderSt.Render("│") + " " + hunkSepSt.Render(strings.Repeat("- ", contentW/2)) + " " + borderSt.Render("│")
+		// Dashed separator: exactly contentW chars so the line matches innerWidth.
+		hunkSep := strings.Repeat("- ", contentW/2) + strings.Repeat("-", contentW%2)
+		hunkSepLine := borderSt.Render("│") + " " + hunkSepSt.Render(hunkSep) + " " + borderSt.Render("│")
 
 		bottomBorder := borderSt.Render("╰" + strings.Repeat("─", innerWidth-2) + "╯")
 
@@ -302,7 +320,7 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 						lineNum++
 					}
 				} else {
-					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW-gutterW) {
+					for _, dl := range renderInlineDiff(h.OldString, h.NewString, contentW-gutterW, simThreshold) {
 						allLines = append(allLines, wrapTyped(dl))
 					}
 				}

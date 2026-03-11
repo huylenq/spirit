@@ -23,26 +23,26 @@ type diffFileStat struct {
 }
 
 type DetailModel struct {
-	viewport        viewport.Model
-	session         *claude.ClaudeSession
-	content         string
-	userMessages    []string
-	msgOffsets      []int // line index in content for each userMessage; -1 if not found
-	msgCursor       int   // which user message we last navigated to
-	pendingMsgReset bool  // set on session switch; reset msgCursor when messages arrive
-	diffStats       map[string]claude.FileDiffStat
-	diffFiles       []diffFileStat // cached sorted file entries
-	summary         *claude.SessionSummary
-	relayView       string // when set, rendered inline after the ❯ prompt line
-	hookEvents      []claude.HookEvent
-	showHooks       bool
-	hideTranscript  bool
-	hookCursor       int
-	hookExpanded     map[int]bool   // per-entry expansion (keyed by filtered index)
-	hookExpandedJSON map[int]string // lazy pretty-print cache
-	hookScroll       int
-	hookFilter       int // 0=all, 1=handled only, 2=unhandled only
-	hookFiltered     []claude.HookEvent // cached filtered+reversed slice
+	viewport               viewport.Model
+	session                *claude.ClaudeSession
+	content                string
+	userMessages           []string
+	msgOffsets             []int // line index in content for each userMessage; -1 if not found
+	msgCursor              int   // which user message we last navigated to
+	pendingMsgReset        bool  // set on session switch; reset msgCursor when messages arrive
+	diffStats              map[string]claude.FileDiffStat
+	diffFiles              []diffFileStat // cached sorted file entries
+	summary                *claude.SessionSummary
+	relayView              string // when set, rendered inline after the ❯ prompt line
+	hookEvents             []claude.HookEvent
+	showHooks              bool
+	hideTranscript         bool
+	hookCursor             int
+	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
+	hookExpandedJSON       map[int]string // lazy pretty-print cache
+	hookScroll             int
+	hookFilter             int                // 0=all, 1=handled only, 2=unhandled only
+	hookFiltered           []claude.HookEvent // cached filtered+reversed slice
 	transcriptEntries      []claude.TranscriptEntry
 	transcriptCursor       int            // selected entry index
 	transcriptScroll       int            // first visible entry index
@@ -51,17 +51,18 @@ type DetailModel struct {
 	transcriptMaxTypeW     int            // cached max width of Type column
 	transcriptMaxCTypeW    int            // cached max width of ContentType column
 	showRawTranscript      bool
-	showDiffs     bool
-	diffHunks     []claude.FileDiffHunk
-	diffHunkFiles []diffHunkFile
-	diffScroll    int
-	width           int
-	height          int
-	ready           bool
+	showDiffs              bool
+	diffHunks              []claude.FileDiffHunk
+	diffHunkFiles          []diffHunkFile
+	diffScroll             int
+	diffSimThreshold       float64 // similarity threshold for ~ vs separate -/+ lines
+	width                  int
+	height                 int
+	ready                  bool
 }
 
 func NewDetailModel() DetailModel {
-	return DetailModel{}
+	return DetailModel{diffSimThreshold: defaultDiffSimThreshold}
 }
 
 func (m *DetailModel) SetSize(w, h int) {
