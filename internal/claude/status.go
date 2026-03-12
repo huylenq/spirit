@@ -283,29 +283,29 @@ func WriteTags(sessionID string, tags []string) error {
 	return os.WriteFile(tagsFilePath(sessionID), []byte(strings.Join(tags, "\n")+"\n"), 0o644)
 }
 
-func memoFilePath(sessionID string) string {
-	return filepath.Join(statusDir(), sessionID+".memo")
+func noteFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".note")
 }
 
-func ReadMemo(sessionID string) string {
-	data, err := os.ReadFile(memoFilePath(sessionID))
+func ReadNote(sessionID string) string {
+	data, err := os.ReadFile(noteFilePath(sessionID))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func WriteMemo(sessionID, text string) error {
+func WriteNote(sessionID, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		RemoveMemo(sessionID)
+		RemoveNote(sessionID)
 		return nil
 	}
-	return os.WriteFile(memoFilePath(sessionID), []byte(text), 0o644)
+	return os.WriteFile(noteFilePath(sessionID), []byte(text), 0o644)
 }
 
-func RemoveMemo(sessionID string) {
-	os.Remove(memoFilePath(sessionID))
+func RemoveNote(sessionID string) {
+	os.Remove(noteFilePath(sessionID))
 }
 
 func stopReasonFilePath(sessionID string) string {
@@ -406,7 +406,7 @@ func RemoveSessionFiles(sessionID string) {
 	os.Remove(lastActionFilePath(sessionID))
 	os.Remove(skillFilePath(sessionID))
 	os.Remove(tagsFilePath(sessionID))
-	os.Remove(memoFilePath(sessionID))
+	os.Remove(noteFilePath(sessionID))
 }
 
 // RemovePaneMapping removes the pane→session reverse mapping file.
@@ -421,7 +421,7 @@ func MigrateToSessionKey(paneID, sessionID string) {
 		return
 	}
 	dir := statusDir()
-	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags", ".memo"}
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags", ".note"}
 	for _, ext := range exts {
 		oldPath := filepath.Join(dir, paneID+ext)
 		newPath := filepath.Join(dir, sessionID+ext)
@@ -540,8 +540,3 @@ func FindBookmarkIDByPane(paneID string) string {
 	}
 	return ""
 }
-
-
-
-
-

@@ -278,4 +278,6 @@ var (
 	MacroEditorOverlayStyle = promptEditorOverlay(ColorMacro)
 	MacroEditorTitleStyle   = promptEditorTitle(ColorMacro)
 	MacroEditorKeyStyle     = lipgloss.NewStyle().Foreground(ColorMacro)
+
+	ColorNote = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#facc15"} // yellow
 )

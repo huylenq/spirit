@@ -41,10 +41,10 @@ type DetailModel struct {
 	diffStats              map[string]claude.FileDiffStat
 	diffFiles              []diffFileStat // cached sorted file entries
 	summary                *claude.SessionSummary
-	memo                   string           // freeform note for this session (empty = no panel)
-	memoEditor             MemoEditorModel  // inline textarea for editing the note
-	memoEditing            bool             // true while the note is being edited
-	relayView              string // when set, rendered inline after the ❯ prompt line
+	note                   string          // freeform note for this session (empty = no panel)
+	noteEditor             NoteEditorModel // inline textarea for editing the note
+	noteEditing            bool            // true while the note is being edited
+	relayView              string          // when set, rendered inline after the ❯ prompt line
 	hookEvents             []claude.HookEvent
 	showHooks              bool
 	transcriptMode         string // transcriptOverlay, transcriptDocked, transcriptHidden
@@ -75,7 +75,7 @@ type DetailModel struct {
 func NewDetailModel() DetailModel {
 	return DetailModel{
 		diffSimThreshold: defaultDiffSimThreshold,
-		memoEditor:       NewMemoEditorModel(),
+		noteEditor:       NewNoteEditorModel(),
 	}
 }
 
@@ -119,10 +119,10 @@ func calcPanelWidth(contentWidth int) int {
 	return w
 }
 
-// hasSidebarContent reports whether any panel content (transcript, summary, memo)
+// hasSidebarContent reports whether any panel content (transcript, summary, note)
 // exists that would be shown in the sidebar/overlay.
 func (m *DetailModel) hasSidebarContent() bool {
-	return len(m.userMessages) > 0 || m.summary != nil || m.memo != "" || m.memoEditing
+	return len(m.userMessages) > 0 || m.summary != nil || m.note != "" || m.noteEditing
 }
 
 // effectiveVPWidth returns the viewport width accounting for transcript mode.
@@ -248,31 +248,31 @@ func (m *DetailModel) SetSummary(s *claude.SessionSummary) {
 	m.summary = s
 }
 
-func (m *DetailModel) SetMemo(memo string) {
-	m.memo = memo
+func (m *DetailModel) SetNote(note string) {
+	m.note = note
 }
 
-// StartMemoEdit activates inline editing of the note panel.
-func (m *DetailModel) StartMemoEdit() {
-	m.memoEditing = true
-	m.memoEditor.Activate(m.memo)
+// StartNoteEdit activates inline editing of the note panel.
+func (m *DetailModel) StartNoteEdit() {
+	m.noteEditing = true
+	m.noteEditor.Activate(m.note)
 }
 
-// StopMemoEdit deactivates the inline editor without saving.
-func (m *DetailModel) StopMemoEdit() {
-	m.memoEditing = false
-	m.memoEditor.Deactivate()
+// StopNoteEdit deactivates the inline editor without saving.
+func (m *DetailModel) StopNoteEdit() {
+	m.noteEditing = false
+	m.noteEditor.Deactivate()
 }
 
-// MemoEditing reports whether the note panel is in edit mode.
-func (m *DetailModel) MemoEditing() bool { return m.memoEditing }
+// NoteEditing reports whether the note panel is in edit mode.
+func (m *DetailModel) NoteEditing() bool { return m.noteEditing }
 
-// MemoValue returns the current textarea content (only meaningful while editing).
-func (m *DetailModel) MemoValue() string { return m.memoEditor.Value() }
+// NoteValue returns the current textarea content (only meaningful while editing).
+func (m *DetailModel) NoteValue() string { return m.noteEditor.Value() }
 
-// UpdateMemoEditor forwards a message to the textarea and returns any cmd.
-func (m *DetailModel) UpdateMemoEditor(msg tea.Msg) tea.Cmd {
-	return m.memoEditor.Update(msg)
+// UpdateNoteEditor forwards a message to the textarea and returns any cmd.
+func (m *DetailModel) UpdateNoteEditor(msg tea.Msg) tea.Cmd {
+	return m.noteEditor.Update(msg)
 }
 
 func (m *DetailModel) SetTranscriptMode(mode string) {
@@ -985,21 +985,21 @@ func (m *DetailModel) View() string {
 
 	var contentBox string
 	showTranscript := m.transcriptMode != transcriptHidden && (len(m.userMessages) > 0 || m.summary != nil)
-	showMemo := (m.memo != "" || m.memoEditing) && m.transcriptMode != transcriptHidden
+	showNote := (m.note != "" || m.noteEditing) && m.transcriptMode != transcriptHidden
 	panelWidth := calcPanelWidth(contentWidth)
-	if (showTranscript || showMemo) && m.transcriptMode == transcriptDocked {
+	if (showTranscript || showNote) && m.transcriptMode == transcriptDocked {
 		transcriptWidth := panelWidth
 		vpWidth := contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
 		var rightCol string
 		switch {
-		case showTranscript && showMemo:
-			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderTranscript(transcriptWidth), m.renderMemoPanel(transcriptWidth))
+		case showTranscript && showNote:
+			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderTranscript(transcriptWidth), m.renderNotePanel(transcriptWidth))
 		case showTranscript:
 			rightCol = m.renderTranscript(transcriptWidth)
 		default:
-			rightCol = m.renderMemoPanel(transcriptWidth)
+			rightCol = m.renderNotePanel(transcriptWidth)
 		}
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", rightCol)
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
@@ -1010,15 +1010,15 @@ func (m *DetailModel) View() string {
 			transcriptPanel := m.renderTranscript(panelWidth)
 			col := lipgloss.Width(contentBox) - lipgloss.Width(transcriptPanel) - 1
 			contentBox = overlayAt(contentBox, transcriptPanel, col, 1)
-			if showMemo {
-				memoPanel := m.renderMemoPanel(panelWidth)
+			if showNote {
+				notePanel := m.renderNotePanel(panelWidth)
 				row := 1 + lipgloss.Height(transcriptPanel)
-				contentBox = overlayAt(contentBox, memoPanel, col, row)
+				contentBox = overlayAt(contentBox, notePanel, col, row)
 			}
-		} else if showMemo {
-			memoPanel := m.renderMemoPanel(panelWidth)
-			col := lipgloss.Width(contentBox) - lipgloss.Width(memoPanel) - 1
-			contentBox = overlayAt(contentBox, memoPanel, col, 1)
+		} else if showNote {
+			notePanel := m.renderNotePanel(panelWidth)
+			col := lipgloss.Width(contentBox) - lipgloss.Width(notePanel) - 1
+			contentBox = overlayAt(contentBox, notePanel, col, 1)
 		}
 	}
 
@@ -1102,27 +1102,27 @@ func (m DetailModel) renderTranscript(width int) string {
 		Render(content)
 }
 
-// renderMemoPanel renders the session note panel with a border.
-// When memoEditing is true, it shows the textarea for inline editing.
-func (m *DetailModel) renderMemoPanel(width int) string {
+// renderNotePanel renders the session note panel with a border.
+// When noteEditing is true, it shows the textarea for inline editing.
+func (m *DetailModel) renderNotePanel(width int) string {
 	innerWidth := width - 4
 	if innerWidth < 5 {
 		innerWidth = 5
 	}
 
-	titleLine := TranscriptTitleStyle.Foreground(ColorNote).Render(" " + IconNote + "  Note")
+	titleLine := TranscriptTitleStyle.Foreground(ColorNote).Render(" " + IconNote + "  Notes")
 
 	var body string
-	if m.memoEditing {
-		m.memoEditor.SetWidth(innerWidth)
-		body = m.memoEditor.ViewTextarea()
+	if m.noteEditing {
+		m.noteEditor.SetWidth(innerWidth)
+		body = m.noteEditor.ViewTextarea()
 	} else {
-		wrapped := wordWrapContent(m.memo, innerWidth)
+		wrapped := wordWrapContent(m.note, innerWidth)
 		body = TranscriptMsgStyle.Render(wrapped)
 	}
 
 	borderColor := ColorBorder
-	if m.memoEditing {
+	if m.noteEditing {
 		borderColor = ColorNote
 	}
 	content := titleLine + "\n\n" + body
