@@ -115,7 +115,7 @@ func (m Model) renderHelpOverlay() string {
 		hint("M", "minimap settings"),
 		hint("P", "preferences"),
 		hint("g", "group by project"),
-		hint("t", "toggle transcript"),
+		hint("t", "toggle chat outline"),
 		hint("z", "fullscreen toggle"),
 		hint("!", "message log"),
 	}

@@ -100,8 +100,8 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execMinimap() },
 		},
 		{
-			Name: "Toggle transcript", Hotkey: "t",
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execTranscript() },
+			Name: "Toggle chat outline", Hotkey: "t",
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execChatOutline() },
 		},
 		{
 			Name: "Toggle diffs", Hotkey: "g d",

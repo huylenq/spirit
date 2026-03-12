@@ -63,36 +63,36 @@ var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSma
 
 // Outline display modes (cycled with T key).
 const (
-	OutlineOverlay = "overlay" // floats on top of viewport
-	OutlineDocked  = "docked"  // side-by-side with viewport
-	OutlineHidden  = "hidden"  // not shown
+	ChatOutlineOverlay = "overlay" // floats on top of viewport
+	ChatOutlineDocked  = "docked"  // side-by-side with viewport
+	ChatOutlineHidden  = "hidden"  // not shown
 )
 
-var outlineModes = []string{OutlineOverlay, OutlineDocked, OutlineHidden}
+var chatOutlineModes = []string{ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineHidden}
 
-func nextOutlineMode(mode string) string {
+func nextChatOutlineMode(mode string) string {
 	switch mode {
-	case OutlineOverlay:
-		return OutlineDocked
-	case OutlineDocked:
-		return OutlineHidden
-	case OutlineHidden:
-		return OutlineOverlay
+	case ChatOutlineOverlay:
+		return ChatOutlineDocked
+	case ChatOutlineDocked:
+		return ChatOutlineHidden
+	case ChatOutlineHidden:
+		return ChatOutlineOverlay
 	default:
-		return OutlineOverlay
+		return ChatOutlineOverlay
 	}
 }
 
-func outlineModeFlash(active string) string {
+func chatOutlineModeFlash(active string) string {
 	var parts []string
-	for _, mode := range outlineModes {
+	for _, mode := range chatOutlineModes {
 		if mode == active {
 			parts = append(parts, ui.FooterKeyStyle.Render(mode))
 		} else {
 			parts = append(parts, ui.FooterDimStyle.Render(mode))
 		}
 	}
-	return "outline: " + strings.Join(parts, ui.FooterDimStyle.Render(" · "))
+	return "chat outline: " + strings.Join(parts, ui.FooterDimStyle.Render(" · "))
 }
 
 // minimapModeFlash returns a styled string showing all modes with the active one highlighted,
@@ -154,7 +154,7 @@ type Model struct {
 	showHooks            bool
 	showRawTranscript    bool
 	showDiffs            bool
-	outlineMode          string // OutlineOverlay, OutlineDocked, OutlineHidden
+	chatOutlineMode          string // ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineHidden
 	showMinimap          bool
 	minimapMode          string       // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
 	minimapMaxH          int          // max minimap height (persisted pref, default 14)
@@ -241,7 +241,7 @@ func NewModel(client *daemon.Client) Model {
 		promptEditor:      ui.NewPromptEditorModel(),
 		macroEditor:       ui.NewMacroEditorModel(),
 		macros:            claude.LoadMacros(nil),
-		outlineMode:       loadPrefString("outlineMode", OutlineOverlay),
+		chatOutlineMode:       loadPrefString("chatOutlineMode", ChatOutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
@@ -254,7 +254,7 @@ func NewModel(client *daemon.Client) Model {
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 	}
-	m.detail.SetOutlineMode(m.outlineMode)
+	m.detail.SetChatOutlineMode(m.chatOutlineMode)
 	return m
 }
 
@@ -429,13 +429,13 @@ func capturePreview(paneID string) tea.Cmd {
 	}
 }
 
-func (m Model) fetchOutline(paneID, sessionID string) tea.Cmd {
+func (m Model) fetchChatOutline(paneID, sessionID string) tea.Cmd {
 	if sessionID == "" {
 		return nil
 	}
 	return func() tea.Msg {
 		msgs, _ := m.client.Transcript(sessionID)
-		return OutlineReadyMsg{PaneID: paneID, Messages: msgs}
+		return ChatOutlineReadyMsg{PaneID: paneID, Messages: msgs}
 	}
 }
 
@@ -492,7 +492,7 @@ func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []te
 	m.detail.SetNote(s.Note)
 	cmds := []tea.Cmd{
 		capturePreview(s.PaneID),
-		m.fetchOutline(s.PaneID, s.SessionID),
+		m.fetchChatOutline(s.PaneID, s.SessionID),
 		m.fetchDiffStats(s.PaneID, s.SessionID),
 		m.fetchCachedSummary(s.PaneID, s.SessionID),
 		switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),

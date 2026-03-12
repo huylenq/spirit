@@ -12,7 +12,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro,
-		k.Rename, k.Outline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
+		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 		k.JumpBack, k.Note,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -24,7 +24,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Enter, k.Search, k.Refresh, k.Quit},
 		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
-		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Outline},
+		{k.Synthesize, k.SynthesizeAll, k.Rename, k.ChatOutline},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
 		{k.Note},
 	}
@@ -41,7 +41,7 @@ type KeyMap struct {
 	BacklogToggle  key.Binding
 	ClaudingToggle key.Binding
 	Refresh    key.Binding
-	Outline key.Binding
+	ChatOutline key.Binding
 	Quit       key.Binding
 	Escape     key.Binding
 
@@ -264,9 +264,9 @@ var Keys = KeyMap{
 		key.WithKeys("r"),
 		key.WithHelp("r", "refresh"),
 	),
-	Outline: key.NewBinding(
+	ChatOutline: key.NewBinding(
 		key.WithKeys("t"),
-		key.WithHelp("t", "outline"),
+		key.WithHelp("t", "chat outline"),
 	),
 	Minimap: key.NewBinding(
 		key.WithKeys("m"),

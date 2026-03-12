@@ -343,11 +343,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.LaterKill):
 		return m.execLaterKill()
 
-	case key.Matches(msg, Keys.Outline):
-		m.outlineMode = nextOutlineMode(m.outlineMode)
-		savePrefString("outlineMode", m.outlineMode)
-		m.detail.SetOutlineMode(m.outlineMode)
-		m.flashMsg = outlineModeFlash(m.outlineMode)
+	case key.Matches(msg, Keys.ChatOutline):
+		m.chatOutlineMode = nextChatOutlineMode(m.chatOutlineMode)
+		savePrefString("chatOutlineMode", m.chatOutlineMode)
+		m.detail.SetChatOutlineMode(m.chatOutlineMode)
+		m.flashMsg = chatOutlineModeFlash(m.chatOutlineMode)
 		m.flashIsError = false
 		m.flashExpiry = time.Now().Add(3 * time.Second)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
@@ -402,7 +402,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(
 					capturePreview(s.PaneID),
-					m.fetchOutline(s.PaneID, s.SessionID),
+					m.fetchChatOutline(s.PaneID, s.SessionID),
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 				)
 			}

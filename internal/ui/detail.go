@@ -12,11 +12,11 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
-// Transcript display modes (must match constants in internal/app/model.go).
+// Chat outline display modes (must match constants in internal/app/model.go).
 const (
-	transcriptOverlay = "overlay"
-	transcriptDocked  = "docked"
-	transcriptHidden  = "hidden"
+	chatOutlineOverlay = "overlay"
+	chatOutlineDocked  = "docked"
+	chatOutlineHidden  = "hidden"
 )
 
 // diffFileStat is a pre-sorted, per-file diff entry cached on SetDiffStats.
@@ -44,7 +44,7 @@ type DetailModel struct {
 	relayView              string          // when set, rendered inline after the ❯ prompt line
 	hookEvents             []claude.HookEvent
 	showHooks              bool
-	transcriptMode         string // transcriptOverlay, transcriptDocked, transcriptHidden
+	chatOutlineMode            string // chatOutlineOverlay, chatOutlineDocked, chatOutlineHidden
 	hookCursor             int
 	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
 	hookExpandedJSON       map[int]string // lazy pretty-print cache
@@ -130,7 +130,7 @@ func (m *DetailModel) effectiveVPWidth(w int) int {
 	if vpWidth < 1 {
 		vpWidth = 1
 	}
-	if m.transcriptMode == transcriptDocked && m.hasSidebarContent() {
+	if m.chatOutlineMode == chatOutlineDocked && m.hasSidebarContent() {
 		vpWidth = contentWidth - calcPanelWidth(contentWidth) - 3 // 1 gap + 2 for content border
 		if vpWidth < 1 {
 			vpWidth = 1
@@ -143,7 +143,7 @@ func (m *DetailModel) effectiveVPWidth(w int) int {
 // labels. In overlay mode the label must sit left of the overlay panel; in other
 // modes it matches the viewport width.
 func (m *DetailModel) effectiveDividerWidth(vpWidth int) int {
-	if m.transcriptMode == transcriptOverlay && m.hasSidebarContent() {
+	if m.chatOutlineMode == chatOutlineOverlay && m.hasSidebarContent() {
 		w := vpWidth - calcPanelWidth(m.width-4) - 1
 		if w < 1 {
 			return 1
@@ -256,8 +256,8 @@ func (m *DetailModel) UpdateNoteEditor(msg tea.Msg) tea.Cmd {
 	return m.noteEditor.Update(msg)
 }
 
-func (m *DetailModel) SetTranscriptMode(mode string) {
-	m.transcriptMode = mode
+func (m *DetailModel) SetChatOutlineMode(mode string) {
+	m.chatOutlineMode = mode
 	if m.ready {
 		vpWidth := m.effectiveVPWidth(m.width)
 		m.viewport.Width = vpWidth

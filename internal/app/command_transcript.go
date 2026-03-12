@@ -5,10 +5,10 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
-func (m Model) execTranscript() (Model, tea.Cmd) {
-	m.transcriptMode = nextTranscriptMode(m.transcriptMode)
-	savePrefString("transcriptMode", m.transcriptMode)
-	m.detail.SetTranscriptMode(m.transcriptMode)
+func (m Model) execChatOutline() (Model, tea.Cmd) {
+	m.chatOutlineMode = nextChatOutlineMode(m.chatOutlineMode)
+	savePrefString("chatOutlineMode", m.chatOutlineMode)
+	m.detail.SetChatOutlineMode(m.chatOutlineMode)
 	return m, nil
 }
 

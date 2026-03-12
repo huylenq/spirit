@@ -95,35 +95,35 @@ func (m *DetailModel) View() string {
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
-	showTranscript := m.transcriptMode != transcriptHidden && (len(m.userMessages) > 0 || m.summary != nil)
-	showNote := (m.note != "" || m.noteEditing) && m.transcriptMode != transcriptHidden
+	showChatOutline := m.chatOutlineMode != chatOutlineHidden && (len(m.userMessages) > 0 || m.summary != nil)
+	showNote := (m.note != "" || m.noteEditing) && m.chatOutlineMode != chatOutlineHidden
 	panelWidth := calcPanelWidth(contentWidth)
-	if (showTranscript || showNote) && m.transcriptMode == transcriptDocked {
-		transcriptWidth := panelWidth
-		vpWidth := contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
+	if (showChatOutline || showNote) && m.chatOutlineMode == chatOutlineDocked {
+		chatOutlineWidth := panelWidth
+		vpWidth := contentWidth - chatOutlineWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
 		var rightCol string
 		switch {
-		case showTranscript && showNote:
-			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderTranscript(transcriptWidth), m.renderNotePanel(transcriptWidth))
-		case showTranscript:
-			rightCol = m.renderTranscript(transcriptWidth)
+		case showChatOutline && showNote:
+			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderChatOutline(chatOutlineWidth), m.renderNotePanel(chatOutlineWidth))
+		case showChatOutline:
+			rightCol = m.renderChatOutline(chatOutlineWidth)
 		default:
-			rightCol = m.renderNotePanel(transcriptWidth)
+			rightCol = m.renderNotePanel(chatOutlineWidth)
 		}
 		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", rightCol)
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
 		contentBox = contentStyle.Width(contentWidth).Render(vpRaw)
-		if showTranscript { // overlay mode
-			transcriptPanel := m.renderTranscript(panelWidth)
-			col := lipgloss.Width(contentBox) - lipgloss.Width(transcriptPanel) - 1
-			contentBox = overlayAt(contentBox, transcriptPanel, col, 1)
+		if showChatOutline { // overlay mode
+			outlinePanel := m.renderChatOutline(panelWidth)
+			col := lipgloss.Width(contentBox) - lipgloss.Width(outlinePanel) - 1
+			contentBox = overlayAt(contentBox, outlinePanel, col, 1)
 			if showNote {
 				notePanel := m.renderNotePanel(panelWidth)
-				row := 1 + lipgloss.Height(transcriptPanel)
+				row := 1 + lipgloss.Height(outlinePanel)
 				contentBox = overlayAt(contentBox, notePanel, col, row)
 			}
 		} else if showNote {
@@ -167,8 +167,8 @@ func (m *DetailModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, "", meta)
 }
 
-// renderTranscript renders the user messages panel with a border.
-func (m DetailModel) renderTranscript(width int) string {
+// renderChatOutline renders the user messages outline panel with a border.
+func (m DetailModel) renderChatOutline(width int) string {
 	// Inner width for text (subtract border 2 + padding 2)
 	innerWidth := width - 4
 	if innerWidth < 5 {

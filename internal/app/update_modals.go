@@ -21,13 +21,13 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.MsgNext):
 		m.sidebar.MoveDown()
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			return m, tea.Batch(capturePreview(s.PaneID), m.fetchChatOutline(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, nil
 	case key.Matches(msg, Keys.MsgPrev):
 		m.sidebar.MoveUp()
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			return m, tea.Batch(capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			return m, tea.Batch(capturePreview(s.PaneID), m.fetchChatOutline(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, nil
 	default:
@@ -38,7 +38,7 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sidebar.SetNarrow(m.search.Value())
 		// Update preview for new selection
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			return m, tea.Batch(cmd, capturePreview(s.PaneID), m.fetchChatOutline(s.PaneID, s.SessionID), m.fetchDiffStats(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 		}
 		return m, cmd
 	}

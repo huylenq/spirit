@@ -345,7 +345,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.fetchAllDiffStats(msg.Sessions))
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			m.detail.SetNote(s.Note)
-			cmds = append(cmds, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
+			cmds = append(cmds, capturePreview(s.PaneID), m.fetchChatOutline(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 			if m.showMinimap && m.minimapSession == "" {
 				cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
 			}
@@ -375,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case TranscriptReadyMsg:
+	case ChatOutlineReadyMsg:
 		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.detail.SetUserMessages(msg.Messages)
 		}
@@ -536,7 +536,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if s, ok := m.sidebar.SelectedItem(); ok {
 					return m, tea.Batch(
 						capturePreview(s.PaneID),
-						m.fetchTranscript(s.PaneID, s.SessionID),
+						m.fetchChatOutline(s.PaneID, s.SessionID),
 						m.fetchCachedSummary(s.PaneID, s.SessionID),
 					)
 				}

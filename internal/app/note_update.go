@@ -15,9 +15,9 @@ func (m Model) execNoteEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// If transcript is hidden, flip to overlay so the panel is visible.
-	if m.transcriptMode == TranscriptHidden {
-		m.transcriptMode = TranscriptOverlay
-		m.detail.SetTranscriptMode(m.transcriptMode)
+	if m.chatOutlineMode == ChatOutlineHidden {
+		m.chatOutlineMode = ChatOutlineOverlay
+		m.detail.SetChatOutlineMode(m.chatOutlineMode)
 	}
 	m.detail.StartNoteEdit()
 	m.state = StateNoteEdit

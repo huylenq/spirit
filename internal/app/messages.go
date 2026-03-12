@@ -21,8 +21,8 @@ type PreviewReadyMsg struct {
 	Err     error
 }
 
-// TranscriptReadyMsg is sent when user messages are extracted from a session transcript.
-type TranscriptReadyMsg struct {
+// ChatOutlineReadyMsg is sent when user messages are extracted from a session transcript.
+type ChatOutlineReadyMsg struct {
 	PaneID   string
 	Messages []string
 }
