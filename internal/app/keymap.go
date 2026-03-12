@@ -10,10 +10,10 @@ import (
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
-		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill,
+		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro,
 		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
-		k.JumpBack,
+		k.JumpBack, k.Note,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -26,6 +26,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
 		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Transcript},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
+		{k.Note},
 	}
 }
 
@@ -34,8 +35,10 @@ type KeyMap struct {
 	Down       key.Binding
 	Enter      key.Binding
 	Search     key.Binding
-	Later      key.Binding
-	LaterKill  key.Binding
+	Later       key.Binding
+	LaterKill   key.Binding
+	LaterToggle   key.Binding
+	BacklogToggle key.Binding
 	Refresh    key.Binding
 	Transcript key.Binding
 	Quit       key.Binding
@@ -124,6 +127,9 @@ type KeyMap struct {
 
 	// Tag relay (toggle session tags)
 	PromptTag key.Binding
+
+	// Session note editor
+	Note key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -240,6 +246,14 @@ var Keys = KeyMap{
 	LaterKill: key.NewBinding(
 		key.WithKeys("W"),
 		key.WithHelp("W", "later+kill"),
+	),
+	LaterToggle: key.NewBinding(
+		key.WithKeys("alt+w"),
+		key.WithHelp("alt+w", "toggle later"),
+	),
+	BacklogToggle: key.NewBinding(
+		key.WithKeys("alt+b"),
+		key.WithHelp("alt+b", "toggle backlog"),
 	),
 	Refresh: key.NewBinding(
 		key.WithKeys("r"),
@@ -400,5 +414,9 @@ var Keys = KeyMap{
 	PromptTag: key.NewBinding(
 		key.WithKeys("#"),
 		key.WithHelp("#", "tag"),
+	),
+	Note: key.NewBinding(
+		key.WithKeys("n"),
+		key.WithHelp("n", "note"),
 	),
 }

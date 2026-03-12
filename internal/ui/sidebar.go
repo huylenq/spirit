@@ -71,7 +71,9 @@ type SidebarModel struct {
 	selectedItemRow     int              // line index of the selected session item (set during View)
 	backlogs            []claude.Backlog // all backlog items from visible projects
 	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
-	showBacklog         bool             // toggle BACKLOG section visibility
+	backlogExpanded     bool             // true = BACKLOG section visible
+	laterExpanded       bool             // true = LATER section visible
+	laterCount          int              // cached count of Later sessions (updated in applyNarrow)
 	landPaneID          string           // pane most recently jumped to (landing flash)
 	landFrame           int              // landing animation frame (0–3 visible, 4 = clear)
 	trailPaneID         string           // pane most recently jumped from (ghost trail)
@@ -101,20 +103,30 @@ func (m SidebarModel) GroupByProject() bool {
 	return m.groupByProject
 }
 
-func (m *SidebarModel) SetShowBacklog(v bool) {
-	m.showBacklog = v
+func (m *SidebarModel) SetBacklogExpanded(v bool) {
+	m.backlogExpanded = v
 	m.applyNarrowBacklog()
 	m.rebuildProjects()
 }
 
-func (m SidebarModel) ShowBacklog() bool {
-	return m.showBacklog
+func (m SidebarModel) BacklogExpanded() bool {
+	return m.backlogExpanded
+}
+
+func (m *SidebarModel) SetLaterExpanded(v bool) {
+	m.laterExpanded = v
+	m.applyNarrow()
+}
+
+func (m SidebarModel) LaterExpanded() bool {
+	return m.laterExpanded
 }
 
 func NewSidebarModel() SidebarModel {
 	return SidebarModel{
 		diffStats:           make(map[string]map[string]claude.FileDiffStat),
 		summaryLoadingPanes: make(map[string]bool),
+		laterExpanded:       true,
 	}
 }
 
@@ -316,7 +328,7 @@ func (m *SidebarModel) selectByBacklogID(id string) bool {
 
 // applyNarrowBacklog filters backlog items by the current narrow query.
 func (m *SidebarModel) applyNarrowBacklog() {
-	if !m.showBacklog {
+	if !m.backlogExpanded {
 		m.filteredBacklog = nil
 		return
 	}
@@ -618,6 +630,20 @@ func (m *SidebarModel) applyNarrow() {
 			sortByStatus(m.filtered)
 		}
 	}
+	// Count Later sessions and remove them from the cursor-navigable list when collapsed
+	m.laterCount = 0
+	if !m.laterExpanded {
+		n := 0
+		for _, s := range m.filtered {
+			if sessionOrder(s) == OrderLater {
+				m.laterCount++
+			} else {
+				m.filtered[n] = s
+				n++
+			}
+		}
+		m.filtered = m.filtered[:n]
+	}
 	m.applyNarrowBacklog()
 	m.rebuildProjects()
 }
@@ -821,6 +847,10 @@ func (m *SidebarModel) View() string {
 		currentOrder := -1
 
 		for _, s := range m.allSorted {
+			// When Later is collapsed, skip Later items entirely (header rendered at bottom)
+			if !m.laterExpanded && sessionOrder(s) == OrderLater {
+				continue
+			}
 			// Group headers — always rendered for spatial stability during narrowing
 			if m.groupByProject {
 				order := sessionOrder(s)
@@ -913,6 +943,34 @@ func (m *SidebarModel) View() string {
 			isSelected := backlogCursor == m.cursor && !m.deselected && !atProjectLevel
 			lines = append(lines, m.renderBacklogItem(isSelected, backlog))
 		}
+	}
+
+	// Pin collapsed section badges at the bottom (backlog and/or later when hidden)
+	laterCount := m.laterCount // cached by applyNarrow; non-zero only when !laterExpanded
+	backlogCount := 0
+	if !m.backlogExpanded {
+		backlogCount = len(m.backlogs)
+	}
+	if (laterCount > 0 || backlogCount > 0) && m.height > 0 {
+		var parts []string
+		if laterCount > 0 {
+			parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconBookmark, laterCount)))
+		}
+		if backlogCount > 0 {
+			parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
+		}
+		separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
+		collapsedHeader := strings.Join(parts, " ")
+		needed := 2 // separator + header line
+		visualLines := 0
+		for _, line := range lines {
+			visualLines += lipgloss.Height(line)
+		}
+		for visualLines < m.height-needed {
+			lines = append(lines, "")
+			visualLines++
+		}
+		lines = append(lines, separator, collapsedHeader)
 	}
 
 	// Truncate to fit available height

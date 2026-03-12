@@ -219,8 +219,9 @@ func NewModel(client *daemon.Client) Model {
 	sidebar := ui.NewSidebarModel()
 	sidebar.SetGroupByProject(loadPrefBool("groupByProject"))
 	migratePref("showIdeas", "showBacklog")
-	sidebar.SetShowBacklog(loadPrefBool("showBacklog"))
-	sidebar.SetShowLater(loadPrefString("showLater", "true") != "false")
+	migratePref("showBacklog", "backlogExpanded")
+	sidebar.SetBacklogExpanded(loadPrefBool("backlogExpanded"))
+	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()

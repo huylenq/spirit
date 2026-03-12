@@ -350,7 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Capture preview + transcript + diff stats for selected item; diff stats for all sessions
 		cmds = append(cmds, m.fetchAllDiffStats(msg.Sessions))
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			m.detail.SetMemo(s.Memo)
+			m.detail.SetNote(s.Note)
 			cmds = append(cmds, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 			if m.showMinimap && m.minimapSession == "" {
 				cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -358,10 +358,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.nonClaudePane != nil {
 			cmds = append(cmds, capturePreview(m.nonClaudePane.PaneID))
 		}
-		// Discover backlog items from visible project CWDs (skip when hidden to avoid needless I/O)
-		if m.sidebar.ShowBacklog() {
-			cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
-		}
+		// Always discover backlog items so the collapsed badge count stays accurate
+		cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
 		// Auto-synthesis completion toasts
 		cmds = append(cmds, autoSynthCmds...)
 		// Wait for next daemon push
@@ -634,8 +632,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMacro(msg)
 	case StateMacroEdit:
 		return m.handleKeyMacroEdit(msg)
-	case StateMemoEdit:
-		return m.handleKeyMemoEdit(msg)
+	case StateNoteEdit:
+		return m.handleKeyNoteEdit(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}
@@ -1465,8 +1463,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.PromptTag):
 		return m.execTagRelay()
 
-	case key.Matches(msg, Keys.Memo):
-		return m.execMemoEdit()
+	case key.Matches(msg, Keys.Note):
+		return m.execNoteEdit()
 
 	case key.Matches(msg, Keys.Queue):
 		return m.execQueue()
@@ -1512,17 +1510,26 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefBool("groupByProject", newMode)
 		return m, nil
 
-	case msg.String() == "B":
-		newVal := !m.sidebar.ShowBacklog()
-		m.sidebar.SetShowBacklog(newVal)
-		savePrefBool("showBacklog", newVal)
+	case key.Matches(msg, Keys.LaterToggle):
+		newVal := !m.sidebar.LaterExpanded()
+		m.sidebar.SetLaterExpanded(newVal)
+		savePrefBool("laterCollapsed", !newVal)
+		if newVal {
+			return m, m.setFlash("LATER expanded", false, 2*time.Second)
+		}
+		return m, m.setFlash("LATER collapsed", false, 2*time.Second)
+
+	case key.Matches(msg, Keys.BacklogToggle):
+		newVal := !m.sidebar.BacklogExpanded()
+		m.sidebar.SetBacklogExpanded(newVal)
+		savePrefBool("backlogExpanded", newVal)
 		if newVal {
 			// Trigger discovery so backlog items appear immediately
-			flashCmd := m.setFlash("BACKLOG on", false, 2*time.Second)
+			flashCmd := m.setFlash("BACKLOG expanded", false, 2*time.Second)
 			discoverCmd := m.discoverBacklogs(m.sessions)
 			return m, tea.Batch(flashCmd, discoverCmd)
 		}
-		return m, m.setFlash("BACKLOG off", false, 2*time.Second)
+		return m, m.setFlash("BACKLOG collapsed", false, 2*time.Second)
 
 	case key.Matches(msg, Keys.Minimap):
 		m.showMinimap = !m.showMinimap

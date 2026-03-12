@@ -763,7 +763,8 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].SynthesizePending != b[i].SynthesizePending ||
 			a[i].HasOverlap != b[i].HasOverlap ||
 			!slices.Equal(a[i].QueuePending, b[i].QueuePending) ||
-			!slices.Equal(a[i].Tags, b[i].Tags) {
+			!slices.Equal(a[i].Tags, b[i].Tags) ||
+			a[i].Note != b[i].Note {
 			return false
 		}
 	}
