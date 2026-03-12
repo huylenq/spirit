@@ -137,7 +137,7 @@ func (m *Model) selectDefaultPane() bool {
 func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	targetID := m.sidebar.AutoJumpTarget(skipPaneID)
 	if targetID == "" {
-		return []tea.Cmd{func() tea.Msg { return flashInfoMsg("autoJump: no target (skip=" + skipPaneID + ")") }}
+		return nil
 	}
 	m.recordJump()
 	if !m.sidebar.SelectByPaneID(targetID) {
@@ -148,11 +148,30 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if skipPaneID != "" {
-		m.sidebar.SetGhost(skipPaneID)
-		return append(m.fetchForSelection(s, true), func() tea.Msg { return flashInfoMsg("ghost: " + skipPaneID) })
-	}
+	m.sidebar.SetTrail(skipPaneID)
+	m.sidebar.SetLand(targetID)
 	return m.fetchForSelection(s, true)
+}
+
+// doJump moves selection to target with trail/landing animation.
+// Returns (model, nil) if target is empty or not found.
+func (m Model) doJump(target string) (tea.Model, tea.Cmd) {
+	if target == "" {
+		return m, nil
+	}
+	var prevPaneID string
+	if cur, ok := m.sidebar.SelectedItem(); ok {
+		prevPaneID = cur.PaneID
+	}
+	if !m.sidebar.SelectByPaneID(target) {
+		return m, nil
+	}
+	m.sidebar.SetTrail(prevPaneID)
+	m.sidebar.SetLand(target)
+	if s, ok := m.sidebar.SelectedItem(); ok {
+		return m, tea.Batch(m.fetchForSelection(s, true)...)
+	}
+	return m, nil
 }
 
 // tryInitialSelection auto-selects a pane on launch.
@@ -331,6 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Capture preview + transcript + diff stats for selected item; diff stats for all sessions
 		cmds = append(cmds, m.fetchAllDiffStats(msg.Sessions))
 		if s, ok := m.sidebar.SelectedItem(); ok {
+			m.detail.SetMemo(s.Memo)
 			cmds = append(cmds, capturePreview(s.PaneID), m.fetchTranscript(s.PaneID, s.SessionID), m.fetchCachedSummary(s.PaneID, s.SessionID))
 			if m.showMinimap && m.minimapSession == "" {
 				cmds = append(cmds, m.fetchMinimapData(s.TmuxSession))
@@ -614,6 +634,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMacro(msg)
 	case StateMacroEdit:
 		return m.handleKeyMacroEdit(msg)
+	case StateMemoEdit:
+		return m.handleKeyMemoEdit(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}
@@ -625,12 +647,9 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.search.Confirm()
 		m.state = StateNormal
 		// Remember selection, clear filter, re-select (search & jump)
-		var selectedPaneID string
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			selectedPaneID = s.PaneID
-		}
+		ref := m.sidebar.CursorRef()
 		m.sidebar.ClearNarrow()
-		m.sidebar.SelectByPaneID(selectedPaneID)
+		m.sidebar.SelectByRef(ref)
 		return m, nil
 	case key.Matches(msg, Keys.MsgNext):
 		m.sidebar.MoveDown()
@@ -1288,13 +1307,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, Keys.JumpBack):
-		target := m.jumpBack()
-		if target != "" && m.sidebar.SelectByPaneID(target) {
-			if s, ok := m.sidebar.SelectedItem(); ok {
-				return m, tea.Batch(m.fetchForSelection(s, true)...)
-			}
-		}
-		return m, nil
+		return m.doJump(m.jumpBack())
 
 	case key.Matches(msg, Keys.JumpForward):
 		target := m.jumpForward()
@@ -1302,12 +1315,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if target == "" {
 			target = m.sidebar.AutoJumpTargetFromCursor()
 		}
-		if target != "" && m.sidebar.SelectByPaneID(target) {
-			if s, ok := m.sidebar.SelectedItem(); ok {
-				return m, tea.Batch(m.fetchForSelection(s, true)...)
-			}
-		}
-		return m, nil
+		return m.doJump(target)
 
 	case m.showMinimap && key.Matches(msg, Keys.SpatialUp, Keys.SpatialDown, Keys.SpatialLeft, Keys.SpatialRight):
 		var dir ui.SpatialDir
@@ -1456,6 +1464,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.PromptTag):
 		return m.execTagRelay()
+
+	case key.Matches(msg, Keys.Memo):
+		return m.execMemoEdit()
 
 	case key.Matches(msg, Keys.Queue):
 		return m.execQueue()

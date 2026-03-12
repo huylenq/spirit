@@ -72,17 +72,24 @@ type SidebarModel struct {
 	backlogs            []claude.Backlog // all backlog items from visible projects
 	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
 	showBacklog         bool             // toggle BACKLOG section visibility
-	ghostPaneID          string // pane that was just auto-jumped away from
-	ghostFrame           int    // animation frame (0–2 visible, 3 = done)
-	inlineTagSessionID   string // session with active inline tag input (empty = none)
-	inlineTagInputView   string // rendered textinput view for the active tag session
+	landPaneID          string           // pane most recently jumped to (landing flash)
+	landFrame           int              // landing animation frame (0–3 visible, 4 = clear)
+	trailPaneID         string           // pane most recently jumped from (ghost trail)
+	trailFrame          int              // trail animation frame (0–3 visible, 4 = clear)
+	inlineTagSessionID  string           // session with active inline tag input (empty = none)
+	inlineTagInputView  string           // rendered textinput view for the active tag session
 }
 
-// SetGhost marks paneID as the ghost origin for the auto-jump fade animation.
-// Resets to frame 0; the spinner tick advances it via SetSpinnerView.
-func (m *SidebarModel) SetGhost(paneID string) {
-	m.ghostPaneID = paneID
-	m.ghostFrame = 0
+// SetLand marks paneID as the landing target for the jump-arrival animation.
+func (m *SidebarModel) SetLand(paneID string) {
+	m.landPaneID = paneID
+	m.landFrame = 0
+}
+
+// SetTrail marks paneID as the departure origin for the ghost-trail animation.
+func (m *SidebarModel) SetTrail(paneID string) {
+	m.trailPaneID = paneID
+	m.trailFrame = 0
 }
 
 func (m *SidebarModel) SetGroupByProject(v bool) {
@@ -137,13 +144,21 @@ func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.Fi
 // commitDoneFrames is a distinct animation for commit-and-done pending sessions.
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
+const jumpAnimFrames = 4 // visible frames (0–3), cleared at 4
+
 func (m *SidebarModel) SetSpinnerView(s string) {
 	m.spinnerView = s
 	m.commitDoneFrame = (m.commitDoneFrame + 1) % len(commitDoneFrames)
-	if m.ghostPaneID != "" {
-		m.ghostFrame++
-		if m.ghostFrame >= 3 {
-			m.ghostPaneID = ""
+	if m.landPaneID != "" {
+		m.landFrame++
+		if m.landFrame >= jumpAnimFrames {
+			m.landPaneID = ""
+		}
+	}
+	if m.trailPaneID != "" {
+		m.trailFrame++
+		if m.trailFrame >= jumpAnimFrames {
+			m.trailPaneID = ""
 		}
 	}
 }
@@ -207,6 +222,36 @@ func (m *SidebarModel) ClearNarrow() {
 	m.narrow = ""
 	m.applyNarrow()
 	m.cursor = 0
+}
+
+// CursorRef is a type-agnostic reference to a cursor position.
+// Used to save/restore the cursor across list mutations (e.g., clearing search).
+type CursorRef struct {
+	PaneID    string // non-empty for session items
+	BacklogID string // non-empty for backlog items
+}
+
+// CursorRef returns a reference to whatever is currently under the cursor.
+func (m SidebarModel) CursorRef() CursorRef {
+	if s, ok := m.SelectedItem(); ok {
+		return CursorRef{PaneID: s.PaneID}
+	}
+	if b, ok := m.SelectedBacklog(); ok {
+		return CursorRef{BacklogID: b.ID}
+	}
+	return CursorRef{}
+}
+
+// SelectByRef restores the cursor to the item identified by ref. Returns true if found.
+func (m *SidebarModel) SelectByRef(ref CursorRef) bool {
+	switch {
+	case ref.PaneID != "":
+		return m.SelectByPaneID(ref.PaneID)
+	case ref.BacklogID != "":
+		return m.selectByBacklogID(ref.BacklogID)
+	default:
+		return false
+	}
 }
 
 func (m SidebarModel) SelectedItem() (claude.ClaudeSession, bool) {
@@ -926,17 +971,24 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Avatar-colored selection styles (only allocated for the active state)
 	avatarColor := AvatarColor(s.AvatarColorIdx)
+	avatarHex := avatarColor.Dark
 	avatarBg := AvatarFillBg(s.AvatarColorIdx)
-	isGhost := !isSelected && !isAutoJump && s.PaneID == m.ghostPaneID && m.ghostFrame < 3
-	var selBgSt, barSt, autoJumpBarSt, ghostBarSt lipgloss.Style
+	isLanding := isSelected && s.PaneID == m.landPaneID && m.landFrame < jumpAnimFrames
+	isTrail := !isSelected && !isAutoJump && s.PaneID == m.trailPaneID && m.trailFrame < jumpAnimFrames
+	var selBgSt, barSt, autoJumpBarSt, trailBarSt lipgloss.Style
 	if isSelected {
 		selBgSt = lipgloss.NewStyle().Background(avatarBg)
-		barSt = lipgloss.NewStyle().Foreground(avatarColor).Background(avatarBg)
+		var barColor lipgloss.TerminalColor = avatarColor
+		if isLanding {
+			t := float64(m.landFrame) / float64(jumpAnimFrames-1)
+			barColor = lipgloss.Color(blendHex("#ffffff", avatarHex, t))
+		}
+		barSt = lipgloss.NewStyle().Foreground(barColor).Background(avatarBg)
 	} else if isAutoJump {
 		autoJumpBarSt = lipgloss.NewStyle().Foreground(avatarColor)
-	} else if isGhost {
-		ghostColors := []lipgloss.TerminalColor{avatarColor, ColorMuted, ColorBorder}
-		ghostBarSt = lipgloss.NewStyle().Foreground(ghostColors[m.ghostFrame])
+	} else if isTrail {
+		t := float64(m.trailFrame) / float64(jumpAnimFrames-1)
+		trailBarSt = lipgloss.NewStyle().Foreground(lipgloss.Color(blendHex(avatarHex, "#333333", t)))
 	}
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected, s.AvatarColorIdx) }
@@ -1026,8 +1078,8 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		}
 		if isAutoJump {
 			namePart = "  " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
-		} else if isGhost {
-			namePart = "  " + ghostBarSt.Render("▯") + " " + iconStr + styledName
+		} else if isTrail {
+			namePart = "  " + trailBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
 			namePart = "    " + iconStr + styledName
 		}
@@ -1062,26 +1114,26 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// Show queue badge with count
 	if len(s.QueuePending) > 0 {
 		queueBadge := fmt.Sprintf("%s %d", IconQueue, len(s.QueuePending))
-		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isAutoJump, false, s.AvatarColorIdx)
+		line += "\n" + m.renderSubtitleLine(queueBadge, query, "", isSelected, isAutoJump, false, s.AvatarColorIdx, barSt)
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
 	if s.LastUserMessage != "" {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
-		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isAutoJump, doHL, s.AvatarColorIdx)
+		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isAutoJump, doHL, s.AvatarColorIdx, barSt)
 	}
 
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
 		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isAutoJump, true, s.AvatarColorIdx)
+			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
 		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
-			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isAutoJump, true, s.AvatarColorIdx)
+			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
 	}
 
@@ -1172,7 +1224,7 @@ func (m SidebarModel) subtitleMsgWidth(icon string, isSelected bool) int {
 
 // renderSubtitleLine renders a subtitle with optional search highlighting.
 // Each segment gets its own Render call — no nesting of lipgloss Render.
-func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
+func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int, barSt lipgloss.Style) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
 
@@ -1182,7 +1234,6 @@ func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, i
 		fillBg := AvatarFillBg(avatarColorIdx)
 		baseStyle := ItemDetailStyle.Background(fillBg)
 		bgStyle := lipgloss.NewStyle().Background(fillBg)
-		localBarSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx)).Background(fillBg)
 
 		var content string
 		if doHighlight && query != "" {
@@ -1196,7 +1247,7 @@ func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, i
 		if padWidth < 0 {
 			padWidth = 0
 		}
-		return bgStyle.Render("  ") + localBarSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
+		return bgStyle.Render("  ") + barSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
 	// Unselected — with optional auto-jump bar at col 2
@@ -1218,22 +1269,22 @@ func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, i
 // renderSubtitleTwoLines renders up to two lines for a subtitle, word-wrapping
 // at word boundaries. The first line gets the icon; the second is indented with
 // spaces matching the icon's width.
-func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int) string {
+func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int, barSt lipgloss.Style) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	if msgWidth < 1 {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	}
 
 	// Word-wrap at word boundary to split into two lines
 	line1, rest := wordWrapFirst(text, msgWidth)
 	if rest == "" {
-		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
+		return m.renderSubtitleLine(text, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	}
 
 	// Render first line, second line with blank icon of same width
-	first := m.renderSubtitleLine(line1, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
+	first := m.renderSubtitleLine(line1, query, icon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
-	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isAutoJump, doHighlight, avatarColorIdx)
+	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	return first + "\n" + second
 }
 
