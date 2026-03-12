@@ -7,6 +7,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// FooterDivider renders a thin horizontal rule (innerWidth wide) to visually
+// separate the content area from the footer when no minimap is docked above it.
+func FooterDivider(innerWidth int) string {
+	return BorderCharStyle.Render(strings.Repeat("─", innerWidth))
+}
+
 // BottomBorder renders the bottom border line: ╰──...──╯
 func BottomBorder(width int) string {
 	if width < 2 {

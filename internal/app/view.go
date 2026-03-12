@@ -56,6 +56,10 @@ func (m Model) View() string {
 			contentHeight -= lipgloss.Height(minimapView)
 		}
 	}
+	// Divider line between content and footer (shown when minimap isn't docked above footer)
+	if !minimapDocked {
+		contentHeight -= 1
+	}
 
 	// Set relay views before rendering panels (sidebar.View() and detail.View() consume them)
 	var tagSessionID, tagInputView string
@@ -233,7 +237,8 @@ func (m Model) View() string {
 	if minimapDocked {
 		inner = labelLine + "\n" + content + "\n" + minimapView + "\n" + footer
 	} else {
-		inner = labelLine + "\n" + content + "\n" + footer
+		divider := ui.FooterDivider(innerWidth)
+		inner = labelLine + "\n" + content + "\n" + divider + "\n" + footer
 	}
 
 	if m.inFullscreenPopup {
@@ -742,9 +747,12 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("=") + " create  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
-	case StateMacroEdit, StateMemoEdit:
+	case StateMacroEdit:
 		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateNoteEdit:
+		h := ui.FooterKeyStyle.Render("esc") + " save"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StatePalette:
 		var h string

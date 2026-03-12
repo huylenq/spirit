@@ -46,6 +46,7 @@ const (
 	StateMacro                // macro palette shown, waiting for key
 	StateMacroEdit            // inline macro editor open
 	StateTagRelay             // tag input relay open
+	StateNoteEdit             // session note editor open
 )
 
 const defaultMinimapMaxH = 14
@@ -219,6 +220,7 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetGroupByProject(loadPrefBool("groupByProject"))
 	migratePref("showIdeas", "showBacklog")
 	sidebar.SetShowBacklog(loadPrefBool("showBacklog"))
+	sidebar.SetShowLater(loadPrefString("showLater", "true") != "false")
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -339,10 +341,16 @@ func (m *Model) applyLayout() {
 	m.minimap.SetCollapse(m.minimapCollapse)
 
 	// When docked, subtract minimap height so panels shrink to make room
+	minimapDocked := false
 	if m.shouldDockMinimap() {
 		if _, mmViewH := m.minimap.ViewSize(); mmViewH > 0 {
 			contentHeight -= mmViewH
+			minimapDocked = true
 		}
+	}
+	// Divider line between content and footer (shown when minimap isn't docked above footer)
+	if !minimapDocked {
+		contentHeight -= 1
 	}
 
 	sidebarWidth := m.sidebarPanelWidth()
@@ -479,6 +487,7 @@ func (m Model) fetchVisibleOverlays(paneID, sessionID, cwd string) []tea.Cmd {
 // If syncMinimap is true, also refreshes the minimap to track the new selection.
 func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []tea.Cmd {
 	m.nonClaudePane = nil // clear non-Claude focus when selecting a Claude session
+	m.detail.SetNote(s.Note)
 	cmds := []tea.Cmd{
 		capturePreview(s.PaneID),
 		m.fetchTranscript(s.PaneID, s.SessionID),
