@@ -9,9 +9,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
+)
+
+// Transcript display modes (must match constants in internal/app/model.go).
+const (
+	transcriptOverlay = "overlay"
+	transcriptDocked  = "docked"
+	transcriptHidden  = "hidden"
 )
 
 // diffFileStat is a pre-sorted, per-file diff entry cached on SetDiffStats.
@@ -33,10 +41,13 @@ type DetailModel struct {
 	diffStats              map[string]claude.FileDiffStat
 	diffFiles              []diffFileStat // cached sorted file entries
 	summary                *claude.SessionSummary
+	memo                   string           // freeform note for this session (empty = no panel)
+	memoEditor             MemoEditorModel  // inline textarea for editing the note
+	memoEditing            bool             // true while the note is being edited
 	relayView              string // when set, rendered inline after the ❯ prompt line
 	hookEvents             []claude.HookEvent
 	showHooks              bool
-	transcriptMode         string // "overlay", "docked", "hidden"
+	transcriptMode         string // transcriptOverlay, transcriptDocked, transcriptHidden
 	hookCursor             int
 	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
 	hookExpandedJSON       map[int]string // lazy pretty-print cache
@@ -62,7 +73,10 @@ type DetailModel struct {
 }
 
 func NewDetailModel() DetailModel {
-	return DetailModel{diffSimThreshold: defaultDiffSimThreshold}
+	return DetailModel{
+		diffSimThreshold: defaultDiffSimThreshold,
+		memoEditor:       NewMemoEditorModel(),
+	}
 }
 
 func (m *DetailModel) SetSize(w, h int) {
@@ -80,16 +94,35 @@ func (m *DetailModel) SetSize(w, h int) {
 		m.viewport = viewport.New(vpWidth, contentHeight)
 		m.ready = true
 		if m.content != "" {
-			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), m.viewport.Width))
+			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 			m.viewport.GotoBottom() // content arrived before size was known
 		}
 	} else {
 		m.viewport.Width = vpWidth
 		m.viewport.Height = contentHeight
 		if m.content != "" {
-			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), m.viewport.Width))
+			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 		}
 	}
+}
+
+// calcPanelWidth returns the sidebar/overlay panel width for a given content width,
+// clamped to [20, 50].
+func calcPanelWidth(contentWidth int) int {
+	w := contentWidth * 40 / 100
+	if w < 20 {
+		w = 20
+	}
+	if w > 50 {
+		w = 50
+	}
+	return w
+}
+
+// hasSidebarContent reports whether any panel content (transcript, summary, memo)
+// exists that would be shown in the sidebar/overlay.
+func (m *DetailModel) hasSidebarContent() bool {
+	return len(m.userMessages) > 0 || m.summary != nil || m.memo != "" || m.memoEditing
 }
 
 // effectiveVPWidth returns the viewport width accounting for transcript mode.
@@ -100,18 +133,25 @@ func (m *DetailModel) effectiveVPWidth(w int) int {
 	if vpWidth < 1 {
 		vpWidth = 1
 	}
-	if m.transcriptMode == "docked" && (len(m.userMessages) > 0 || m.summary != nil) {
-		transcriptWidth := contentWidth * 40 / 100
-		if transcriptWidth < 20 {
-			transcriptWidth = 20
-		}
-		if transcriptWidth > 50 {
-			transcriptWidth = 50
-		}
-		vpWidth = contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
+	if m.transcriptMode == transcriptDocked && m.hasSidebarContent() {
+		vpWidth = contentWidth - calcPanelWidth(contentWidth) - 3 // 1 gap + 2 for content border
 		if vpWidth < 1 {
 			vpWidth = 1
 		}
+	}
+	return vpWidth
+}
+
+// effectiveDividerWidth returns the max width for reconstructing horizontal rule
+// labels. In overlay mode the label must sit left of the overlay panel; in other
+// modes it matches the viewport width.
+func (m *DetailModel) effectiveDividerWidth(vpWidth int) int {
+	if m.transcriptMode == transcriptOverlay && m.hasSidebarContent() {
+		w := vpWidth - calcPanelWidth(m.width-4) - 1
+		if w < 1 {
+			return 1
+		}
+		return w
 	}
 	return vpWidth
 }
@@ -144,7 +184,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 	}
 	m.content = content
 	if m.ready {
-		m.viewport.SetContent(truncateLines(trimTrailingBlanks(content), m.viewport.Width))
+		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 		if isNew {
 			m.viewport.GotoBottom()
 		}
@@ -165,7 +205,7 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	m.content = content
 	m.recomputeOffsets()
 	if m.ready {
-		m.viewport.SetContent(truncateLines(trimTrailingBlanks(content), m.viewport.Width))
+		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 		if isNewSession {
 			m.viewport.GotoBottom()
 		}
@@ -208,13 +248,40 @@ func (m *DetailModel) SetSummary(s *claude.SessionSummary) {
 	m.summary = s
 }
 
+func (m *DetailModel) SetMemo(memo string) {
+	m.memo = memo
+}
+
+// StartMemoEdit activates inline editing of the note panel.
+func (m *DetailModel) StartMemoEdit() {
+	m.memoEditing = true
+	m.memoEditor.Activate(m.memo)
+}
+
+// StopMemoEdit deactivates the inline editor without saving.
+func (m *DetailModel) StopMemoEdit() {
+	m.memoEditing = false
+	m.memoEditor.Deactivate()
+}
+
+// MemoEditing reports whether the note panel is in edit mode.
+func (m *DetailModel) MemoEditing() bool { return m.memoEditing }
+
+// MemoValue returns the current textarea content (only meaningful while editing).
+func (m *DetailModel) MemoValue() string { return m.memoEditor.Value() }
+
+// UpdateMemoEditor forwards a message to the textarea and returns any cmd.
+func (m *DetailModel) UpdateMemoEditor(msg tea.Msg) tea.Cmd {
+	return m.memoEditor.Update(msg)
+}
+
 func (m *DetailModel) SetTranscriptMode(mode string) {
 	m.transcriptMode = mode
 	if m.ready {
 		vpWidth := m.effectiveVPWidth(m.width)
 		m.viewport.Width = vpWidth
 		if m.content != "" {
-			m.viewport.SetContent(truncateLines(trimTrailingBlanks(m.content), vpWidth))
+			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), vpWidth, m.effectiveDividerWidth(vpWidth)))
 		}
 	}
 }
@@ -425,6 +492,198 @@ func truncateLines(content string, maxWidth int) string {
 		lines[i] = style.Render(line) + "\033[m"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// wrapLines hard-wraps content to maxWidth in a single Hardwrap pass (preserving
+// ANSI state continuity). Lines that should not wrap (box-drawing, dividers,
+// trailing-padding) are pre-truncated. divMaxWidth controls the width used for
+// reconstructing horizontal-rule labels (to keep them visible alongside overlays).
+func wrapLines(content string, maxWidth, divMaxWidth int) string {
+	if maxWidth <= 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if ansi.StringWidth(line) <= maxWidth {
+			continue // fits — no action needed
+		}
+		// Strip ANSI once for all checks below
+		stripped := ansi.Strip(line)
+		switch classifyLine(stripped) {
+		case lineHRule:
+			trimmed := strings.TrimSpace(stripped)
+			lines[i] = rebuildHRuleLine(line, trimmed, stripped, divMaxWidth)
+		case lineBox:
+			lines[i] = ansi.Truncate(line, maxWidth, "") + "\033[m"
+		default:
+			if ansi.StringWidth(strings.TrimRight(stripped, " \t")) <= maxWidth {
+				lines[i] = ansi.Truncate(line, maxWidth, "") + "\033[m"
+			}
+		}
+	}
+	return ansi.Hardwrap(strings.Join(lines, "\n"), maxWidth, false)
+}
+
+// isDividerRune reports whether r is a horizontal rule character.
+func isDividerRune(r rune) bool {
+	switch r {
+	case '─', '━', '═', '╌', '┄', '┈', '—':
+		return true
+	}
+	return false
+}
+
+// lineClass distinguishes lines that need special handling when wrapping.
+type lineClass int
+
+const (
+	lineNormal lineClass = iota // wrap normally
+	lineHRule                   // horizontal rule — rebuild at target width
+	lineBox                     // box-drawing border/side — truncate
+)
+
+// classifyLine categorizes a line for wrap handling.
+// The input should already be ANSI-stripped.
+func classifyLine(stripped string) lineClass {
+	stripped = strings.TrimSpace(stripped)
+	if stripped == "" {
+		return lineNormal
+	}
+	var first rune
+	var last rune
+	for _, r := range stripped {
+		if first == 0 {
+			first = r
+		}
+		last = r
+	}
+	// Box border top/bottom: starts with corner
+	switch first {
+	case '╭', '╰', '┌', '└':
+		return lineBox
+	}
+	// Box sides / right corners: ends with │ or corner
+	switch last {
+	case '│', '┃', '╮', '╯', '┐', '┘':
+		return lineBox
+	}
+	// Starts AND ends with a horizontal rule char (pure or labelled divider)
+	if isDividerRune(first) && isDividerRune(last) {
+		return lineHRule
+	}
+	return lineNormal
+}
+
+// skipCSI returns the byte offset past the CSI sequence starting at s[i],
+// or i if s[i] does not start a CSI sequence (ESC [ ... final-byte).
+func skipCSI(s string, i int) int {
+	if i >= len(s) || s[i] != '\033' || i+1 >= len(s) || s[i+1] != '[' {
+		return i
+	}
+	j := i + 2
+	for j < len(s) && (s[j] < 0x40 || s[j] > 0x7E) {
+		j++
+	}
+	if j < len(s) {
+		j++ // include the final byte
+	}
+	return j
+}
+
+// extractLeadingANSI returns all CSI escape sequences that appear before
+// the first printable byte in s, so they can be re-applied to reconstructed text.
+func extractLeadingANSI(s string) string {
+	i := 0
+	for i < len(s) {
+		j := skipCSI(s, i)
+		if j == i {
+			break // not a CSI — first printable byte
+		}
+		i = j
+	}
+	return s[:i]
+}
+
+// ansiStateAt collects all CSI escape sequences encountered while scanning s
+// up to (and at) the n-th visible character. This gives the accumulated ANSI
+// state (fg, bg, bold, etc.) that is active at that position.
+func ansiStateAt(s string, n int) string {
+	var buf strings.Builder
+	visible := 0
+	i := 0
+	for i < len(s) && visible < n {
+		if j := skipCSI(s, i); j != i {
+			buf.WriteString(s[i:j])
+			i = j
+		} else {
+			_, size := utf8.DecodeRuneInString(s[i:])
+			i += size
+			visible++
+		}
+	}
+	// Also collect any ANSI right at position n (before the next visible char).
+	for i < len(s) {
+		if j := skipCSI(s, i); j != i {
+			buf.WriteString(s[i:j])
+			i = j
+		} else {
+			break
+		}
+	}
+	return buf.String()
+}
+
+// rebuildHRuleLine reconstructs a horizontal rule line (pure or with embedded label)
+// at newWidth. It preserves the divider character type, the dash color (via leading
+// ANSI prefix), and the label's inherited ANSI state (fg, bg, bold) by scanning the
+// original line. The right margin is always exactly 2 dashes.
+// original is the raw line (with ANSI); trimmed is ANSI-stripped+TrimSpaced;
+// fullStripped is ANSI-stripped WITHOUT TrimSpace (for position alignment).
+func rebuildHRuleLine(original, trimmed, fullStripped string, newWidth int) string {
+	var divChar rune
+	for _, r := range trimmed {
+		if isDividerRune(r) {
+			divChar = r
+			break
+		}
+	}
+	if divChar == 0 {
+		return strings.Repeat("─", newWidth)
+	}
+
+	prefix := extractLeadingANSI(original)
+
+	plainLabel := strings.TrimSpace(strings.TrimFunc(trimmed, func(r rune) bool { return isDividerRune(r) }))
+	if plainLabel == "" {
+		return prefix + strings.Repeat(string(divChar), newWidth) + "\033[m"
+	}
+
+	// Right margin is always exactly 2 dashes; left side fills the rest.
+	const rightMargin = 2
+	labelWidth := ansi.StringWidth(plainLabel)
+	left := newWidth - labelWidth - 2 - rightMargin // " label " = labelWidth+2
+	if left < 1 {
+		return prefix + strings.Repeat(string(divChar), newWidth) + "\033[m"
+	}
+
+	// Find label start position in the FULL (non-TrimSpaced) stripped string,
+	// so it aligns with byte positions in original.
+	labelStartPos := 0
+	for _, r := range fullStripped {
+		if isDividerRune(r) || r == ' ' {
+			labelStartPos++
+		} else {
+			break
+		}
+	}
+
+	// Collect accumulated ANSI state at the label position (captures inherited bg, fg, etc.).
+	labelANSI := ansiStateAt(original, labelStartPos)
+
+	leftDashes := strings.Repeat(string(divChar), left)
+	rightDashes := strings.Repeat(string(divChar), rightMargin)
+
+	return prefix + leftDashes + " " + labelANSI + plainLabel + "\033[m" + prefix + " " + rightDashes + "\033[m"
 }
 
 func (m *DetailModel) scrollDown(n int) {
@@ -640,7 +899,7 @@ func (m *DetailModel) getHookExpandedJSON(idx int) string {
 	return result
 }
 
-func (m DetailModel) View() string {
+func (m *DetailModel) View() string {
 	if m.session == nil {
 		return EmptyStyle.Width(m.width).Height(m.height).Render("Select a session to preview")
 	}
@@ -725,35 +984,41 @@ func (m DetailModel) View() string {
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
-	showTranscript := m.transcriptMode != "hidden" && (len(m.userMessages) > 0 || m.summary != nil)
-	if showTranscript && m.transcriptMode == "docked" {
-		transcriptWidth := contentWidth * 40 / 100
-		if transcriptWidth < 20 {
-			transcriptWidth = 20
-		}
-		if transcriptWidth > 50 {
-			transcriptWidth = 50
-		}
+	showTranscript := m.transcriptMode != transcriptHidden && (len(m.userMessages) > 0 || m.summary != nil)
+	showMemo := (m.memo != "" || m.memoEditing) && m.transcriptMode != transcriptHidden
+	panelWidth := calcPanelWidth(contentWidth)
+	if (showTranscript || showMemo) && m.transcriptMode == transcriptDocked {
+		transcriptWidth := panelWidth
 		vpWidth := contentWidth - transcriptWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
-		transcriptPanel := m.renderTranscript(transcriptWidth)
-		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", transcriptPanel)
+		var rightCol string
+		switch {
+		case showTranscript && showMemo:
+			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderTranscript(transcriptWidth), m.renderMemoPanel(transcriptWidth))
+		case showTranscript:
+			rightCol = m.renderTranscript(transcriptWidth)
+		default:
+			rightCol = m.renderMemoPanel(transcriptWidth)
+		}
+		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", rightCol)
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
 		contentBox = contentStyle.Width(contentWidth).Render(vpRaw)
 		if showTranscript { // overlay mode
-			transcriptWidth := contentWidth * 40 / 100
-			if transcriptWidth < 20 {
-				transcriptWidth = 20
-			}
-			if transcriptWidth > 50 {
-				transcriptWidth = 50
-			}
-			transcriptPanel := m.renderTranscript(transcriptWidth)
+			transcriptPanel := m.renderTranscript(panelWidth)
 			col := lipgloss.Width(contentBox) - lipgloss.Width(transcriptPanel) - 1
 			contentBox = overlayAt(contentBox, transcriptPanel, col, 1)
+			if showMemo {
+				memoPanel := m.renderMemoPanel(panelWidth)
+				row := 1 + lipgloss.Height(transcriptPanel)
+				contentBox = overlayAt(contentBox, memoPanel, col, row)
+			}
+		} else if showMemo {
+			memoPanel := m.renderMemoPanel(panelWidth)
+			col := lipgloss.Width(contentBox) - lipgloss.Width(memoPanel) - 1
+			contentBox = overlayAt(contentBox, memoPanel, col, 1)
 		}
 	}
 
@@ -835,6 +1100,59 @@ func (m DetailModel) renderTranscript(width int) string {
 	return TranscriptOverlayStyle.
 		Width(width).
 		Render(content)
+}
+
+// renderMemoPanel renders the session note panel with a border.
+// When memoEditing is true, it shows the textarea for inline editing.
+func (m *DetailModel) renderMemoPanel(width int) string {
+	innerWidth := width - 4
+	if innerWidth < 5 {
+		innerWidth = 5
+	}
+
+	titleLine := TranscriptTitleStyle.Foreground(ColorNote).Render(" " + IconNote + "  Note")
+
+	var body string
+	if m.memoEditing {
+		m.memoEditor.SetWidth(innerWidth)
+		body = m.memoEditor.ViewTextarea()
+	} else {
+		wrapped := wordWrapContent(m.memo, innerWidth)
+		body = TranscriptMsgStyle.Render(wrapped)
+	}
+
+	borderColor := ColorBorder
+	if m.memoEditing {
+		borderColor = ColorNote
+	}
+	content := titleLine + "\n\n" + body
+	return TranscriptOverlayStyle.
+		BorderForeground(borderColor).
+		Width(width).
+		Render(content)
+}
+
+// wordWrapContent wraps plain text to fit within maxWidth columns.
+func wordWrapContent(s string, maxWidth int) string {
+	if maxWidth <= 0 || s == "" {
+		return s
+	}
+	var result []string
+	for _, line := range strings.Split(s, "\n") {
+		if ansi.StringWidth(line) <= maxWidth {
+			result = append(result, line)
+			continue
+		}
+		for len(line) > 0 {
+			first, rest := wordWrapFirst(line, maxWidth)
+			result = append(result, first)
+			if rest == line {
+				break // wordWrapFirst made no progress (char wider than maxWidth)
+			}
+			line = rest
+		}
+	}
+	return strings.Join(result, "\n")
 }
 
 func (m DetailModel) renderHookOverlay(width, height int) string {
