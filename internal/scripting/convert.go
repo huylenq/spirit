@@ -114,3 +114,16 @@ func sessionsToLuaTable(L *lua.LState, sessions []claude.ClaudeSession) *lua.LTa
 	return t
 }
 
+// backlogToTable converts a Backlog to a Lua table.
+func backlogToTable(L *lua.LState, b claude.Backlog) *lua.LTable {
+	t := L.NewTable()
+	t.RawSetString("id", lua.LString(b.ID))
+	t.RawSetString("body", lua.LString(b.Body))
+	t.RawSetString("cwd", lua.LString(b.CWD))
+	t.RawSetString("project", lua.LString(b.Project))
+	t.RawSetString("title", lua.LString(b.DisplayTitle()))
+	t.RawSetString("created_at", lua.LNumber(float64(b.CreatedAt.Unix())))
+	t.RawSetString("updated_at", lua.LNumber(float64(b.UpdatedAt.Unix())))
+	return t
+}
+

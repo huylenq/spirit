@@ -58,6 +58,11 @@ const (
 	ReqKill                   = "kill"
 	ReqDigest                 = "digest"
 	ReqSetTags                = "set_tags"
+
+	ReqBacklogList   = "backlog_list"
+	ReqBacklogCreate = "backlog_create"
+	ReqBacklogUpdate = "backlog_update"
+	ReqBacklogDelete = "backlog_delete"
 )
 
 // Response type constants.
@@ -239,6 +244,34 @@ type DigestData struct {
 type SetTagsData struct {
 	SessionID string   `json:"sessionID"`
 	Tags      []string `json:"tags"`
+}
+
+type BacklogListData struct {
+	CWD string `json:"cwd"`
+}
+
+type BacklogCreateData struct {
+	CWD  string `json:"cwd"`
+	Body string `json:"body"`
+}
+
+type BacklogUpdateData struct {
+	CWD  string `json:"cwd"`
+	ID   string `json:"id"`
+	Body string `json:"body"`
+}
+
+type BacklogDeleteData struct {
+	CWD string `json:"cwd"`
+	ID  string `json:"id"`
+}
+
+type BacklogListResultData struct {
+	Backlogs []claude.Backlog `json:"backlogs"`
+}
+
+type BacklogItemResultData struct {
+	Backlog claude.Backlog `json:"backlog"`
 }
 
 // --- Helpers ---

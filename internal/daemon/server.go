@@ -141,6 +141,18 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqSetTags:
 		return d.handleSetTags(req.Data)
 
+	case ReqBacklogList:
+		return d.handleBacklogList(req.Data)
+
+	case ReqBacklogCreate:
+		return d.handleBacklogCreate(req.Data)
+
+	case ReqBacklogUpdate:
+		return d.handleBacklogUpdate(req.Data)
+
+	case ReqBacklogDelete:
+		return d.handleBacklogDelete(req.Data)
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r

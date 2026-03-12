@@ -34,6 +34,7 @@ func RunEvalWithContext(script string, client *daemon.Client, stderr io.Writer, 
 	registerLifecycleAPIs(L, client)
 	registerOrchestratorAPIs(L, client)
 	registerFeatureAPIs(L, client)
+	registerBacklogAPIs(L, client)
 	registerContextAPIs(L, ctx)
 
 	// Try wrapping in anonymous function to capture return value

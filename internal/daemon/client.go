@@ -365,3 +365,25 @@ func (c *Client) Digest() (*claude.WorkspaceDigest, error) {
 func (c *Client) SetTags(sessionID string, tags []string) error {
 	return c.rpcInto(Request{Type: ReqSetTags, Data: marshalData(SetTagsData{SessionID: sessionID, Tags: tags})}, nil)
 }
+
+func (c *Client) BacklogList(cwd string) ([]claude.Backlog, error) {
+	var data BacklogListResultData
+	err := c.rpcInto(Request{Type: ReqBacklogList, Data: marshalData(BacklogListData{CWD: cwd})}, &data)
+	return data.Backlogs, err
+}
+
+func (c *Client) BacklogCreate(cwd, body string) (claude.Backlog, error) {
+	var data BacklogItemResultData
+	err := c.rpcInto(Request{Type: ReqBacklogCreate, Data: marshalData(BacklogCreateData{CWD: cwd, Body: body})}, &data)
+	return data.Backlog, err
+}
+
+func (c *Client) BacklogUpdate(cwd, id, body string) (claude.Backlog, error) {
+	var data BacklogItemResultData
+	err := c.rpcInto(Request{Type: ReqBacklogUpdate, Data: marshalData(BacklogUpdateData{CWD: cwd, ID: id, Body: body})}, &data)
+	return data.Backlog, err
+}
+
+func (c *Client) BacklogDelete(cwd, id string) error {
+	return c.rpcInto(Request{Type: ReqBacklogDelete, Data: marshalData(BacklogDeleteData{CWD: cwd, ID: id})}, nil)
+}
