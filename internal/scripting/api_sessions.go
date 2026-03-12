@@ -11,15 +11,10 @@ import (
 
 const defaultWaitTimeout = 300 // seconds
 
-// registerSessionAPIs registers sessions(), session(), and wait() into the VM.
-func registerSessionAPIs(L *lua.LState, client *daemon.Client) {
-	L.SetGlobal("sessions", L.NewFunction(luaSessions(client)))
-	L.SetGlobal("session", L.NewFunction(luaSession(client)))
-	L.SetGlobal("wait", L.NewFunction(luaWait(client)))
-}
-
-// sessions() or sessions({status = "idle"})
-func luaSessions(client *daemon.Client) lua.LGFunction {
+// sessions([{status}]) -> []session
+// Category: Session Discovery
+// List active sessions. Optional filter: status="idle"|"working".
+func luaSessions(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		filter := ""
 		if L.GetTop() >= 1 {
@@ -29,7 +24,7 @@ func luaSessions(client *daemon.Client) lua.LGFunction {
 			}
 		}
 
-		sessions, err := client.Sessions(filter)
+		sessions, err := deps.Client.Sessions(filter)
 		if err != nil {
 			L.RaiseError("sessions: %v", err)
 			return 0
@@ -40,12 +35,14 @@ func luaSessions(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// session("id") — returns single session or nil
-func luaSession(client *daemon.Client) lua.LGFunction {
+// session(id) -> session|nil
+// Category: Session Discovery
+// Get a single session by ID, or nil if not found.
+func luaSession(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 
-		sessions, err := client.Sessions("")
+		sessions, err := deps.Client.Sessions("")
 		if err != nil {
 			L.RaiseError("session: %v", err)
 			return 0
@@ -63,9 +60,10 @@ func luaSession(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// wait(id) or wait(id, {timeout = 30})
-// Blocks until session reaches idle (user-turn).
-func luaWait(client *daemon.Client) lua.LGFunction {
+// wait(id, [{timeout}]) -> session
+// Category: Session Discovery
+// Block until session becomes idle. Default timeout 300s.
+func luaWait(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		timeout := defaultWaitTimeout
@@ -76,7 +74,7 @@ func luaWait(client *daemon.Client) lua.LGFunction {
 			}
 		}
 
-		s, err := pollUntilStatus(client, id, claude.StatusUserTurn, timeout)
+		s, err := pollUntilStatus(deps.Client, id, claude.StatusUserTurn, timeout)
 		if err != nil {
 			L.RaiseError("wait: %v", err)
 			return 0

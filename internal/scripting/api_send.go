@@ -2,24 +2,18 @@ package scripting
 
 import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
 	lua "github.com/yuin/gopher-lua"
 )
 
-// registerSendAPIs registers send(), queue(), and cancel_queue() into the VM.
-func registerSendAPIs(L *lua.LState, client *daemon.Client) {
-	L.SetGlobal("send", L.NewFunction(luaSend(client)))
-	L.SetGlobal("queue", L.NewFunction(luaQueue(client)))
-	L.SetGlobal("cancel_queue", L.NewFunction(luaCancelQueue(client)))
-}
-
-// send(id, msg) or send(id, msg, {wait = "idle", timeout = 60})
-func luaSend(client *daemon.Client) lua.LGFunction {
+// send(id, msg, [{wait, timeout}])
+// Category: Send & Wait
+// Send message to session's tmux pane. Options: wait="idle"|"working", timeout=N.
+func luaSend(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		msg := L.CheckString(2)
 
-		if err := client.Send(id, msg); err != nil {
+		if err := deps.Client.Send(id, msg); err != nil {
 			L.RaiseError("send: %v", err)
 			return 0
 		}
@@ -45,7 +39,7 @@ func luaSend(client *daemon.Client) lua.LGFunction {
 					return 0
 				}
 
-				s, err := pollUntilStatus(client, id, target, timeout)
+				s, err := pollUntilStatus(deps.Client, id, target, timeout)
 				if err != nil {
 					L.RaiseError("send wait: %v", err)
 					return 0
@@ -60,13 +54,15 @@ func luaSend(client *daemon.Client) lua.LGFunction {
 }
 
 // queue(id, msg)
-func luaQueue(client *daemon.Client) lua.LGFunction {
+// Category: Send & Wait
+// Queue message for delivery when session becomes idle.
+func luaQueue(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		msg := L.CheckString(2)
 
-		paneID := resolvePane(L, client, id)
-		if err := client.Queue(paneID, id, msg); err != nil {
+		paneID := resolvePane(L, deps.Client, id)
+		if err := deps.Client.Queue(paneID, id, msg); err != nil {
 			L.RaiseError("queue: %v", err)
 			return 0
 		}
@@ -74,12 +70,14 @@ func luaQueue(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// cancel_queue(id, index) — index is 1-based (Lua convention)
-func luaCancelQueue(client *daemon.Client) lua.LGFunction {
+// cancel_queue(id, index)
+// Category: Send & Wait
+// Cancel a queued message by 1-based index.
+func luaCancelQueue(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		idx := L.CheckInt(2) - 1 // convert from 1-based Lua to 0-based Go
-		if err := client.CancelQueueItem(id, idx); err != nil {
+		if err := deps.Client.CancelQueueItem(id, idx); err != nil {
 			L.RaiseError("cancel_queue: %v", err)
 			return 0
 		}

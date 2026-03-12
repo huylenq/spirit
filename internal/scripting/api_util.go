@@ -2,7 +2,6 @@ package scripting
 
 import (
 	"fmt"
-	"io"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -14,37 +13,52 @@ type Msgs struct {
 	Toasts  []string // each becomes a TUI toast overlay entry; CLI prints to stderr
 }
 
-// registerUtilAPIs registers sleep(), log(), flash(), and toast() into the VM.
-func registerUtilAPIs(L *lua.LState, stderr io.Writer, msgs *Msgs) {
-	L.SetGlobal("sleep", L.NewFunction(func(L *lua.LState) int {
+// sleep(seconds)
+// Category: Utilities
+// Pause execution for the given number of seconds.
+func luaSleep(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
 		secs := L.CheckNumber(1)
 		time.Sleep(time.Duration(float64(secs) * float64(time.Second)))
 		return 0
-	}))
+	}
+}
 
-	L.SetGlobal("log", L.NewFunction(func(L *lua.LState) int {
+// log(...)
+// Category: Utilities
+// Print arguments to stderr (tab-separated). Not included in JSON output.
+func luaLog(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
 		n := L.GetTop()
 		for i := 1; i <= n; i++ {
 			if i > 1 {
-				fmt.Fprint(stderr, "\t")
+				fmt.Fprint(deps.Stderr, "\t")
 			}
-			fmt.Fprint(stderr, L.Get(i).String())
+			fmt.Fprint(deps.Stderr, L.Get(i).String())
 		}
-		fmt.Fprintln(stderr)
+		fmt.Fprintln(deps.Stderr)
 		return 0
-	}))
+	}
+}
 
-	// flash(msg) — sets the TUI footer flash bar. In CLI, prints to stderr.
-	L.SetGlobal("flash", L.NewFunction(func(L *lua.LState) int {
+// flash(msg)
+// Category: Utilities
+// Set TUI footer flash message. In CLI, prints to stderr.
+func luaFlash(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
 		msg := L.CheckString(1)
-		msgs.Flashes = append(msgs.Flashes, msg)
+		deps.Msgs.Flashes = append(deps.Msgs.Flashes, msg)
 		return 0
-	}))
+	}
+}
 
-	// toast(msg) — adds an entry to the TUI toast overlay. In CLI, prints to stderr.
-	L.SetGlobal("toast", L.NewFunction(func(L *lua.LState) int {
+// toast(msg)
+// Category: Utilities
+// Add entry to TUI toast overlay. In CLI, prints to stderr.
+func luaToast(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
 		msg := L.CheckString(1)
-		msgs.Toasts = append(msgs.Toasts, msg)
+		deps.Msgs.Toasts = append(deps.Msgs.Toasts, msg)
 		return 0
-	}))
+	}
 }

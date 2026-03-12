@@ -166,68 +166,7 @@ cmc capture [COLSxROWS]         Text snapshot of TUI to stdout
 cmc daemon --check               Exit 0 if daemon running
 cmc daemon --stop                Stop daemon
 
-## Eval: Lua Scripting Interface
-
-Sandboxed Lua VM (base/table/string/math only — no os/io/debug).
-Each invocation is stateless. Last expression is JSON-serialized to stdout.
-Errors go to stderr, exit 1. Use pcall() for recovery.
-
-### Session Discovery
-
-sessions()                       All sessions (orchestrator-excluded)
-sessions({status = "idle"})      Filter: "idle" or "working"
-session(id)                      Single session by ID, or nil
-
-Session fields: id, pane_id, status ("idle"|"working"), display_name,
-  project, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid,
-  first_message, last_user_message, headline, custom_title,
-  permission_mode, stop_reason, is_waiting, compact_count,
-  commit_done_pending, queue_pending, created_at, last_changed
-
-### Send & Wait
-
-send(id, msg)                              Fire-and-forget to tmux pane
-send(id, msg, {wait="idle"})               Block until idle
-send(id, msg, {wait="working"})            Block until working
-send(id, msg, {wait="idle", timeout=60})   With timeout (seconds)
-queue(id, msg)                             Deliver when session becomes idle
-cancel_queue(id)                           Cancel queued message
-wait(id)                                   Block until idle (default 300s)
-wait(id, {timeout=30})                     With timeout
-
-### Lifecycle
-
-spawn(cwd)                                           New Claude session
-spawn(cwd, {tmux_session="main", message="do X"})   With options
-  Returns: {session_id=..., pane_id=...}             Blocks up to 30s
-kill(id)                                             SIGTERM + cleanup
-
-### Orchestrator
-
-register_orchestrator(id)        Exclude from sessions() results
-unregister_orchestrator(id)      Re-include
-
-### Features
-
-later(id)                        Bookmark session
-later_kill(id)                   Bookmark + kill pane
-unlater(bookmark_id)             Remove bookmark
-synthesize(id)                   LLM summary → {headline, from_cache}
-synthesize_all()                 Summarize all sessions
-commit(id)                       Send /commit (no auto-kill)
-commit_done(id)                  Send /commit + kill on completion
-cancel_commit_done(id)           Cancel pending auto-kill
-transcript(id)                   User messages (string array)
-raw_transcript(id)               Parsed entries [{index, type, content_type, summary, timestamp}]
-diff_stats(id)                   {filepath = {added=N, removed=N}}
-diff_hunks(id)                   [{file_path, old_string, new_string, is_write}]
-summary(id)                      Cached summary {headline} or nil
-hook_events(id)                  [{time, hook_type, effect}]
-
-### Utilities
-
-sleep(n)                         Sleep n seconds
-log(...)                         Print to stderr (not in JSON output)
+` + scripting.LuaScriptingReference + `
 
 ## Examples
 

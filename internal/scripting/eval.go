@@ -14,6 +14,16 @@ type EvalContext struct {
 	SelectedSessionID string // session ID of the currently selected session (empty from CLI)
 }
 
+// Deps bundles all dependencies for Lua API functions.
+type Deps struct {
+	Client *daemon.Client
+	Stderr io.Writer
+	Msgs   *Msgs
+	Ctx    EvalContext
+}
+
+//go:generate go run ../../cmd/gen-lua-help
+
 // RunEval executes a Lua script in a sandboxed VM with the cmc API available.
 // Returns the JSON-encoded result, any flash/toast messages emitted, and any error.
 func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, Msgs, error) {
@@ -28,14 +38,8 @@ func RunEvalWithContext(script string, client *daemon.Client, stderr io.Writer, 
 	var msgs Msgs
 
 	// Register all API functions
-	registerUtilAPIs(L, stderr, &msgs)
-	registerSessionAPIs(L, client)
-	registerSendAPIs(L, client)
-	registerLifecycleAPIs(L, client)
-	registerOrchestratorAPIs(L, client)
-	registerFeatureAPIs(L, client)
-	registerBacklogAPIs(L, client)
-	registerContextAPIs(L, ctx)
+	deps := Deps{Client: client, Stderr: stderr, Msgs: &msgs, Ctx: ctx}
+	registerAllAPIs(L, deps)
 
 	// Try wrapping in anonymous function to capture return value
 	wrapped := "return (function() " + script + " end)()"

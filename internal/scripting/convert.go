@@ -6,6 +6,8 @@ import (
 )
 
 // sessionToTable converts a ClaudeSession to a Lua table.
+// NOTE: Field names are extracted by cmd/gen-lua-help via AST analysis of RawSetString calls.
+// Keep field names as string literals (not variables/constants) or the generator will miss them.
 func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 	t := L.NewTable()
 	t.RawSetString("id", lua.LString(s.SessionID))
@@ -115,6 +117,7 @@ func sessionsToLuaTable(L *lua.LState, sessions []claude.ClaudeSession) *lua.LTa
 }
 
 // backlogToTable converts a Backlog to a Lua table.
+// NOTE: Field names are extracted by cmd/gen-lua-help via AST analysis (same as sessionToTable).
 func backlogToTable(L *lua.LState, b claude.Backlog) *lua.LTable {
 	t := L.NewTable()
 	t.RawSetString("id", lua.LString(b.ID))
@@ -126,4 +129,3 @@ func backlogToTable(L *lua.LState, b claude.Backlog) *lua.LTable {
 	t.RawSetString("updated_at", lua.LNumber(float64(b.UpdatedAt.Unix())))
 	return t
 }
-

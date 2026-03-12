@@ -6,41 +6,14 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// registerFeatureAPIs registers thin wrappers around existing daemon client methods.
-func registerFeatureAPIs(L *lua.LState, client *daemon.Client) {
-	// Later bookmarks
-	L.SetGlobal("later", L.NewFunction(luaLater(client)))
-	L.SetGlobal("later_kill", L.NewFunction(luaLaterKill(client)))
-	L.SetGlobal("unlater", L.NewFunction(luaUnlater(client)))
-
-	// Synthesis
-	L.SetGlobal("synthesize", L.NewFunction(luaSynthesize(client)))
-	L.SetGlobal("synthesize_all", L.NewFunction(luaSynthesizeAll(client)))
-
-	// Commit
-	L.SetGlobal("commit", L.NewFunction(luaCommit(client)))
-	L.SetGlobal("commit_done", L.NewFunction(luaCommitDone(client)))
-	L.SetGlobal("cancel_commit_done", L.NewFunction(luaCancelCommitDone(client)))
-
-	// Transcript
-	L.SetGlobal("transcript", L.NewFunction(luaTranscript(client)))
-	L.SetGlobal("raw_transcript", L.NewFunction(luaRawTranscript(client)))
-
-	// Diff
-	L.SetGlobal("diff_stats", L.NewFunction(luaDiffStats(client)))
-	L.SetGlobal("diff_hunks", L.NewFunction(luaDiffHunks(client)))
-
-	// Summary + hooks
-	L.SetGlobal("summary", L.NewFunction(luaSummary(client)))
-	L.SetGlobal("hook_events", L.NewFunction(luaHookEvents(client)))
-}
-
-// later(id) — requires resolving sessionID → paneID
-func luaLater(client *daemon.Client) lua.LGFunction {
+// later(id)
+// Category: Features
+// Bookmark session for later review.
+func luaLater(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		paneID := resolvePane(L, client, id)
-		if err := client.Later(paneID, id); err != nil {
+		paneID := resolvePane(L, deps.Client, id)
+		if err := deps.Client.Later(paneID, id); err != nil {
 			L.RaiseError("later: %v", err)
 		}
 		return 0
@@ -48,11 +21,13 @@ func luaLater(client *daemon.Client) lua.LGFunction {
 }
 
 // later_kill(id)
-func luaLaterKill(client *daemon.Client) lua.LGFunction {
+// Category: Features
+// Bookmark session and kill its pane.
+func luaLaterKill(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		s := resolveSession(L, client, id)
-		if err := client.LaterKill(s.PaneID, s.PID, id); err != nil {
+		s := resolveSession(L, deps.Client, id)
+		if err := deps.Client.LaterKill(s.PaneID, s.PID, id); err != nil {
 			L.RaiseError("later_kill: %v", err)
 		}
 		return 0
@@ -60,22 +35,26 @@ func luaLaterKill(client *daemon.Client) lua.LGFunction {
 }
 
 // unlater(bookmark_id)
-func luaUnlater(client *daemon.Client) lua.LGFunction {
+// Category: Features
+// Remove a bookmark by its bookmark ID.
+func luaUnlater(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		bookmarkID := L.CheckString(1)
-		if err := client.Unlater(bookmarkID); err != nil {
+		if err := deps.Client.Unlater(bookmarkID); err != nil {
 			L.RaiseError("unlater: %v", err)
 		}
 		return 0
 	}
 }
 
-// synthesize(id)
-func luaSynthesize(client *daemon.Client) lua.LGFunction {
+// synthesize(id) -> {headline, from_cache}
+// Category: Features
+// Generate LLM summary for session.
+func luaSynthesize(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		paneID := resolvePane(L, client, id)
-		summary, fromCache, err := client.Synthesize(paneID, id)
+		paneID := resolvePane(L, deps.Client, id)
+		summary, fromCache, err := deps.Client.Synthesize(paneID, id)
 		if err != nil {
 			L.RaiseError("synthesize: %v", err)
 			return 0
@@ -90,10 +69,12 @@ func luaSynthesize(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// synthesize_all()
-func luaSynthesizeAll(client *daemon.Client) lua.LGFunction {
+// synthesize_all() -> [{pane_id, headline, from_cache}]
+// Category: Features
+// Generate LLM summaries for all sessions.
+func luaSynthesizeAll(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
-		results, err := client.SynthesizeAll("")
+		results, err := deps.Client.SynthesizeAll("")
 		if err != nil {
 			L.RaiseError("synthesize_all: %v", err)
 			return 0
@@ -113,24 +94,28 @@ func luaSynthesizeAll(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// commit(id) — commit only, no auto-kill
-func luaCommit(client *daemon.Client) lua.LGFunction {
+// commit(id)
+// Category: Features
+// Send /commit to session (no auto-kill).
+func luaCommit(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		s := resolveSession(L, client, id)
-		if err := client.CommitOnly(s.PaneID, id, s.PID); err != nil {
+		s := resolveSession(L, deps.Client, id)
+		if err := deps.Client.CommitOnly(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit: %v", err)
 		}
 		return 0
 	}
 }
 
-// commit_done(id) — commit + auto-kill on completion
-func luaCommitDone(client *daemon.Client) lua.LGFunction {
+// commit_done(id)
+// Category: Features
+// Send /commit and auto-kill session on completion.
+func luaCommitDone(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		s := resolveSession(L, client, id)
-		if err := client.CommitAndDone(s.PaneID, id, s.PID); err != nil {
+		s := resolveSession(L, deps.Client, id)
+		if err := deps.Client.CommitAndDone(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit_done: %v", err)
 		}
 		return 0
@@ -138,21 +123,25 @@ func luaCommitDone(client *daemon.Client) lua.LGFunction {
 }
 
 // cancel_commit_done(id)
-func luaCancelCommitDone(client *daemon.Client) lua.LGFunction {
+// Category: Features
+// Cancel pending commit-done auto-kill.
+func luaCancelCommitDone(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		if err := client.CancelCommitDone(id); err != nil {
+		if err := deps.Client.CancelCommitDone(id); err != nil {
 			L.RaiseError("cancel_commit_done: %v", err)
 		}
 		return 0
 	}
 }
 
-// transcript(id) — user messages
-func luaTranscript(client *daemon.Client) lua.LGFunction {
+// transcript(id) -> []string
+// Category: Features
+// Get user messages from session transcript.
+func luaTranscript(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		msgs, err := client.Transcript(id)
+		msgs, err := deps.Client.Transcript(id)
 		if err != nil {
 			L.RaiseError("transcript: %v", err)
 			return 0
@@ -166,11 +155,13 @@ func luaTranscript(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// raw_transcript(id) — parsed transcript entries
-func luaRawTranscript(client *daemon.Client) lua.LGFunction {
+// raw_transcript(id) -> []entry
+// Category: Features
+// Get parsed transcript entries with index, type, content_type, summary, timestamp.
+func luaRawTranscript(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		entries, err := client.TranscriptEntries(id)
+		entries, err := deps.Client.TranscriptEntries(id)
 		if err != nil {
 			L.RaiseError("raw_transcript: %v", err)
 			return 0
@@ -190,11 +181,13 @@ func luaRawTranscript(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// diff_stats(id)
-func luaDiffStats(client *daemon.Client) lua.LGFunction {
+// diff_stats(id) -> {filepath: {added, removed}}
+// Category: Features
+// Get diff statistics per file for session.
+func luaDiffStats(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		stats, err := client.DiffStats(id)
+		stats, err := deps.Client.DiffStats(id)
 		if err != nil {
 			L.RaiseError("diff_stats: %v", err)
 			return 0
@@ -211,11 +204,13 @@ func luaDiffStats(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// diff_hunks(id)
-func luaDiffHunks(client *daemon.Client) lua.LGFunction {
+// diff_hunks(id) -> [{file_path, old_string, new_string, is_write}]
+// Category: Features
+// Get individual diff hunks for session.
+func luaDiffHunks(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		hunks, err := client.DiffHunks(id)
+		hunks, err := deps.Client.DiffHunks(id)
 		if err != nil {
 			L.RaiseError("diff_hunks: %v", err)
 			return 0
@@ -234,11 +229,13 @@ func luaDiffHunks(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// summary(id)
-func luaSummary(client *daemon.Client) lua.LGFunction {
+// summary(id) -> {headline}|nil
+// Category: Features
+// Get cached summary for session, or nil.
+func luaSummary(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		summary, err := client.Summary(id)
+		summary, err := deps.Client.Summary(id)
 		if err != nil {
 			L.RaiseError("summary: %v", err)
 			return 0
@@ -254,11 +251,13 @@ func luaSummary(client *daemon.Client) lua.LGFunction {
 	}
 }
 
-// hook_events(id)
-func luaHookEvents(client *daemon.Client) lua.LGFunction {
+// hook_events(id) -> [{time, hook_type, effect}]
+// Category: Features
+// Get hook events for session.
+func luaHookEvents(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		events, err := client.HookEvents(id)
+		events, err := deps.Client.HookEvents(id)
 		if err != nil {
 			L.RaiseError("hook_events: %v", err)
 			return 0

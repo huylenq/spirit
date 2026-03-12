@@ -1,18 +1,13 @@
 package scripting
 
 import (
-	"github.com/huylenq/claude-mission-control/internal/daemon"
 	lua "github.com/yuin/gopher-lua"
 )
 
-// registerLifecycleAPIs registers spawn() and kill() into the VM.
-func registerLifecycleAPIs(L *lua.LState, client *daemon.Client) {
-	L.SetGlobal("spawn", L.NewFunction(luaSpawn(client)))
-	L.SetGlobal("kill", L.NewFunction(luaKill(client)))
-}
-
-// spawn("/path", {tmux_session = "main", message = "fix bug"})
-func luaSpawn(client *daemon.Client) lua.LGFunction {
+// spawn(cwd, [{tmux_session, message}]) -> {session_id, pane_id}
+// Category: Lifecycle
+// Spawn a new Claude session in the given directory. Blocks up to 30s.
+func luaSpawn(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		cwd := L.CheckString(1)
 		tmuxSession := ""
@@ -28,7 +23,7 @@ func luaSpawn(client *daemon.Client) lua.LGFunction {
 			}
 		}
 
-		result, err := client.Spawn(cwd, tmuxSession, message)
+		result, err := deps.Client.Spawn(cwd, tmuxSession, message)
 		if err != nil {
 			L.RaiseError("spawn: %v", err)
 			return 0
@@ -43,10 +38,12 @@ func luaSpawn(client *daemon.Client) lua.LGFunction {
 }
 
 // kill(id)
-func luaKill(client *daemon.Client) lua.LGFunction {
+// Category: Lifecycle
+// Send SIGTERM to session and clean up.
+func luaKill(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		if err := client.Kill(id); err != nil {
+		if err := deps.Client.Kill(id); err != nil {
 			L.RaiseError("kill: %v", err)
 			return 0
 		}

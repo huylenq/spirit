@@ -1,10 +1,13 @@
-.PHONY: build clean restart
+.PHONY: generate build clean restart
 .DEFAULT_GOAL := restart
 
 BINARY := bin/cmc
 VERSION ?= dev
 
-build:
+generate:
+	go generate ./internal/scripting/
+
+build: generate
 	@mkdir -p bin
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) ./cmd/cmc
 
