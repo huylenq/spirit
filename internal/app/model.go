@@ -61,38 +61,38 @@ const (
 
 var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart}
 
-// Transcript display modes (cycled with T key).
+// Outline display modes (cycled with T key).
 const (
-	TranscriptOverlay = "overlay" // floats on top of viewport
-	TranscriptDocked  = "docked"  // side-by-side with viewport
-	TranscriptHidden  = "hidden"  // not shown
+	OutlineOverlay = "overlay" // floats on top of viewport
+	OutlineDocked  = "docked"  // side-by-side with viewport
+	OutlineHidden  = "hidden"  // not shown
 )
 
-var transcriptModes = []string{TranscriptOverlay, TranscriptDocked, TranscriptHidden}
+var outlineModes = []string{OutlineOverlay, OutlineDocked, OutlineHidden}
 
-func nextTranscriptMode(mode string) string {
+func nextOutlineMode(mode string) string {
 	switch mode {
-	case TranscriptOverlay:
-		return TranscriptDocked
-	case TranscriptDocked:
-		return TranscriptHidden
-	case TranscriptHidden:
-		return TranscriptOverlay
+	case OutlineOverlay:
+		return OutlineDocked
+	case OutlineDocked:
+		return OutlineHidden
+	case OutlineHidden:
+		return OutlineOverlay
 	default:
-		return TranscriptOverlay
+		return OutlineOverlay
 	}
 }
 
-func transcriptModeFlash(active string) string {
+func outlineModeFlash(active string) string {
 	var parts []string
-	for _, mode := range transcriptModes {
+	for _, mode := range outlineModes {
 		if mode == active {
 			parts = append(parts, ui.FooterKeyStyle.Render(mode))
 		} else {
 			parts = append(parts, ui.FooterDimStyle.Render(mode))
 		}
 	}
-	return "transcript: " + strings.Join(parts, ui.FooterDimStyle.Render(" · "))
+	return "outline: " + strings.Join(parts, ui.FooterDimStyle.Render(" · "))
 }
 
 // minimapModeFlash returns a styled string showing all modes with the active one highlighted,
@@ -154,7 +154,7 @@ type Model struct {
 	showHooks            bool
 	showRawTranscript    bool
 	showDiffs            bool
-	transcriptMode       string // TranscriptOverlay, TranscriptDocked, TranscriptHidden
+	outlineMode          string // OutlineOverlay, OutlineDocked, OutlineHidden
 	showMinimap          bool
 	minimapMode          string       // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
 	minimapMaxH          int          // max minimap height (persisted pref, default 14)
@@ -222,6 +222,7 @@ func NewModel(client *daemon.Client) Model {
 	migratePref("showBacklog", "backlogExpanded")
 	sidebar.SetBacklogExpanded(loadPrefBool("backlogExpanded"))
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
+	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -240,7 +241,7 @@ func NewModel(client *daemon.Client) Model {
 		promptEditor:      ui.NewPromptEditorModel(),
 		macroEditor:       ui.NewMacroEditorModel(),
 		macros:            claude.LoadMacros(nil),
-		transcriptMode:    loadPrefString("transcriptMode", TranscriptOverlay),
+		outlineMode:       loadPrefString("outlineMode", OutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
@@ -253,7 +254,7 @@ func NewModel(client *daemon.Client) Model {
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 	}
-	m.detail.SetTranscriptMode(m.transcriptMode)
+	m.detail.SetOutlineMode(m.outlineMode)
 	return m
 }
 
@@ -428,13 +429,13 @@ func capturePreview(paneID string) tea.Cmd {
 	}
 }
 
-func (m Model) fetchTranscript(paneID, sessionID string) tea.Cmd {
+func (m Model) fetchOutline(paneID, sessionID string) tea.Cmd {
 	if sessionID == "" {
 		return nil
 	}
 	return func() tea.Msg {
 		msgs, _ := m.client.Transcript(sessionID)
-		return TranscriptReadyMsg{PaneID: paneID, Messages: msgs}
+		return OutlineReadyMsg{PaneID: paneID, Messages: msgs}
 	}
 }
 
@@ -491,7 +492,7 @@ func (m *Model) fetchForSelection(s claude.ClaudeSession, syncMinimap bool) []te
 	m.detail.SetNote(s.Note)
 	cmds := []tea.Cmd{
 		capturePreview(s.PaneID),
-		m.fetchTranscript(s.PaneID, s.SessionID),
+		m.fetchOutline(s.PaneID, s.SessionID),
 		m.fetchDiffStats(s.PaneID, s.SessionID),
 		m.fetchCachedSummary(s.PaneID, s.SessionID),
 		switchPaneQuiet(s.TmuxSession, s.TmuxWindow, s.TmuxPane),

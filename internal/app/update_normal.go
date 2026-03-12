@@ -343,11 +343,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.LaterKill):
 		return m.execLaterKill()
 
-	case key.Matches(msg, Keys.Transcript):
-		m.transcriptMode = nextTranscriptMode(m.transcriptMode)
-		savePrefString("transcriptMode", m.transcriptMode)
-		m.detail.SetTranscriptMode(m.transcriptMode)
-		m.flashMsg = transcriptModeFlash(m.transcriptMode)
+	case key.Matches(msg, Keys.Outline):
+		m.outlineMode = nextOutlineMode(m.outlineMode)
+		savePrefString("outlineMode", m.outlineMode)
+		m.detail.SetOutlineMode(m.outlineMode)
+		m.flashMsg = outlineModeFlash(m.outlineMode)
 		m.flashIsError = false
 		m.flashExpiry = time.Now().Add(3 * time.Second)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return ClearFlashMsg{} })
@@ -366,6 +366,15 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("LATER expanded", false, 2*time.Second)
 		}
 		return m, m.setFlash("LATER collapsed", false, 2*time.Second)
+
+	case key.Matches(msg, Keys.ClaudingToggle):
+		newVal := !m.sidebar.ClaudingExpanded()
+		m.sidebar.SetClaudingExpanded(newVal)
+		savePrefBool("claudingCollapsed", !newVal)
+		if newVal {
+			return m, m.setFlash("CLAUDING expanded", false, 2*time.Second)
+		}
+		return m, m.setFlash("CLAUDING collapsed", false, 2*time.Second)
 
 	case key.Matches(msg, Keys.BacklogToggle):
 		newVal := !m.sidebar.BacklogExpanded()
@@ -393,7 +402,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(
 					capturePreview(s.PaneID),
-					m.fetchTranscript(s.PaneID, s.SessionID),
+					m.fetchOutline(s.PaneID, s.SessionID),
 					m.fetchCachedSummary(s.PaneID, s.SessionID),
 				)
 			}

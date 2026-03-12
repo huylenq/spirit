@@ -29,6 +29,7 @@ func (m *Model) applyPrefsFromText(text string) int {
 	// Apply each known key to live model state
 	m.sidebar.SetGroupByProject(prefs["groupByProject"] == "true")
 	m.sidebar.SetBacklogExpanded(prefs["backlogExpanded"] == "true")
+	m.sidebar.SetClaudingExpanded(prefs["claudingCollapsed"] != "true")
 	m.showMinimap = prefs["minimap"] == "true"
 	if v := prefs["minimapMode"]; v != "" {
 		m.minimapMode = v

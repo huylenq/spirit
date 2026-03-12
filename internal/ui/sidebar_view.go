@@ -48,6 +48,10 @@ func (m *SidebarModel) View() string {
 		currentOrder := -1
 
 		for _, s := range m.allSorted {
+			// When Clauding is collapsed, skip Clauding items entirely (header rendered at bottom)
+			if !m.claudingExpanded && sessionOrder(s) == OrderAgentTurn {
+				continue
+			}
 			// When Later is collapsed, skip Later items entirely (header rendered at bottom)
 			if !m.laterExpanded && sessionOrder(s) == OrderLater {
 				continue
@@ -146,14 +150,18 @@ func (m *SidebarModel) View() string {
 		}
 	}
 
-	// Pin collapsed section badges at the bottom (backlog and/or later when hidden)
-	laterCount := m.laterCount // cached by applyNarrow; non-zero only when !laterExpanded
+	// Pin collapsed section badges at the bottom (clauding, later, and/or backlog when hidden)
+	claudingCount := m.claudingCount // cached by applyNarrow; non-zero only when !claudingExpanded
+	laterCount := m.laterCount       // cached by applyNarrow; non-zero only when !laterExpanded
 	backlogCount := 0
 	if !m.backlogExpanded {
 		backlogCount = len(m.backlogs)
 	}
-	if (laterCount > 0 || backlogCount > 0) && m.height > 0 {
+	if (claudingCount > 0 || laterCount > 0 || backlogCount > 0) && m.height > 0 {
 		var parts []string
+		if claudingCount > 0 {
+			parts = append(parts, GroupHeaderWorkingStyle.Render(fmt.Sprintf("%s CLAUDING (%d)", IconBolt, claudingCount)))
+		}
 		if laterCount > 0 {
 			parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconBookmark, laterCount)))
 		}

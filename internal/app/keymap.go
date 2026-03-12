@@ -12,7 +12,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.Refresh, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro,
-		k.Rename, k.Transcript, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
+		k.Rename, k.Outline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 		k.JumpBack, k.Note,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -24,7 +24,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Enter, k.Search, k.Refresh, k.Quit},
 		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
-		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Transcript},
+		{k.Synthesize, k.SynthesizeAll, k.Rename, k.Outline},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
 		{k.Note},
 	}
@@ -37,10 +37,11 @@ type KeyMap struct {
 	Search     key.Binding
 	Later       key.Binding
 	LaterKill   key.Binding
-	LaterToggle   key.Binding
-	BacklogToggle key.Binding
+	LaterToggle    key.Binding
+	BacklogToggle  key.Binding
+	ClaudingToggle key.Binding
 	Refresh    key.Binding
-	Transcript key.Binding
+	Outline key.Binding
 	Quit       key.Binding
 	Escape     key.Binding
 
@@ -255,13 +256,17 @@ var Keys = KeyMap{
 		key.WithKeys("alt+b"),
 		key.WithHelp("alt+b", "toggle backlog"),
 	),
+	ClaudingToggle: key.NewBinding(
+		key.WithKeys("alt+c"),
+		key.WithHelp("alt+c", "toggle clauding"),
+	),
 	Refresh: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "refresh"),
 	),
-	Transcript: key.NewBinding(
+	Outline: key.NewBinding(
 		key.WithKeys("t"),
-		key.WithHelp("t", "transcript"),
+		key.WithHelp("t", "outline"),
 	),
 	Minimap: key.NewBinding(
 		key.WithKeys("m"),

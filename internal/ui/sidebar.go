@@ -73,7 +73,9 @@ type SidebarModel struct {
 	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
 	backlogExpanded     bool             // true = BACKLOG section visible
 	laterExpanded       bool             // true = LATER section visible
+	claudingExpanded    bool             // true = CLAUDING section visible
 	laterCount          int              // cached count of Later sessions (updated in applyNarrow)
+	claudingCount       int              // cached count of Clauding sessions (updated in applyNarrow)
 	landPaneID          string           // pane most recently jumped to (landing flash)
 	landFrame           int              // landing animation frame (0–3 visible, 4 = clear)
 	trailPaneID         string           // pane most recently jumped from (ghost trail)
@@ -122,11 +124,21 @@ func (m SidebarModel) LaterExpanded() bool {
 	return m.laterExpanded
 }
 
+func (m *SidebarModel) SetClaudingExpanded(v bool) {
+	m.claudingExpanded = v
+	m.applyNarrow()
+}
+
+func (m SidebarModel) ClaudingExpanded() bool {
+	return m.claudingExpanded
+}
+
 func NewSidebarModel() SidebarModel {
 	return SidebarModel{
 		diffStats:           make(map[string]map[string]claude.FileDiffStat),
 		summaryLoadingPanes: make(map[string]bool),
 		laterExpanded:       true,
+		claudingExpanded:    true,
 	}
 }
 
@@ -368,6 +380,20 @@ func (m *SidebarModel) applyNarrow() {
 		} else {
 			sortByStatus(m.filtered)
 		}
+	}
+	// Count Clauding sessions and remove them from the cursor-navigable list when collapsed
+	m.claudingCount = 0
+	if !m.claudingExpanded {
+		n := 0
+		for _, s := range m.filtered {
+			if sessionOrder(s) == OrderAgentTurn {
+				m.claudingCount++
+			} else {
+				m.filtered[n] = s
+				n++
+			}
+		}
+		m.filtered = m.filtered[:n]
 	}
 	// Count Later sessions and remove them from the cursor-navigable list when collapsed
 	m.laterCount = 0
