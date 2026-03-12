@@ -742,7 +742,7 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("=") + " create  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
-	case StateMacroEdit:
+	case StateMacroEdit, StateMemoEdit:
 		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)

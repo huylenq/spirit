@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -302,7 +301,7 @@ func boolPtr(v bool) *bool { return &v }
 // so it can patch the session in-place without re-polling.
 // Returns true if the daemon reported the nudge was deduped (no state change).
 func nudgeDaemon(nd nudgeData) bool {
-	sock := filepath.Join(StatusDir(), "daemon.sock")
+	sock := DaemonSocketPath()
 	conn, err := net.DialTimeout("unix", sock, 50*time.Millisecond)
 	if err != nil {
 		return false // daemon not running, no big deal

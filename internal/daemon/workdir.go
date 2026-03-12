@@ -3,9 +3,7 @@ package daemon
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -53,16 +51,9 @@ var (
 )
 
 func resolveDaemonInfo() DaemonInfo {
-	if exe, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-			if root, err := RepoRootForDir(filepath.Dir(resolved)); err == nil {
-				return WorkdirDaemonInfo(root)
-			}
-		}
-	}
-	dir := claude.StatusDir()
+	sock := claude.DaemonSocketPath()
 	return DaemonInfo{
-		SocketPath: dir + "/daemon.sock",
-		PIDPath:    dir + "/daemon.pid",
+		SocketPath: sock,
+		PIDPath:    strings.TrimSuffix(sock, ".sock") + ".pid",
 	}
 }

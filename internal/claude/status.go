@@ -2,10 +2,12 @@ package claude
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +24,34 @@ func StatusDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cache", "cmc")
 }
+
+// DaemonSocketPath returns the path to the daemon Unix socket.
+// If the binary lives inside a git repository, the socket is scoped to that
+// repo root under /tmp (matching the daemon's WorkdirDaemonInfo logic).
+// Otherwise falls back to StatusDir()/daemon.sock.
+func DaemonSocketPath() string {
+	daemonSocketOnce.Do(func() {
+		if exe, err := os.Executable(); err == nil {
+			if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+				cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+				cmd.Dir = filepath.Dir(resolved)
+				if out, err := cmd.Output(); err == nil {
+					root := strings.TrimSpace(string(out))
+					h := sha256.Sum256([]byte(root))
+					cachedDaemonSocket = fmt.Sprintf("/tmp/cmc-%x.sock", h[:6])
+					return
+				}
+			}
+		}
+		cachedDaemonSocket = filepath.Join(StatusDir(), "daemon.sock")
+	})
+	return cachedDaemonSocket
+}
+
+var (
+	cachedDaemonSocket string
+	daemonSocketOnce   sync.Once
+)
 
 func statusFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".status")
@@ -253,6 +283,31 @@ func WriteTags(sessionID string, tags []string) error {
 	return os.WriteFile(tagsFilePath(sessionID), []byte(strings.Join(tags, "\n")+"\n"), 0o644)
 }
 
+func memoFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".memo")
+}
+
+func ReadMemo(sessionID string) string {
+	data, err := os.ReadFile(memoFilePath(sessionID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteMemo(sessionID, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		RemoveMemo(sessionID)
+		return nil
+	}
+	return os.WriteFile(memoFilePath(sessionID), []byte(text), 0o644)
+}
+
+func RemoveMemo(sessionID string) {
+	os.Remove(memoFilePath(sessionID))
+}
+
 func stopReasonFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".stopreason")
 }
@@ -351,6 +406,7 @@ func RemoveSessionFiles(sessionID string) {
 	os.Remove(lastActionFilePath(sessionID))
 	os.Remove(skillFilePath(sessionID))
 	os.Remove(tagsFilePath(sessionID))
+	os.Remove(memoFilePath(sessionID))
 }
 
 // RemovePaneMapping removes the pane→session reverse mapping file.
@@ -365,7 +421,7 @@ func MigrateToSessionKey(paneID, sessionID string) {
 		return
 	}
 	dir := statusDir()
-	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags"}
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags", ".memo"}
 	for _, ext := range exts {
 		oldPath := filepath.Join(dir, paneID+ext)
 		newPath := filepath.Join(dir, sessionID+ext)
