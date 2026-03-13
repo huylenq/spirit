@@ -116,8 +116,7 @@ func (m Model) renderBacklogEditor(project string, width, height int) string {
 	m.promptEditor.SetSize(innerW, innerH)
 	contentBox := backlogContentBox(m.promptEditor.ViewTextarea(), contentWidth, innerH, ui.ColorBacklog)
 
-	hint := ui.FooterKeyStyle.Render("ctrl+enter") + ui.FooterDimStyle.Render(" save  ") +
-		ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" newline  ") +
+	hint := ui.FooterKeyStyle.Render("ctrl+s") + ui.FooterDimStyle.Render(" save  ") +
 		ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" cancel")
 
 	return title + "\n" + meta + "\n\n" + contentBox + "\n\n" + hint
@@ -145,7 +144,7 @@ func (m Model) renderBacklogPreview(backlog claude.Backlog, width, height, scrol
 		innerW = 6
 	}
 
-	body := backlog.Body
+	body := backlog.ContentBody()
 	if body == "" {
 		body = ui.ItemDetailStyle.Render("(empty)")
 	}
@@ -249,8 +248,7 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateBacklogPrompt:
-		h := ui.FooterKeyStyle.Render("ctrl+enter") + " save  " +
-			ui.FooterKeyStyle.Render("enter") + " newline  " +
+		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateBacklogDeleteConfirm:

@@ -14,9 +14,10 @@ import (
 
 // Chat outline display modes (must match constants in internal/app/model.go).
 const (
-	chatOutlineOverlay = "overlay"
-	chatOutlineDocked  = "docked"
-	chatOutlineHidden  = "hidden"
+	chatOutlineOverlay    = "overlay"
+	chatOutlineDocked     = "docked"
+	chatOutlineDockedLeft = "docked-left"
+	chatOutlineHidden     = "hidden"
 )
 
 // diffFileStat is a pre-sorted, per-file diff entry cached on SetDiffStats.
@@ -44,7 +45,8 @@ type DetailModel struct {
 	relayView              string          // when set, rendered inline after the ❯ prompt line
 	hookEvents             []claude.HookEvent
 	showHooks              bool
-	chatOutlineMode            string // chatOutlineOverlay, chatOutlineDocked, chatOutlineHidden
+	chatOutlineMode         string // chatOutlineOverlay, chatOutlineDocked, chatOutlineDockedLeft, chatOutlineHidden
+	chatOutlineWidthOverride int  // 0 = use calcPanelWidth default
 	hookCursor             int
 	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
 	hookExpandedJSON       map[int]string // lazy pretty-print cache
@@ -103,8 +105,8 @@ func (m *DetailModel) SetSize(w, h int) {
 	}
 }
 
-// calcPanelWidth returns the sidebar/overlay panel width for a given content width,
-// clamped to [20, 50].
+// calcPanelWidth returns the default sidebar/overlay panel width for a given
+// content width, clamped to [20, 50].
 func calcPanelWidth(contentWidth int) int {
 	w := contentWidth * 40 / 100
 	if w < 20 {
@@ -114,6 +116,30 @@ func calcPanelWidth(contentWidth int) int {
 		w = 50
 	}
 	return w
+}
+
+const minPanelWidth = 16
+
+// effectivePanelWidth returns the panel width to use, respecting the user's
+// drag override if set, otherwise falling back to calcPanelWidth.
+func (m *DetailModel) effectivePanelWidth(contentWidth int) int {
+	if m.chatOutlineWidthOverride > 0 {
+		w := m.chatOutlineWidthOverride
+		maxW := contentWidth - 20 // leave at least 20 cols for viewport
+		if w > maxW {
+			w = maxW
+		}
+		if w < minPanelWidth {
+			w = minPanelWidth
+		}
+		return w
+	}
+	return calcPanelWidth(contentWidth)
+}
+
+// isChatOutlineDocked reports whether the outline is in any docked mode (left or right).
+func (m *DetailModel) isChatOutlineDocked() bool {
+	return m.chatOutlineMode == chatOutlineDocked || m.chatOutlineMode == chatOutlineDockedLeft
 }
 
 // hasSidebarContent reports whether any panel content (transcript, summary, note)
@@ -130,8 +156,8 @@ func (m *DetailModel) effectiveVPWidth(w int) int {
 	if vpWidth < 1 {
 		vpWidth = 1
 	}
-	if m.chatOutlineMode == chatOutlineDocked && m.hasSidebarContent() {
-		vpWidth = contentWidth - calcPanelWidth(contentWidth) - 3 // 1 gap + 2 for content border
+	if m.isChatOutlineDocked() && m.hasSidebarContent() {
+		vpWidth = contentWidth - m.effectivePanelWidth(contentWidth) - 3 // 1 gap + 2 for content border
 		if vpWidth < 1 {
 			vpWidth = 1
 		}
@@ -144,13 +170,68 @@ func (m *DetailModel) effectiveVPWidth(w int) int {
 // modes it matches the viewport width.
 func (m *DetailModel) effectiveDividerWidth(vpWidth int) int {
 	if m.chatOutlineMode == chatOutlineOverlay && m.hasSidebarContent() {
-		w := vpWidth - calcPanelWidth(m.width-4) - 1
+		w := vpWidth - m.effectivePanelWidth(m.width-4) - 1
 		if w < 1 {
 			return 1
 		}
 		return w
 	}
 	return vpWidth
+}
+
+// SetChatOutlineWidth sets the panel width override and recomputes the viewport
+// layout so content reflows correctly.
+func (m *DetailModel) SetChatOutlineWidth(w int) {
+	m.chatOutlineWidthOverride = w
+	if m.ready {
+		vpWidth := m.effectiveVPWidth(m.width)
+		m.viewport.Width = vpWidth
+		if m.content != "" {
+			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), vpWidth, m.effectiveDividerWidth(vpWidth)))
+		}
+	}
+}
+
+// ChatOutlineWidthOverride returns the current width override (0 = default).
+func (m *DetailModel) ChatOutlineWidthOverride() int {
+	return m.chatOutlineWidthOverride
+}
+
+// Width returns the detail panel's current width.
+func (m *DetailModel) Width() int {
+	return m.width
+}
+
+// EffectivePanelWidth returns the panel width that will be used for rendering.
+func (m *DetailModel) EffectivePanelWidth(contentWidth int) int {
+	return m.effectivePanelWidth(contentWidth)
+}
+
+// ChatOutlineDragEdge returns the local x column of the drag edge for the
+// current chat outline mode, or -1 if drag-resize is not applicable.
+func (m *DetailModel) ChatOutlineDragEdge() int {
+	if m.chatOutlineMode == chatOutlineHidden || !m.hasSidebarContent() {
+		return -1
+	}
+	contentWidth := m.width - 4
+	panelWidth := m.effectivePanelWidth(contentWidth)
+	switch m.chatOutlineMode {
+	case chatOutlineDocked:
+		// Gap column between viewport (left) and outline (right)
+		vpWidth := contentWidth - panelWidth - 3
+		if vpWidth < 1 {
+			vpWidth = 1
+		}
+		return vpWidth + 1
+	case chatOutlineDockedLeft:
+		// Gap column between outline (left) and viewport (right)
+		return panelWidth + 1
+	case chatOutlineOverlay:
+		// Left edge of the overlay panel
+		return contentWidth - panelWidth
+	default:
+		return -1
+	}
 }
 
 // ViewportHeight returns the current height of the detail viewport in lines.

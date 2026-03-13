@@ -63,24 +63,21 @@ var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSma
 
 // Outline display modes (cycled with T key).
 const (
-	ChatOutlineOverlay = "overlay" // floats on top of viewport
-	ChatOutlineDocked  = "docked"  // side-by-side with viewport
-	ChatOutlineHidden  = "hidden"  // not shown
+	ChatOutlineOverlay    = "overlay"     // floats on top of viewport
+	ChatOutlineDocked     = "docked"      // side-by-side with viewport (right)
+	ChatOutlineDockedLeft = "docked-left" // side-by-side with viewport (left)
+	ChatOutlineHidden     = "hidden"      // not shown
 )
 
-var chatOutlineModes = []string{ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineHidden}
+var chatOutlineModes = []string{ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineDockedLeft, ChatOutlineHidden}
 
 func nextChatOutlineMode(mode string) string {
-	switch mode {
-	case ChatOutlineOverlay:
-		return ChatOutlineDocked
-	case ChatOutlineDocked:
-		return ChatOutlineHidden
-	case ChatOutlineHidden:
-		return ChatOutlineOverlay
-	default:
-		return ChatOutlineOverlay
+	for i, m := range chatOutlineModes {
+		if m == mode {
+			return chatOutlineModes[(i+1)%len(chatOutlineModes)]
+		}
 	}
+	return ChatOutlineOverlay
 }
 
 func chatOutlineModeFlash(active string) string {
@@ -201,6 +198,9 @@ type Model struct {
 	showSpiritAnimal     bool                      // toggle spirit animal overlay (gs chord)
 	lastClickPaneID      string                    // pane clicked last (for double-click detection)
 	lastClickTime        time.Time                 // when the last minimap click happened
+	outlineDragging      bool                      // true while drag-resizing the chat outline panel
+	outlineDragStartX    int                       // terminal x at drag start
+	outlineDragStartW    int                       // panel width at drag start
 	jumpTrail            []string                  // pane IDs for jump history (like Vim's jumplist)
 	jumpCursor           int                       // position in jumpTrail; len(jumpTrail) = at head
 	nonClaudePane        *ui.MinimapPaneInfo       // focused non-Claude pane (minimap nav)
@@ -256,6 +256,9 @@ func NewModel(client *daemon.Client) Model {
 		messageLog:        loadMessageLog(),
 	}
 	m.detail.SetChatOutlineMode(m.chatOutlineMode)
+	if w := loadPrefInt("chatOutlineWidth", 0); w > 0 {
+		m.detail.SetChatOutlineWidth(w)
+	}
 	return m
 }
 

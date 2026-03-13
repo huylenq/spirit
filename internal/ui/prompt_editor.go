@@ -222,7 +222,7 @@ func (m *PromptEditorModel) View(title string, width int) string {
 		header += "  " + peBadgeStyle.Render("["+m.selectedModel+"]")
 	}
 	if m.planMode {
-		header += "  " + peBadgeStyle.Render("[plan]")
+		header += "  " + peBadgeStyle.Render(IconPlan + " plan")
 	}
 	if m.worktreeMode {
 		header += "  " + peBadgeStyle.Render("[worktree: "+m.worktreeName+"]")
@@ -234,7 +234,7 @@ func (m *PromptEditorModel) View(title string, width int) string {
 
 	var hint string
 	if m.mode == ModeNewBacklog || m.mode == ModeEditBacklog {
-		hint = keyStyle.Render("enter") + FooterDimStyle.Render(" save  ") +
+		hint = keyStyle.Render("ctrl+s") + FooterDimStyle.Render(" save  ") +
 			keyStyle.Render("esc") + FooterDimStyle.Render(" cancel")
 	} else {
 		var planToggle, worktreeToggle string

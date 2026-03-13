@@ -66,7 +66,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, Keys.Enter):
 			return m.execEditBacklog()
-		case key.Matches(msg, Keys.CtrlEnter):
+		case key.Matches(msg, Keys.CtrlEnter), key.Matches(msg, Keys.NewSession):
 			return m.execSubmitBacklog()
 		case msg.String() == "e":
 			return m.execOpenBacklogInEditor()

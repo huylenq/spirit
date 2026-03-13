@@ -97,22 +97,27 @@ func (m *DetailModel) View() string {
 	var contentBox string
 	showChatOutline := m.chatOutlineMode != chatOutlineHidden && (len(m.userMessages) > 0 || m.summary != nil)
 	showNote := (m.note != "" || m.noteEditing) && m.chatOutlineMode != chatOutlineHidden
-	panelWidth := calcPanelWidth(contentWidth)
-	if (showChatOutline || showNote) && m.chatOutlineMode == chatOutlineDocked {
+	panelWidth := m.effectivePanelWidth(contentWidth)
+	if (showChatOutline || showNote) && m.isChatOutlineDocked() {
 		chatOutlineWidth := panelWidth
 		vpWidth := contentWidth - chatOutlineWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
-		var rightCol string
+		var sideCol string
 		switch {
 		case showChatOutline && showNote:
-			rightCol = lipgloss.JoinVertical(lipgloss.Left, m.renderChatOutline(chatOutlineWidth), m.renderNotePanel(chatOutlineWidth))
+			sideCol = lipgloss.JoinVertical(lipgloss.Left, m.renderChatOutline(chatOutlineWidth), m.renderNotePanel(chatOutlineWidth))
 		case showChatOutline:
-			rightCol = m.renderChatOutline(chatOutlineWidth)
+			sideCol = m.renderChatOutline(chatOutlineWidth)
 		default:
-			rightCol = m.renderNotePanel(chatOutlineWidth)
+			sideCol = m.renderNotePanel(chatOutlineWidth)
 		}
-		joined := lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", rightCol)
+		var joined string
+		if m.chatOutlineMode == chatOutlineDockedLeft {
+			joined = lipgloss.JoinHorizontal(lipgloss.Top, sideCol, " ", vpPanel)
+		} else {
+			joined = lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", sideCol)
+		}
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {

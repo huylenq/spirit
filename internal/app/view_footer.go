@@ -20,7 +20,7 @@ func (m Model) renderNormalFooterHints() string {
 	// Backlog-specific footer
 	if m.sidebar.IsBacklogSelected() {
 		parts = append(parts, hint("j/k", "nav"))
-		parts = append(parts, hint("enter", "submit"), hint("b", "edit"), hint("e", "$EDITOR"), hint("d", "delete"))
+		parts = append(parts, hint("enter", "edit"), hint("a", "submit"), hint("b", "new"), hint("e", "$EDITOR"), hint("d", "delete"))
 		parts = append(parts, hint("?", "help"), hint("q", "quit"))
 		return strings.Join(parts, "  ")
 	}
