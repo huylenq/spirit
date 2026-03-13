@@ -133,11 +133,9 @@ func (m *SidebarModel) View() string {
 		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
 
 		currentBacklogProject := ""
-		currentBacklogTag := ""
 		for i, backlog := range m.filteredBacklog {
 			if backlog.Project != currentBacklogProject {
 				currentBacklogProject = backlog.Project
-				currentBacklogTag = ""
 				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
 				if atProjectLevel && selectedProject == backlogPE {
 					m.selectedProjectRow = len(lines)
@@ -145,14 +143,6 @@ func (m *SidebarModel) View() string {
 				} else {
 					lines = append(lines, renderProjectSubHeader(backlog.Project))
 				}
-			}
-			tagKey := backlogTagKey(backlog)
-			if tagKey != "" && tagKey != currentBacklogTag {
-				currentBacklogTag = tagKey
-				lines = append(lines, renderBacklogTagSubHeader(tagKey))
-			} else if tagKey == "" && currentBacklogTag != "" {
-				currentBacklogTag = ""
-				lines = append(lines, renderBacklogTagSubHeader("untagged"))
 			}
 			backlogCursor := len(m.filtered) + i
 			isSelected := backlogCursor == m.cursor && !m.deselected && !atProjectLevel
@@ -217,9 +207,6 @@ func renderProjectSubHeader(project string) string {
 	return ProjectSubHeaderStyle.Render(IconFolder + " " + project)
 }
 
-func renderBacklogTagSubHeader(tag string) string {
-	return ProjectSubHeaderStyle.Render("  " + tag)
-}
 
 func renderStatusGroupHeader(order int) string {
 	switch order {
@@ -409,11 +396,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
 		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
-		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
-			line += "\n" + m.renderSubtitleLine(s.Headline, query, IconHeadline, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
+		if s.SynthesizedTitle() != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle(), query) {
+			line += "\n" + m.renderSubtitleLine(s.SynthesizedTitle(), query, IconSynthTitle, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
 		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
-		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle() != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
 			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
@@ -468,7 +455,7 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 	age := FormatAge(backlog.UpdatedAt)
 
 	const prefixWidth = 4
-	iconStr := ItemDetailStyle.Render(IconBacklog + "  ")
+	iconStr := ItemDetailStyle.Render(IconBacklog + " ")
 	iconWidth := lipgloss.Width(iconStr)
 	ageStr := ItemDetailStyle.Render(age)
 	ageWidth := lipgloss.Width(ageStr)
@@ -503,13 +490,13 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 	if isSelected {
 		if isLanding {
 			line = "  " + barSt.Render("▌") + bg.Render(" ") +
-				bg.Render(IconBacklog+"  ") +
+				bg.Render(IconBacklog+" ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
 				bg.Render(age)
 		} else {
 			line = "  " + bg.Render("▌ ") +
-				bg.Render(IconBacklog+"  ") +
+				bg.Render(IconBacklog+" ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
 				bg.Render(age)
@@ -973,22 +960,12 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	}
 	currentLine++ // "BACKLOG" group header
 
-	// Walk backlog items: project header → optional tag sub-headers → items.
+	// Walk backlog items: project header → items.
 	currentBacklogProject := ""
-	currentBacklogTag := ""
 	for _, backlog := range m.filteredBacklog {
 		if backlog.Project != currentBacklogProject {
 			currentBacklogProject = backlog.Project
-			currentBacklogTag = ""
 			currentLine++ // project sub-header
-		}
-		tagKey := backlogTagKey(backlog)
-		if tagKey != "" && tagKey != currentBacklogTag {
-			currentBacklogTag = tagKey
-			currentLine++ // tag sub-header
-		} else if tagKey == "" && currentBacklogTag != "" {
-			currentBacklogTag = ""
-			currentLine++ // "untagged" sub-header
 		}
 		if line == currentLine {
 			return backlog.ID
@@ -1029,10 +1006,10 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 
 	hasQuery := query != ""
 	if hasQuery {
-		if s.Headline != "" && s.CustomTitle != "" && matchesNarrow(s.Headline, query) {
+		if s.SynthesizedTitle() != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle(), query) {
 			count++
 		}
-		if s.FirstMessage != "" && (s.CustomTitle != "" || s.Headline != "") && matchesNarrow(s.FirstMessage, query) {
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle() != "") && matchesNarrow(s.FirstMessage, query) {
 			count++
 		}
 	}
