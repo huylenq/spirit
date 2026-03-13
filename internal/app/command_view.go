@@ -28,6 +28,13 @@ func (m Model) execRefresh() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execApplyTitle() (Model, tea.Cmd) {
+	if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
+		return m, m.fetchApplyTitle(s.PaneID, s.SessionID)
+	}
+	return m, nil
+}
+
 func (m Model) execDebug() (Model, tea.Cmd) {
 	m.debugMode = !m.debugMode
 	if m.debugMode {

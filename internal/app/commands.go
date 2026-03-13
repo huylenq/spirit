@@ -52,9 +52,12 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRename() },
 		},
 		{
-			Name: "Refresh preview", Hotkey: "r",
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRefresh() },
+			Name: "Apply title", Hotkey: "r",
+			Enabled: func(m *Model) bool {
+				s, ok := m.sidebar.SelectedItem()
+				return ok && s.TitleDrift
+			},
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execApplyTitle() },
 		},
 		{
 			Name: "Commit", Hotkey: "c",

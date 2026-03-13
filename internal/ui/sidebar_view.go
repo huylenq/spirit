@@ -269,6 +269,9 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Build right-side (detail + overlap badge + diff stats) — styles include bg when selected
 	right := m.renderDetail(s, isSelected)
+	if s.TitleDrift {
+		right += sp(" ") + withBg(DriftStyle).Render(IconSynthTitle)
+	}
 	if s.HasOverlap {
 		right += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
 	}

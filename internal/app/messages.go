@@ -123,6 +123,11 @@ type BacklogsRefreshedMsg struct {
 	Backlogs []claude.Backlog
 }
 
+// ApplyTitleReadyMsg is sent when the apply-title RPC completes.
+type ApplyTitleReadyMsg struct {
+	Err error
+}
+
 // PaneKilledMsg is sent after attempting to kill a session and close its pane.
 type PaneKilledMsg struct {
 	Err error

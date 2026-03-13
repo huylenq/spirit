@@ -553,21 +553,20 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, reopenPopup(m.binaryPath, m.inFullscreenPopup)
 
 	case key.Matches(msg, Keys.ListShrink):
-		m.sidebarWidthPct = max(m.sidebarWidthPct-5, 10)
+		m.sidebarWidthPct = max(m.sidebarWidthPct-5, minSidebarWidthPct)
 		m.applyLayout()
 		savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 		return m, nil
 
 	case key.Matches(msg, Keys.ListGrow):
-		m.sidebarWidthPct = min(m.sidebarWidthPct+5, 60)
+		m.sidebarWidthPct = min(m.sidebarWidthPct+5, maxSidebarWidthPct)
 		m.applyLayout()
 		savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 		return m, nil
 
-	case key.Matches(msg, Keys.Refresh):
-		// In daemon mode, sessions are pushed — but we can still force a preview refresh
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			return m, capturePreview(s.PaneID)
+	case key.Matches(msg, Keys.ApplyTitle):
+		if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
+			return m, m.fetchApplyTitle(s.PaneID, s.SessionID)
 		}
 		return m, nil
 

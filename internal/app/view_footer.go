@@ -99,7 +99,7 @@ func (m Model) renderHelpOverlay() string {
 		hint("R", "rename window"),
 		hint("c", "commit"),
 		hint("C", "commit + done"),
-		hint("r", "refresh preview"),
+		hint("r", "apply title"),
 	}, "\n")
 
 	chordHints := make([]string, 0, len(Chords))

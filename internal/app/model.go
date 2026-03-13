@@ -51,6 +51,12 @@ const (
 
 const defaultMinimapMaxH = 14
 
+// Sidebar width percentage bounds (clamped during keyboard/mouse resize).
+const (
+	minSidebarWidthPct = 10
+	maxSidebarWidthPct = 60
+)
+
 // Minimap display modes (cycled with M key).
 const (
 	MinimapAuto   = "auto"   // docked in fullscreen, overlay in normal
@@ -601,6 +607,13 @@ func (m Model) fetchSynthesizeAll(skipPaneID string) tea.Cmd {
 			appResults[i] = SynthesizeAllResult{PaneID: r.PaneID, Summary: r.Summary, FromCache: r.FromCache}
 		}
 		return SynthesizeAllReadyMsg{Results: appResults}
+	}
+}
+
+func (m Model) fetchApplyTitle(paneID, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.ApplyTitle(paneID, sessionID)
+		return ApplyTitleReadyMsg{Err: err}
 	}
 }
 

@@ -469,6 +469,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ApplyTitleReadyMsg:
+		if msg.Err != nil {
+			return m, m.setFlash("Apply title failed: "+msg.Err.Error(), true, 5*time.Second)
+		}
+		return m, nil
+
 	case flashInfoMsg:
 		return m, m.setFlash(string(msg), false, 2*time.Second)
 

@@ -42,10 +42,9 @@ func (m *Model) focusNonClaudePane() tea.Cmd {
 
 // hitTestPanel determines which panel a terminal coordinate belongs to.
 func (m Model) hitTestPanel(x, y int) mousePanel {
-	contentHeight := m.height - 3
+	contentHeight := m.contentHeight()
 	colOffset := 0
 	if !m.inFullscreenPopup {
-		contentHeight--
 		colOffset = 1 // left border
 	}
 
@@ -78,8 +77,27 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 	return panelDetail
 }
 
+// sidebarDragEdge returns the terminal x column of the sidebar's right border.
+func (m Model) sidebarDragEdge() int {
+	colOffset := 0
+	if !m.inFullscreenPopup {
+		colOffset = 1
+	}
+	return colOffset + m.sidebarPanelWidth() - 1
+}
+
 // handleMouseClick dispatches a left-click to the appropriate panel handler.
 func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Check for sidebar edge drag before panel dispatch.
+	edge := m.sidebarDragEdge()
+	if msg.X >= edge-1 && msg.X <= edge+1 &&
+		msg.Y >= contentStartRow && msg.Y < contentStartRow+m.contentHeight() {
+		m.sidebarDragging = true
+		m.sidebarDragStartX = msg.X
+		m.sidebarDragStartPct = m.sidebarWidthPct
+		return m, nil
+	}
+
 	switch m.hitTestPanel(msg.X, msg.Y) {
 	case panelMinimap:
 		return m.handleMinimapClick(msg)
@@ -151,10 +169,9 @@ func (m Model) minimapGridCoords(termX, termY int) (int, int, bool) {
 	if mmH == 0 {
 		return 0, 0, false
 	}
-	contentHeight := m.height - 3
+	contentHeight := m.contentHeight()
 	mmTermCol := 0
 	if !m.inFullscreenPopup {
-		contentHeight--
 		mmTermCol = 1
 	}
 	mmTermRow := 2 + contentHeight - mmH
@@ -269,6 +286,27 @@ func (m Model) handleOutlineDragRelease() (tea.Model, tea.Cmd) {
 		m.detail.SetChatOutlineWidth(w) // final reflow at the settled width
 		savePrefInt("chatOutlineWidth", w)
 	}
+	return m, nil
+}
+
+// handleSidebarDragMotion updates the sidebar width during a drag.
+func (m Model) handleSidebarDragMotion(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	innerW := m.innerWidth()
+	if innerW <= 0 {
+		return m, nil
+	}
+	delta := msg.X - m.sidebarDragStartX
+	newPct := m.sidebarDragStartPct + delta*100/innerW
+	m.sidebarWidthPct = max(min(newPct, maxSidebarWidthPct), minSidebarWidthPct)
+	m.applyLayoutFast()
+	return m, nil
+}
+
+// handleSidebarDragRelease finalizes the sidebar drag and persists the new width.
+func (m Model) handleSidebarDragRelease() (tea.Model, tea.Cmd) {
+	m.sidebarDragging = false
+	m.applyLayout()
+	savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 	return m, nil
 }
 

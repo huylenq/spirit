@@ -45,6 +45,7 @@ var (
 	StatPostToolStyle = lipgloss.NewStyle().Foreground(ColorPostTool)
 	CommitDoneStyle   = DiffAddedStyle
 	OverlapStyle      = lipgloss.NewStyle().Foreground(ColorOverlap)
+	DriftStyle        = lipgloss.NewStyle().Foreground(ColorWorking) // amber — title needs /rename
 
 	// Sidebar panel
 	SidebarPanelStyle = lipgloss.NewStyle().
