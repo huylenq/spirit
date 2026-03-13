@@ -280,13 +280,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		return s
 	}
 
-	// Build right-side (detail + diff stats) — styles include bg when selected
-	detail := m.renderDetail(s, isSelected)
-	overlapPart := ""
+	// Build right-side (detail + overlap badge + diff stats) — styles include bg when selected
+	right := m.renderDetail(s, isSelected)
 	if s.HasOverlap {
-		overlapPart = sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
+		right += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
 	}
-	right := detail + overlapPart
 	if s.SessionID != "" {
 		if stats, ok := m.diffStats[s.SessionID]; ok && len(stats) > 0 {
 			totalAdded, totalRemoved := 0, 0
@@ -294,17 +292,16 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 				totalAdded += ds.Added
 				totalRemoved += ds.Removed
 			}
-			diffPart := sp("  ") +
+			right += sp("  ") +
 				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
 				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
 				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
-			right = detail + overlapPart + diffPart
 		} else if dw.files > 0 {
 			// Pad so the spinner stays in the same column as items that have diff stats
 			diffPartWidth := 2 + lipgloss.Width(fmt.Sprintf("%s %*d", IconFile, dw.files, 0)) +
 				1 + len(fmt.Sprintf("+%-*d", dw.added, 0)) +
 				1 + len(fmt.Sprintf("-%-*d", dw.removed, 0))
-			right = detail + overlapPart + sp(strings.Repeat(" ", diffPartWidth))
+			right += sp(strings.Repeat(" ", diffPartWidth))
 		}
 	}
 	rightWidth := lipgloss.Width(right)
@@ -347,7 +344,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if s.IsWorktree {
 			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
 		}
-		namePart = bg.Render("  ") +
+		namePart = "  " +
 			barSt.Render("▌") +
 			bg.Render(" ") +
 			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
@@ -376,7 +373,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// selSubtitle wraps a subtitle content string with the selection bar at col 2.
 	// bar(1) + sp("  ")(2) + content(m.width-5) = m.width-2 total, matching the main line.
 	selSubtitle := func(style lipgloss.Style, content string) string {
-		return sp("  ") + barSt.Render("▌") +
+		return "  " + barSt.Render("▌") +
 			withBg(style).Width(m.width-5).Render(content)
 	}
 
@@ -435,7 +432,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 				if badges != "" {
 					sep = "  "
 				}
-				line += "\n" + sp("  ") + barSt.Render("▌") +
+				line += "\n" + "  " + barSt.Render("▌") +
 					withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
 			} else {
 				line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
@@ -451,9 +448,12 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 }
 
 // backlogItemLineCount returns the number of terminal lines a rendered backlog item occupies.
-// Must stay in sync with renderBacklogItem.
-func backlogItemLineCount(b claude.Backlog) int {
+// Must stay in sync with renderBacklogItem — accounts for tags line AND active tag input.
+func (m SidebarModel) backlogItemLineCount(b claude.Backlog) int {
 	if len(b.Tags) > 0 {
+		return 2
+	}
+	if m.inlineTagBacklogID == b.ID && m.inlineTagInputView != "" {
 		return 2
 	}
 	return 1
@@ -502,13 +502,13 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 	var line string
 	if isSelected {
 		if isLanding {
-			line = bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
+			line = "  " + barSt.Render("▌") + bg.Render(" ") +
 				bg.Render(IconBacklog+"  ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
 				bg.Render(age)
 		} else {
-			line = bg.Render("  ▌ ") +
+			line = "  " + bg.Render("▌ ") +
 				bg.Render(IconBacklog+"  ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
@@ -538,7 +538,7 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 				if tagsStr != "" {
 					sep = "  "
 				}
-				line += "\n" + bg.Render("  ▌ ") +
+				line += "\n" + "  " + bg.Render("▌ ") +
 					TagBadgeStyle.Background(ColorSelectionBg).Render(indent+tagsStr+sep) +
 					m.inlineTagInputView
 			} else {
@@ -548,11 +548,11 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 					padWidth = 0
 				}
 				if isLanding {
-					line += "\n" + bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
+					line += "\n" + "  " + barSt.Render("▌") + bg.Render(" ") +
 						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
 						bg.Render(strings.Repeat(" ", padWidth))
 				} else {
-					line += "\n" + bg.Render("  ▌ ") +
+					line += "\n" + "  " + bg.Render("▌ ") +
 						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
 						bg.Render(strings.Repeat(" ", padWidth))
 				}
@@ -608,7 +608,7 @@ func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, i
 		if padWidth < 0 {
 			padWidth = 0
 		}
-		return bgStyle.Render("  ") + barSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
+		return "  " + barSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
 	// Unselected — with optional auto-jump bar at col 2
@@ -993,7 +993,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		if line == currentLine {
 			return backlog.ID
 		}
-		currentLine += backlogItemLineCount(backlog)
+		currentLine += m.backlogItemLineCount(backlog)
 	}
 	return ""
 }
