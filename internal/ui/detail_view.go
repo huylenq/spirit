@@ -175,6 +175,27 @@ func (m *DetailModel) View() string {
 // outlineGap is the number of space columns between the styled bullet glyph and message text.
 const outlineGap = 1
 
+// outlineIndicatorWidth returns the visual column width of a styled bullet indicator + gap.
+// All bullet styles share the same Padding(0,1), so this is constant across glyph types.
+func outlineIndicatorWidth() int {
+	return lipgloss.Width(TranscriptBulletStyle.Render("x")) + outlineGap
+}
+
+// stripOutlinePrefix removes the type-prefix glyph (bash/plan/slash) from a
+// flattened outline message, returning the stripped text.
+func stripOutlinePrefix(flat string) string {
+	switch {
+	case strings.HasPrefix(flat, claude.BashCmdGlyph):
+		return flat[len(claude.BashCmdGlyph):]
+	case strings.HasPrefix(flat, claude.PlanGlyph):
+		return flat[len(claude.PlanGlyph):]
+	case strings.HasPrefix(flat, claude.SlashCmdGlyph):
+		return flat[len(claude.SlashCmdGlyph):]
+	default:
+		return flat
+	}
+}
+
 // renderChatOutline renders the user messages outline panel with a border.
 func (m DetailModel) renderChatOutline(width int) string {
 	// Inner width for text (subtract border 2 + padding 2)
@@ -192,6 +213,11 @@ func (m DetailModel) renderChatOutline(width int) string {
 
 	var lines []string
 
+	// Hoist constant layout values before the loop.
+	indicatorWidth := outlineIndicatorWidth()
+	msgWidth := max(1, innerWidth-indicatorWidth)
+	indentPad := strings.Repeat(" ", indicatorWidth)
+
 	titleLine := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
@@ -199,22 +225,20 @@ func (m DetailModel) renderChatOutline(width int) string {
 		focused := i == m.msgCursor
 
 		// Flatten + detect/strip type prefix → promote prefix to bullet glyph.
-		flat := strings.ReplaceAll(msg, "\n", " ")
+		raw := strings.ReplaceAll(msg, "\n", " ")
+		flat := stripOutlinePrefix(raw)
 		bulletGlyph := IconQuote
 		typedStyle := TranscriptBulletStyle
 		switch {
-		case strings.HasPrefix(flat, claude.BashCmdGlyph):
+		case strings.HasPrefix(raw, claude.BashCmdGlyph):
 			bulletGlyph = "!"
 			typedStyle = bashBulletStyle
-			flat = flat[len(claude.BashCmdGlyph):]
-		case strings.HasPrefix(flat, claude.PlanGlyph):
+		case strings.HasPrefix(raw, claude.PlanGlyph):
 			bulletGlyph = IconPlan
 			typedStyle = planBulletStyle
-			flat = flat[len(claude.PlanGlyph):]
-		case strings.HasPrefix(flat, claude.SlashCmdGlyph):
+		case strings.HasPrefix(raw, claude.SlashCmdGlyph):
 			bulletGlyph = "/"
 			typedStyle = slashBulletStyle
-			flat = flat[len(claude.SlashCmdGlyph):]
 		}
 
 		msgStyle := TranscriptMsgStyle
@@ -233,19 +257,15 @@ func (m DetailModel) renderChatOutline(width int) string {
 			msgStyle = ItemDetailStyle
 		}
 		// Indicator = styled glyph (includes style padding) + uniform gap.
-		// Use lipgloss.Width on the rendered result to account for Padding(0,1) on bullet styles.
 		styledIndicator := styledGlyph + strings.Repeat(" ", outlineGap)
-		indicatorWidth := lipgloss.Width(styledIndicator)
 
-		// Allow up to 2 lines per message: innerWidth minus this indicator's visual width.
-		msgWidth := max(1, innerWidth-indicatorWidth)
 		if ansi.StringWidth(flat) <= msgWidth {
 			lines = append(lines, styledIndicator+msgStyle.Render(flat))
 		} else {
 			// Two-line display: word-wrap at msgWidth, truncate second line.
-			// ╰ aligns with the first character of line 1 text, then outlineGap before wrapped text.
+			// ╰ aligns with the first character of line 1 text.
 			line1, rest := wordWrapFirst(flat, msgWidth)
-			indent := strings.Repeat(" ", indicatorWidth) + contGlyph + " "
+			indent := indentPad + contGlyph + " "
 			line2 := ansi.Truncate(rest, max(1, msgWidth-2), "…")
 			lines = append(lines,
 				styledIndicator+msgStyle.Render(line1),
