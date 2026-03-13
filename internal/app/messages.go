@@ -152,6 +152,11 @@ type CopilotStreamChunkMsg struct {
 	Msg ui.CopilotStreamMsg
 }
 
+// CopilotHistoryReadyMsg delivers the restored copilot conversation history on TUI startup.
+type CopilotHistoryReadyMsg struct {
+	Messages []daemon.CopilotHistoryMsg
+}
+
 // LuaEvalDoneMsg is sent when an async Lua eval completes.
 type LuaEvalDoneMsg struct {
 	Result string

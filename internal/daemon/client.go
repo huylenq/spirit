@@ -408,6 +408,18 @@ func (c *Client) CopilotCancel() error {
 	return c.rpcInto(Request{Type: ReqCopilotCancel}, nil)
 }
 
+// CopilotClearHistory wipes the copilot conversation history from the daemon and disk.
+func (c *Client) CopilotClearHistory() error {
+	return c.rpcInto(Request{Type: ReqCopilotClearHistory}, nil)
+}
+
+// CopilotHistory returns the full copilot conversation history from the daemon.
+func (c *Client) CopilotHistory() ([]CopilotHistoryMsg, error) {
+	var data CopilotHistoryData
+	err := c.rpcInto(Request{Type: ReqCopilotHistory}, &data)
+	return data.Messages, err
+}
+
 // CopilotStatus returns copilot readiness and stats.
 func (c *Client) CopilotStatus() (*CopilotStatusData, error) {
 	var data CopilotStatusData

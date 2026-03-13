@@ -406,7 +406,15 @@ func (m Model) Init() tea.Cmd {
 		m.subscribeToDaemon(),
 		m.spinner.Tick,
 		captureOriginalPane(),
+		m.fetchCopilotHistory(),
 	)
+}
+
+func (m Model) fetchCopilotHistory() tea.Cmd {
+	return func() tea.Msg {
+		msgs, _ := m.client.CopilotHistory()
+		return CopilotHistoryReadyMsg{Messages: msgs}
+	}
 }
 
 // captureOriginalPane snapshots the tmux client's active pane at startup.

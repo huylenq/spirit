@@ -4,14 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
 	"github.com/huylenq/claude-mission-control/internal/copilot"
 )
+
+const maxCopilotHistory = 200 // 100 exchanges (user + copilot per exchange)
+
+// chatHistoryPath returns the path to the persisted chat history file.
+func (d *Daemon) chatHistoryPath() string {
+	return filepath.Join(d.copilotWorkspace.Dir, "chat_history.json")
+}
+
+// saveCopilotHistory writes the current in-memory history to disk (caller holds copilotHistoryMu).
+func (d *Daemon) saveCopilotHistory() {
+	data, err := json.Marshal(d.copilotHistory)
+	if err != nil {
+		log.Printf("copilot: marshal history: %v", err)
+		return
+	}
+	if err := os.WriteFile(d.chatHistoryPath(), data, 0o644); err != nil {
+		log.Printf("copilot: write history: %v", err)
+	}
+}
+
+// loadCopilotHistory reads chat history from disk into d.copilotHistory. Called once at startup.
+func (d *Daemon) loadCopilotHistory() {
+	data, err := os.ReadFile(d.chatHistoryPath())
+	if err != nil {
+		return // file not found on first run — silent
+	}
+	var msgs []CopilotHistoryMsg
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		log.Printf("copilot: parse history: %v", err)
+		return
+	}
+	d.copilotHistoryMu.Lock()
+	d.copilotHistory = msgs
+	d.copilotHistoryMu.Unlock()
+}
 
 // handleCopilotChat invokes Claude CLI with the copilot prompt and returns the full response.
 // This is a synchronous (blocking) RPC — the TUI shows "thinking..." while waiting.
@@ -43,7 +80,41 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 		return &r
 	}
 
+	// Persist to in-memory history and disk so it survives TUI and daemon restart.
+	now := time.Now()
+	d.copilotHistoryMu.Lock()
+	d.copilotHistory = append(d.copilotHistory,
+		CopilotHistoryMsg{Role: "user", Content: req.Message, Time: now},
+		CopilotHistoryMsg{Role: "copilot", Content: output, Time: now},
+	)
+	if len(d.copilotHistory) > maxCopilotHistory {
+		d.copilotHistory = d.copilotHistory[len(d.copilotHistory)-maxCopilotHistory:]
+	}
+	d.saveCopilotHistory()
+	d.copilotHistoryMu.Unlock()
+
 	r := resultResponse(map[string]string{"response": output})
+	return &r
+}
+
+// handleCopilotHistory returns the full in-memory copilot conversation so the TUI
+// can restore it after a close/reopen (history lives as long as the daemon does).
+func (d *Daemon) handleCopilotHistory() *Response {
+	d.copilotHistoryMu.RLock()
+	msgs := make([]CopilotHistoryMsg, len(d.copilotHistory))
+	copy(msgs, d.copilotHistory)
+	d.copilotHistoryMu.RUnlock()
+	r := resultResponse(CopilotHistoryData{Messages: msgs})
+	return &r
+}
+
+// handleCopilotClearHistory wipes the in-memory history and deletes the disk file.
+func (d *Daemon) handleCopilotClearHistory() *Response {
+	d.copilotHistoryMu.Lock()
+	d.copilotHistory = nil
+	os.Remove(d.chatHistoryPath())
+	d.copilotHistoryMu.Unlock()
+	r := resultResponse(map[string]string{"status": "cleared"})
 	return &r
 }
 

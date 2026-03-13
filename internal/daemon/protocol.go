@@ -65,9 +65,11 @@ const (
 	ReqBacklogUpdate = "backlog_update"
 	ReqBacklogDelete = "backlog_delete"
 
-	ReqCopilotChat   = "copilot_chat"
-	ReqCopilotCancel = "copilot_cancel"
-	ReqCopilotStatus = "copilot_status"
+	ReqCopilotChat         = "copilot_chat"
+	ReqCopilotCancel       = "copilot_cancel"
+	ReqCopilotStatus       = "copilot_status"
+	ReqCopilotHistory      = "copilot_history"
+	ReqCopilotClearHistory = "copilot_clear_history"
 )
 
 // Response type constants.
@@ -290,6 +292,18 @@ type CopilotStatusData struct {
 	Ready       bool `json:"ready"`
 	EventsToday int  `json:"eventsToday"`
 	MemoryBytes int  `json:"memoryBytes"`
+}
+
+// CopilotHistoryMsg is a persisted copilot conversation turn (user or copilot role).
+type CopilotHistoryMsg struct {
+	Role    string    `json:"role"`
+	Content string    `json:"content"`
+	Time    time.Time `json:"time"`
+}
+
+// CopilotHistoryData is the response payload for ReqCopilotHistory.
+type CopilotHistoryData struct {
+	Messages []CopilotHistoryMsg `json:"messages"`
 }
 
 // CopilotStreamData wraps a stream message for the subscribe connection.

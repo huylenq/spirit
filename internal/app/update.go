@@ -281,6 +281,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case CopilotHistoryReadyMsg:
+		uiMsgs := make([]ui.CopilotMessage, len(msg.Messages))
+		for i, h := range msg.Messages {
+			uiMsgs[i] = ui.CopilotMessage{Role: h.Role, Content: h.Content, Time: h.Time}
+		}
+		m.copilot.LoadHistory(uiMsgs)
+		return m, nil
+
 	case CopilotStreamChunkMsg:
 		m.copilot.HandleStreamMsg(msg.Msg)
 		if msg.Msg.Type == "confirm" {

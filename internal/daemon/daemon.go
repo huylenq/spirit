@@ -83,6 +83,8 @@ type Daemon struct {
 	copilotMemory    *copilot.Memory
 	copilotCancel    context.CancelFunc // cancel in-flight copilot prompt
 	copilotMu        sync.Mutex         // protects copilotCancel
+	copilotHistory   []CopilotHistoryMsg
+	copilotHistoryMu sync.RWMutex
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -158,6 +160,7 @@ func Run(info DaemonInfo) error {
 	}
 	d.copilotJournal = copilot.NewJournal(filepath.Join(d.copilotWorkspace.Dir, "events"))
 	d.copilotMemory = copilot.NewMemory(d.copilotWorkspace.Dir)
+	d.loadCopilotHistory()
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})

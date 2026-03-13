@@ -27,6 +27,11 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "enter":
 		if !m.copilot.Streaming() {
 			text := m.copilotInput.Value()
+			if text == "/new" {
+				m.copilotInput.Deactivate()
+				m.copilotInput.Activate()
+				return m, m.clearCopilotHistory()
+			}
 			if text != "" {
 				m.copilot.AddUserMessage(text)
 				m.copilot.SetStreaming(true)
@@ -93,6 +98,19 @@ func (m *Model) sendCopilotChat(message string) tea.Cmd {
 			Type:    "text_delta",
 			Content: response,
 		}}
+	}
+}
+
+// clearCopilotHistory tells the daemon to wipe history, then clears the local model.
+func (m *Model) clearCopilotHistory() tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.CopilotClearHistory(); err != nil {
+			return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
+				Type:    "error",
+				Content: "clear history: " + err.Error(),
+			}}
+		}
+		return CopilotHistoryReadyMsg{} // empty = clear
 	}
 }
 

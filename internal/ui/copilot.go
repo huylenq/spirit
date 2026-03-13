@@ -192,3 +192,8 @@ func (c *CopilotModel) ScrollOffset() int {
 func (c *CopilotModel) UsageInfo() string {
 	return c.usageInfo
 }
+
+// LoadHistory replaces the message list with historical messages (called on TUI reconnect).
+func (c *CopilotModel) LoadHistory(msgs []CopilotMessage) {
+	c.messages = msgs
+}
