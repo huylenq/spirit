@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
@@ -56,7 +57,27 @@ func (m *SidebarModel) selectByBacklogID(id string) bool {
 	return false
 }
 
-// applyNarrowBacklog filters backlog items by the current narrow query.
+// backlogTagKey returns the tag sub-group key within a project.
+// Returns "#<first-tag>" for tagged items, "" for untagged.
+func backlogTagKey(b claude.Backlog) string {
+	if len(b.Tags) > 0 {
+		return "#" + b.Tags[0]
+	}
+	return ""
+}
+
+// backlogGroupKey returns the group boundary key for a backlog item.
+// For tagged items it returns "#<first-tag>" (used as the sub-header label).
+// For untagged items it returns the project name so project boundaries are detected.
+func backlogGroupKey(b claude.Backlog) string {
+	if len(b.Tags) > 0 {
+		return "#" + b.Tags[0]
+	}
+	return b.Project
+}
+
+// applyNarrowBacklog filters backlog items by the current narrow query and
+// sorts them by project, then tagged-first within project, then by tag group, then CreatedAt.
 func (m *SidebarModel) applyNarrowBacklog() {
 	if !m.backlogExpanded {
 		m.filteredBacklog = nil
@@ -76,6 +97,20 @@ func (m *SidebarModel) applyNarrowBacklog() {
 			}
 		}
 	}
+	sort.SliceStable(m.filteredBacklog, func(i, j int) bool {
+		a, b := m.filteredBacklog[i], m.filteredBacklog[j]
+		if a.Project != b.Project {
+			return a.Project < b.Project
+		}
+		aTagged, bTagged := len(a.Tags) > 0, len(b.Tags) > 0
+		if aTagged != bTagged {
+			return aTagged // tagged items first within project
+		}
+		if aTagged && bTagged && a.Tags[0] != b.Tags[0] {
+			return a.Tags[0] < b.Tags[0]
+		}
+		return a.CreatedAt.Before(b.CreatedAt)
+	})
 }
 
 // SelectByBacklogID sets the cursor to the backlog item with the given ID.

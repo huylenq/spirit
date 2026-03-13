@@ -175,17 +175,26 @@ func (m DetailModel) renderChatOutline(width int) string {
 		innerWidth = 5
 	}
 
+	// Pre-compute the two continuation glyph variants to avoid per-iteration allocations.
+	bulletContGlyph := lipgloss.NewStyle().Foreground(TranscriptBulletStyle.GetForeground()).Render("╰")
+	cursorContGlyph := lipgloss.NewStyle().Foreground(TranscriptCursorStyle.GetForeground()).Render("╰")
+
 	var lines []string
 
 	titleLine := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {
+		focused := i == m.msgCursor
 		var styledIndicator string
-		if i == m.msgCursor {
-			styledIndicator = TranscriptCursorStyle.Render("▶ ")
+		msgStyle := TranscriptMsgStyle
+		contGlyph := bulletContGlyph
+		if focused {
+			styledIndicator = TranscriptCursorStyle.Render(IconQuote + " ")
+			contGlyph = cursorContGlyph
 		} else {
-			styledIndicator = TranscriptBulletStyle.Render(IconBullet + " ")
+			styledIndicator = TranscriptBulletStyle.Render(IconQuote + " ")
+			msgStyle = ItemDetailStyle
 		}
 		// Allow up to 2 lines per message: innerWidth minus the 2-char indicator column
 		msgWidth := innerWidth - 2
@@ -194,15 +203,16 @@ func (m DetailModel) renderChatOutline(width int) string {
 		}
 		flat := strings.ReplaceAll(msg, "\n", " ")
 		if ansi.StringWidth(flat) <= msgWidth {
-			lines = append(lines, styledIndicator+TranscriptMsgStyle.Render(flat))
+			lines = append(lines, styledIndicator+msgStyle.Render(flat))
 		} else {
-			// Two-line display: word-wrap at msgWidth, truncate second line
+			// Two-line display: word-wrap at msgWidth, truncate second line.
+			// ╰ aligned with the first char of the message on line 1 (col 4).
 			line1, rest := wordWrapFirst(flat, msgWidth)
-			line2 := ansi.Truncate(rest, msgWidth, "…")
-			indent := TranscriptBulletStyle.Render("  ")
+			indent := "    " + contGlyph + " "
+			line2 := ansi.Truncate(rest, msgWidth-2, "…")
 			lines = append(lines,
-				styledIndicator+TranscriptMsgStyle.Render(line1),
-				indent+TranscriptMsgStyle.Render(line2),
+				styledIndicator+msgStyle.Render(line1),
+				indent+msgStyle.Render(line2),
 			)
 		}
 	}
