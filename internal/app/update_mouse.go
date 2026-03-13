@@ -93,8 +93,27 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // handleMouseWheel scrolls the panel under the cursor.
 func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) {
+	// In backlog edit mode, scroll the textarea by forwarding cursor key messages.
+	if m.state == StateBacklogPrompt && m.hitTestPanel(msg.X, msg.Y) == panelDetail {
+		keyType := tea.KeyUp
+		if dir > 0 {
+			keyType = tea.KeyDown
+		}
+		var cmds []tea.Cmd
+		for range wheelScrollLines {
+			if cmd := m.promptEditor.Update(tea.KeyMsg{Type: keyType}); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+	}
+
 	switch m.hitTestPanel(msg.X, msg.Y) {
 	case panelDetail:
+		if m.sidebar.IsBacklogSelected() {
+			m.backlogScroll = max(m.backlogScroll+dir*wheelScrollLines, 0)
+			return m, nil
+		}
 		m.detail.ScrollLines(dir * wheelScrollLines)
 		return m, nil
 	case panelSidebar:
@@ -192,6 +211,11 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // handleDetailClick handles left-clicks on the detail panel (e.g. chat outline messages).
 func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Click on backlog preview → enter edit mode
+	if m.sidebar.IsBacklogSelected() {
+		return m.execEditBacklog()
+	}
+
 	colOffset := 0
 	if !m.inFullscreenPopup {
 		colOffset = 1
@@ -213,6 +237,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if paneID == "" {
 		// Check if the click landed on a backlog item.
 		if id := m.sidebar.BacklogIDAtLine(listLocalY); id != "" {
+			m.backlogScroll = 0
 			m.sidebar.SelectByBacklogID(id)
 		}
 		return m, nil

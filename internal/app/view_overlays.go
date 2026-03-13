@@ -61,6 +61,21 @@ func (m Model) overlayPrompt(content, project string, row, innerWidth int) strin
 	return ui.OverlayAt(content, overlayView, row, col)
 }
 
+// backlogContentBox wraps content in a rounded border box — shared by both read and write modes.
+// borderColor distinguishes read (ColorBorder) from write (ColorBacklog).
+func backlogContentBox(content string, contentWidth, innerH int, borderColor lipgloss.TerminalColor) string {
+	if contentWidth < 6 {
+		contentWidth = 6
+	}
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(contentWidth).
+		Height(innerH).
+		Render(content)
+}
+
 // renderBacklogEditor renders the backlog textarea editor inline in the detail panel.
 func (m Model) renderBacklogEditor(project string, width, height int) string {
 	var modeLabel string
@@ -73,40 +88,74 @@ func (m Model) renderBacklogEditor(project string, width, height int) string {
 		modeLabel = "Backlog"
 	}
 
-	header := ui.PromptEditorTitleStyle.Render(modeLabel + ": " + project)
+	title := ui.BacklogPromptEditorTitleStyle.Render(modeLabel + ": " + project)
+	meta := ui.ItemDetailStyle.Render(ui.IconFolder + " " + project)
 
-	// Size the textarea to fill available space
-	editorWidth := width - 4
-	if editorWidth < 20 {
-		editorWidth = 20
+	// header(1) + meta(1) + blank(1) + border-top(1) + border-bottom(1) + blank(1) + hint(1) = 7
+	innerH := height - 7
+	if innerH < 2 {
+		innerH = 2
 	}
-	editorHeight := height - 6 // header + hints + padding
-	if editorHeight < 3 {
-		editorHeight = 3
+	contentWidth := width - 4
+	if contentWidth < 10 {
+		contentWidth = 10
 	}
-	m.promptEditor.SetSize(editorWidth, editorHeight)
+	innerW := contentWidth - 4 // border(2) + padding(2)
+	if innerW < 6 {
+		innerW = 6
+	}
 
-	body := m.promptEditor.ViewTextarea()
+	m.promptEditor.SetSize(innerW, innerH)
+	contentBox := backlogContentBox(m.promptEditor.ViewTextarea(), contentWidth, innerH, ui.ColorBacklog)
 
-	hint := ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" save  ") +
-		ui.FooterKeyStyle.Render("alt+enter") + ui.FooterDimStyle.Render(" newline  ") +
+	hint := ui.FooterKeyStyle.Render("ctrl+enter") + ui.FooterDimStyle.Render(" save  ") +
+		ui.FooterKeyStyle.Render("enter") + ui.FooterDimStyle.Render(" newline  ") +
 		ui.FooterKeyStyle.Render("esc") + ui.FooterDimStyle.Render(" cancel")
 
-	return header + "\n\n" + body + "\n\n" + hint
+	return title + "\n" + meta + "\n\n" + contentBox + "\n\n" + hint
 }
 
-// renderBacklogPreview renders the full backlog item body as plain text for the detail panel.
-func (m Model) renderBacklogPreview(backlog claude.Backlog) string {
-	header := ui.PromptEditorTitleStyle.Render(ui.IconBacklog + " " + backlog.DisplayTitle())
+// renderBacklogPreview renders the backlog item body with a bordered content box.
+// scroll is the number of lines to skip inside the content box.
+func (m Model) renderBacklogPreview(backlog claude.Backlog, width, height, scroll int) string {
+	title := ui.BacklogPromptEditorTitleStyle.Render(ui.IconBacklog + " " + backlog.DisplayTitle())
 	project := ui.ItemDetailStyle.Render(ui.IconFolder + " " + backlog.Project)
 	age := ui.ItemDetailStyle.Render("created " + ui.FormatAge(backlog.CreatedAt) + " ago")
+	meta := project + "  " + age
+
+	// header(1) + meta(1) + blank(1) + border-top(1) + border-bottom(1) = 5
+	innerH := height - 5
+	if innerH < 1 {
+		innerH = 1
+	}
+	contentWidth := width - 4
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	innerW := contentWidth - 4 // border(2) + padding(2)
+	if innerW < 6 {
+		innerW = 6
+	}
 
 	body := backlog.Body
 	if body == "" {
 		body = ui.ItemDetailStyle.Render("(empty)")
 	}
 
-	return header + "\n" + project + "  " + age + "\n\n" + body
+	// Wrap body to inner width so line-based scroll is accurate.
+	wrapped := ui.WordWrapContent(body, innerW)
+	lines := strings.Split(wrapped, "\n")
+	if scroll > 0 {
+		if scroll >= len(lines) {
+			scroll = max(len(lines)-1, 0)
+		}
+		lines = lines[scroll:]
+	}
+	body = strings.Join(lines, "\n")
+
+	contentBox := backlogContentBox(body, contentWidth, innerH, ui.ColorBorder)
+
+	return title + "\n" + meta + "\n\n" + contentBox
 }
 
 // renderSearchBar renders the search/filter bar that replaces the usage stats label.
@@ -192,7 +241,8 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateBacklogPrompt:
-		h := ui.FooterKeyStyle.Render("enter") + " save  " +
+		h := ui.FooterKeyStyle.Render("ctrl+enter") + " save  " +
+			ui.FooterKeyStyle.Render("enter") + " newline  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateBacklogDeleteConfirm:

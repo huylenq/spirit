@@ -18,10 +18,11 @@ func (m Model) handleKeyBacklogPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backlogOverlay = false
 		return m, nil
 	case msg.Type == tea.KeyEnter && msg.Alt:
-		// Alt+Enter: insert newline
+		// Alt+Enter: insert newline (textarea won't do this on its own for alt+enter)
 		cmd := m.promptEditor.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
 		return m, cmd
-	case msg.Type == tea.KeyEnter:
+	case key.Matches(msg, Keys.CtrlEnter):
+		// Ctrl+Enter: save/submit
 		body := m.promptEditor.Confirm()
 		m.state = StateNormal
 		m.backlogOverlay = false

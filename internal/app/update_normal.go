@@ -65,22 +65,46 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.sidebar.IsBacklogSelected() {
 		switch {
 		case key.Matches(msg, Keys.Enter):
-			return m.execSubmitBacklog()
-		case msg.String() == "b":
 			return m.execEditBacklog()
+		case key.Matches(msg, Keys.CtrlEnter):
+			return m.execSubmitBacklog()
 		case msg.String() == "e":
 			return m.execOpenBacklogInEditor()
 		case key.Matches(msg, Keys.Kill), msg.String() == "x":
 			return m.execDeleteBacklog()
+		case key.Matches(msg, Keys.ScrollDown):
+			m.backlogScroll += max(m.detail.ViewportHeight()/2, 1)
+			return m, nil
+		case key.Matches(msg, Keys.ScrollUp):
+			m.backlogScroll = max(m.backlogScroll-max(m.detail.ViewportHeight()/2, 1), 0)
+			return m, nil
+		case key.Matches(msg, Keys.PageDown):
+			m.backlogScroll += max(m.detail.ViewportHeight()-3, 1)
+			return m, nil
+		case key.Matches(msg, Keys.PageUp):
+			m.backlogScroll = max(m.backlogScroll-max(m.detail.ViewportHeight()-3, 1), 0)
+			return m, nil
+		case key.Matches(msg, Keys.LineDown), key.Matches(msg, Keys.MsgNext):
+			m.backlogScroll++
+			return m, nil
+		case key.Matches(msg, Keys.LineUp), key.Matches(msg, Keys.MsgPrev):
+			if m.backlogScroll > 0 {
+				m.backlogScroll--
+			}
+			return m, nil
 		}
 		// Fall through to common nav keys (up/down/h/l/q/esc/etc.)
 	}
 
-	// New backlog item via `b` key — works from session item, session project, or BACKLOG project level
+	// New backlog item via `b` key — works from any context
 	if msg.String() == "b" {
 		// Session item selected
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m.execNewBacklogForCWD(s.CWD)
+		}
+		// Backlog item selected — create new backlog for the same project
+		if backlog, ok := m.sidebar.SelectedBacklog(); ok {
+			return m.execNewBacklogForCWD(backlog.CWD)
 		}
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			if pe, ok := m.sidebar.SelectedProject(); ok {
@@ -221,6 +245,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Up):
+		m.backlogScroll = 0
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.sidebar.MoveUpProject()
 			if s, ok := m.sidebar.SelectedProjectSession(); ok {
@@ -235,6 +260,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Down):
+		m.backlogScroll = 0
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.sidebar.MoveDownProject()
 			if s, ok := m.sidebar.SelectedProjectSession(); ok {
@@ -249,6 +275,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.GoBottom):
+		m.backlogScroll = 0
 		m.recordJump()
 		m.sidebar.MoveToBottom()
 		if s, ok := m.sidebar.SelectedItem(); ok {

@@ -153,6 +153,11 @@ func (m *DetailModel) effectiveDividerWidth(vpWidth int) int {
 	return vpWidth
 }
 
+// ViewportHeight returns the current height of the detail viewport in lines.
+func (m *DetailModel) ViewportHeight() int {
+	return m.viewport.Height
+}
+
 // ClearSession resets the preview to the empty "Select a session" state.
 func (m *DetailModel) ClearSession() {
 	m.session = nil

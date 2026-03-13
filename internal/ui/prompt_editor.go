@@ -49,6 +49,7 @@ func NewPromptEditorModel() PromptEditorModel {
 	ta.SetWidth(60)
 	ta.SetHeight(8)
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.Prompt = ""
 	return PromptEditorModel{input: ta}
 }
 
@@ -81,6 +82,9 @@ func (m *PromptEditorModel) ActivateForBacklogEdit(body string) {
 	m.input.Placeholder = "Backlog…"
 	m.input.Focus()
 	m.selectedModel = ""
+	// SetValue leaves the cursor at the end; move to (0,0) for easier editing.
+	newInput, _ := m.input.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
+	m.input = newInput
 }
 
 // ActivateForBacklogSubmit opens the editor in submit-backlog mode (becomes a session).

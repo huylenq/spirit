@@ -210,6 +210,7 @@ type Model struct {
 	activeBacklogID      string         // backlog item being edited or submitted (empty = new item)
 	activeBacklogCWD     string         // CWD for the active backlog operation
 	backlogOverlay       bool           // true = show backlog prompt as overlay; false = right-pane editor
+	backlogScroll        int            // scroll offset (in lines) for the backlog preview panel
 	deleteTargetBacklog  claude.Backlog // backlog item pending delete confirmation
 	macros               []claude.Macro // loaded macros (built-in + user)
 	macroEditor          ui.MacroEditorModel

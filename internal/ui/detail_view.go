@@ -228,7 +228,7 @@ func (m *DetailModel) renderNotePanel(width int) string {
 		m.noteEditor.SetWidth(innerWidth)
 		body = m.noteEditor.ViewTextarea()
 	} else {
-		wrapped := wordWrapContent(m.note, innerWidth)
+		wrapped := WordWrapContent(m.note, innerWidth)
 		body = TranscriptMsgStyle.Render(wrapped)
 	}
 
@@ -243,8 +243,8 @@ func (m *DetailModel) renderNotePanel(width int) string {
 		Render(content)
 }
 
-// wordWrapContent wraps plain text to fit within maxWidth columns.
-func wordWrapContent(s string, maxWidth int) string {
+// WordWrapContent wraps plain text to fit within maxWidth columns.
+func WordWrapContent(s string, maxWidth int) string {
 	if maxWidth <= 0 || s == "" {
 		return s
 	}

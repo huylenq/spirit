@@ -34,6 +34,7 @@ type KeyMap struct {
 	Up         key.Binding
 	Down       key.Binding
 	Enter      key.Binding
+	CtrlEnter  key.Binding
 	Search     key.Binding
 	Later       key.Binding
 	LaterKill   key.Binding
@@ -235,6 +236,10 @@ var Keys = KeyMap{
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "switch"),
+	),
+	CtrlEnter: key.NewBinding(
+		key.WithKeys("ctrl+enter"),
+		key.WithHelp("ctrl+enter", "submit"),
 	),
 	Search: key.NewBinding(
 		key.WithKeys("/"),

@@ -107,7 +107,7 @@ func (m Model) View() string {
 		}
 		detailContent = m.renderBacklogEditor(project, detailWidth, detailH)
 	} else if backlog, ok := m.sidebar.SelectedBacklog(); ok {
-		detailContent = m.renderBacklogPreview(backlog)
+		detailContent = m.renderBacklogPreview(backlog, detailWidth, detailH, m.backlogScroll)
 	} else {
 		detailContent = m.detail.View()
 	}

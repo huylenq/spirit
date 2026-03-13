@@ -576,7 +576,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseMsg:
-		if m.state != StateNormal || m.showHelp || m.showSpiritAnimal {
+		if m.showHelp || m.showSpiritAnimal {
 			return m, nil
 		}
 		switch msg.Button {
@@ -585,7 +585,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelDown:
 			return m.handleMouseWheel(msg, 1)
 		case tea.MouseButtonLeft:
-			if msg.Action == tea.MouseActionPress {
+			if msg.Action == tea.MouseActionPress && m.state == StateNormal {
 				return m.handleMouseClick(msg)
 			}
 		}
