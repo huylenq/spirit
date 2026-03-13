@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
 func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -17,6 +19,8 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ref := m.sidebar.CursorRef()
 		m.sidebar.ClearNarrow()
 		m.sidebar.SelectByRef(ref)
+		// Trigger landing flash so the jumped-to item is visually highlighted
+		m.sidebar.SetLandByRef(ref, ui.SearchFlashFrames)
 		return m, nil
 	case key.Matches(msg, Keys.MsgNext):
 		m.sidebar.MoveDown()

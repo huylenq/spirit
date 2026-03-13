@@ -143,7 +143,7 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 		return nil
 	}
 	m.sidebar.SetTrail(skipPaneID)
-	m.sidebar.SetLand(targetID)
+	m.sidebar.SetLand(targetID, ui.JumpAnimFrames)
 	return m.fetchForSelection(s, true)
 }
 
@@ -161,7 +161,7 @@ func (m Model) doJump(target string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.sidebar.SetTrail(prevPaneID)
-	m.sidebar.SetLand(target)
+	m.sidebar.SetLand(target, ui.JumpAnimFrames)
 	if s, ok := m.sidebar.SelectedItem(); ok {
 		return m, tea.Batch(m.fetchForSelection(s, true)...)
 	}

@@ -77,17 +77,54 @@ type SidebarModel struct {
 	laterCount          int              // cached count of Later sessions (updated in applyNarrow)
 	claudingCount       int              // cached count of Clauding sessions (updated in applyNarrow)
 	landPaneID          string           // pane most recently jumped to (landing flash)
-	landFrame           int              // landing animation frame (0–3 visible, 4 = clear)
+	landBacklogID       string           // backlog item most recently jumped to (landing flash)
+	landFrame           int              // landing animation frame (counts up to landMaxFrames)
+	landMaxFrames       int              // total frames for landing animation (default JumpAnimFrames)
 	trailPaneID         string           // pane most recently jumped from (ghost trail)
 	trailFrame          int              // trail animation frame (0–3 visible, 4 = clear)
 	inlineTagSessionID  string           // session with active inline tag input (empty = none)
 	inlineTagInputView  string           // rendered textinput view for the active tag session
+	inlineTagBacklogID  string           // backlog item with active inline tag input (empty = none)
 }
 
 // SetLand marks paneID as the landing target for the jump-arrival animation.
-func (m *SidebarModel) SetLand(paneID string) {
+// frames controls duration: JumpAnimFrames for the standard flash, more for a longer highlight.
+func (m *SidebarModel) SetLand(paneID string, frames int) {
 	m.landPaneID = paneID
+	m.landBacklogID = ""
 	m.landFrame = 0
+	m.landMaxFrames = frames
+}
+
+// SetLandBacklog marks a backlog item as the landing target for the jump-arrival animation.
+// frames controls duration: JumpAnimFrames for the standard flash, more for a longer highlight.
+func (m *SidebarModel) SetLandBacklog(backlogID string, frames int) {
+	m.landBacklogID = backlogID
+	m.landPaneID = ""
+	m.landFrame = 0
+	m.landMaxFrames = frames
+}
+
+// landT returns the blend parameter [0,1] for the landing animation.
+// Extra frames (landMaxFrames > JumpAnimFrames) hold at t=0 (peak flash) before fading,
+// so the fade rate is always the same regardless of total duration.
+func (m SidebarModel) landT() float64 {
+	holdFrames := m.landMaxFrames - JumpAnimFrames
+	fadeFrame := m.landFrame - holdFrames
+	if fadeFrame < 0 {
+		fadeFrame = 0
+	}
+	return float64(fadeFrame) / float64(JumpAnimFrames-1)
+}
+
+// SetLandByRef triggers the landing animation for whatever item CursorRef points to.
+func (m *SidebarModel) SetLandByRef(ref CursorRef, frames int) {
+	switch {
+	case ref.PaneID != "":
+		m.SetLand(ref.PaneID, frames)
+	case ref.BacklogID != "":
+		m.SetLandBacklog(ref.BacklogID, frames)
+	}
 }
 
 // SetTrail marks paneID as the departure origin for the ghost-trail animation.
@@ -168,20 +205,24 @@ func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.Fi
 // commitDoneFrames is a distinct animation for commit-and-done pending sessions.
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
-const jumpAnimFrames = 4 // visible frames (0–3), cleared at 4
+const (
+	JumpAnimFrames   = 4  // visible frames for standard jump flash
+	SearchFlashFrames = 12 // longer hold for search-confirm landing
+)
 
 func (m *SidebarModel) SetSpinnerView(s string) {
 	m.spinnerView = s
 	m.commitDoneFrame = (m.commitDoneFrame + 1) % len(commitDoneFrames)
-	if m.landPaneID != "" {
+	if m.landPaneID != "" || m.landBacklogID != "" {
 		m.landFrame++
-		if m.landFrame >= jumpAnimFrames {
+		if m.landFrame >= m.landMaxFrames {
 			m.landPaneID = ""
+			m.landBacklogID = ""
 		}
 	}
 	if m.trailPaneID != "" {
 		m.trailFrame++
-		if m.trailFrame >= jumpAnimFrames {
+		if m.trailFrame >= JumpAnimFrames {
 			m.trailPaneID = ""
 		}
 	}
@@ -233,6 +274,11 @@ func (m *SidebarModel) SetSize(w, h int) {
 
 func (m *SidebarModel) SetInlineTagInput(sessionID, view string) {
 	m.inlineTagSessionID = sessionID
+	m.inlineTagInputView = view
+}
+
+func (m *SidebarModel) SetInlineTagBacklogInput(backlogID, view string) {
+	m.inlineTagBacklogID = backlogID
 	m.inlineTagInputView = view
 }
 

@@ -132,22 +132,27 @@ func (m *SidebarModel) View() string {
 		}
 		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
 
-		currentBacklogGroup := ""
+		currentBacklogProject := ""
+		currentBacklogTag := ""
 		for i, backlog := range m.filteredBacklog {
-			group := backlogGroupKey(backlog)
-			if group != currentBacklogGroup {
-				currentBacklogGroup = group
-				if len(backlog.Tags) > 0 {
-					lines = append(lines, renderProjectSubHeader(group))
+			if backlog.Project != currentBacklogProject {
+				currentBacklogProject = backlog.Project
+				currentBacklogTag = ""
+				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
+				if atProjectLevel && selectedProject == backlogPE {
+					m.selectedProjectRow = len(lines)
+					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
 				} else {
-					backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
-					if atProjectLevel && selectedProject == backlogPE {
-						m.selectedProjectRow = len(lines)
-						lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
-					} else {
-						lines = append(lines, renderProjectSubHeader(backlog.Project))
-					}
+					lines = append(lines, renderProjectSubHeader(backlog.Project))
 				}
+			}
+			tagKey := backlogTagKey(backlog)
+			if tagKey != "" && tagKey != currentBacklogTag {
+				currentBacklogTag = tagKey
+				lines = append(lines, renderBacklogTagSubHeader(tagKey))
+			} else if tagKey == "" && currentBacklogTag != "" {
+				currentBacklogTag = ""
+				lines = append(lines, renderBacklogTagSubHeader("untagged"))
 			}
 			backlogCursor := len(m.filtered) + i
 			isSelected := backlogCursor == m.cursor && !m.deselected && !atProjectLevel
@@ -212,6 +217,10 @@ func renderProjectSubHeader(project string) string {
 	return ProjectSubHeaderStyle.Render(IconFolder + " " + project)
 }
 
+func renderBacklogTagSubHeader(tag string) string {
+	return ProjectSubHeaderStyle.Render("  " + tag)
+}
+
 func renderStatusGroupHeader(order int) string {
 	switch order {
 	case OrderUserTurn:
@@ -245,21 +254,21 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	avatarColor := AvatarColor(s.AvatarColorIdx)
 	avatarHex := avatarColor.Dark
 	avatarBg := AvatarFillBg(s.AvatarColorIdx)
-	isLanding := isSelected && s.PaneID == m.landPaneID && m.landFrame < jumpAnimFrames
-	isTrail := !isSelected && !isAutoJump && s.PaneID == m.trailPaneID && m.trailFrame < jumpAnimFrames
+	isLanding := isSelected && s.PaneID == m.landPaneID && m.landFrame < m.landMaxFrames
+	isTrail := !isSelected && !isAutoJump && s.PaneID == m.trailPaneID && m.trailFrame < JumpAnimFrames
 	var selBgSt, barSt, autoJumpBarSt, trailBarSt lipgloss.Style
 	if isSelected {
 		selBgSt = lipgloss.NewStyle().Background(avatarBg)
 		var barColor lipgloss.TerminalColor = avatarColor
 		if isLanding {
-			t := float64(m.landFrame) / float64(jumpAnimFrames-1)
+			t := m.landT()
 			barColor = lipgloss.Color(blendHex("#ffffff", avatarHex, t))
 		}
 		barSt = lipgloss.NewStyle().Foreground(barColor).Background(avatarBg)
 	} else if isAutoJump {
 		autoJumpBarSt = lipgloss.NewStyle().Foreground(avatarColor)
 	} else if isTrail {
-		t := float64(m.trailFrame) / float64(jumpAnimFrames-1)
+		t := float64(m.trailFrame) / float64(JumpAnimFrames-1)
 		trailBarSt = lipgloss.NewStyle().Foreground(lipgloss.Color(blendHex(avatarHex, "#333333", t)))
 	}
 
@@ -273,7 +282,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Build right-side (detail + diff stats) — styles include bg when selected
 	detail := m.renderDetail(s, isSelected)
-	right := detail
+	overlapPart := ""
+	if s.HasOverlap {
+		overlapPart = sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
+	}
+	right := detail + overlapPart
 	if s.SessionID != "" {
 		if stats, ok := m.diffStats[s.SessionID]; ok && len(stats) > 0 {
 			totalAdded, totalRemoved := 0, 0
@@ -285,17 +298,14 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
 				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
 				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
-			right = detail + diffPart
+			right = detail + overlapPart + diffPart
 		} else if dw.files > 0 {
 			// Pad so the spinner stays in the same column as items that have diff stats
 			diffPartWidth := 2 + lipgloss.Width(fmt.Sprintf("%s %*d", IconFile, dw.files, 0)) +
 				1 + len(fmt.Sprintf("+%-*d", dw.added, 0)) +
 				1 + len(fmt.Sprintf("-%-*d", dw.removed, 0))
-			right = detail + sp(strings.Repeat(" ", diffPartWidth))
+			right = detail + overlapPart + sp(strings.Repeat(" ", diffPartWidth))
 		}
-	}
-	if s.HasOverlap {
-		right = withBg(OverlapStyle).Render(IconOverlap) + sp(" ") + right
 	}
 	rightWidth := lipgloss.Width(right)
 
@@ -477,15 +487,21 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 		gap = 1
 	}
 
-	isLanding := isSelected && backlog.ID == m.landBacklogID && m.landFrame < jumpAnimFrames
+	isLanding := isSelected && backlog.ID == m.landBacklogID && m.landFrame < m.landMaxFrames
+
+	// Compute shared selected-state styles once (reused by main line and tags subtitle).
+	var bg, barSt lipgloss.Style
+	if isSelected {
+		bg = lipgloss.NewStyle().Background(ColorSelectionBg)
+		if isLanding {
+			barColor := lipgloss.Color(blendHex("#60a5fa", "#ffffff", m.landT()))
+			barSt = lipgloss.NewStyle().Foreground(barColor).Background(ColorSelectionBg)
+		}
+	}
 
 	var line string
 	if isSelected {
-		bg := lipgloss.NewStyle().Background(ColorSelectionBg)
 		if isLanding {
-			t := float64(m.landFrame) / float64(jumpAnimFrames-1)
-			barColor := lipgloss.Color(blendHex("#60a5fa", "#ffffff", t))
-			barSt := lipgloss.NewStyle().Foreground(barColor).Background(ColorSelectionBg)
 			line = bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
 				bg.Render(IconBacklog+"  ") +
 				bg.Render(title) +
@@ -517,7 +533,6 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 			}
 		}
 		if isSelected {
-			bg := lipgloss.NewStyle().Background(ColorSelectionBg)
 			if showTagInput {
 				sep := ""
 				if tagsStr != "" {
@@ -533,9 +548,6 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 					padWidth = 0
 				}
 				if isLanding {
-					t := float64(m.landFrame) / float64(jumpAnimFrames-1)
-					barColor := lipgloss.Color(blendHex("#60a5fa", "#ffffff", t))
-					barSt := lipgloss.NewStyle().Foreground(barColor).Background(ColorSelectionBg)
 					line += "\n" + bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
 						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
 						bg.Render(strings.Repeat(" ", padWidth))
@@ -961,13 +973,22 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	}
 	currentLine++ // "BACKLOG" group header
 
-	// Walk backlog items (each group gets a 1-line sub-header, each item is 1 or 2 lines).
-	currentBacklogGroup := ""
+	// Walk backlog items: project header → optional tag sub-headers → items.
+	currentBacklogProject := ""
+	currentBacklogTag := ""
 	for _, backlog := range m.filteredBacklog {
-		group := backlogGroupKey(backlog)
-		if group != currentBacklogGroup {
-			currentBacklogGroup = group
-			currentLine++ // group sub-header (tag or project — always 1 line)
+		if backlog.Project != currentBacklogProject {
+			currentBacklogProject = backlog.Project
+			currentBacklogTag = ""
+			currentLine++ // project sub-header
+		}
+		tagKey := backlogTagKey(backlog)
+		if tagKey != "" && tagKey != currentBacklogTag {
+			currentBacklogTag = tagKey
+			currentLine++ // tag sub-header
+		} else if tagKey == "" && currentBacklogTag != "" {
+			currentBacklogTag = ""
+			currentLine++ // "untagged" sub-header
 		}
 		if line == currentLine {
 			return backlog.ID
