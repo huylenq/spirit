@@ -23,17 +23,26 @@ const (
 	colorWeeklyTail    = "#3d2b00" // muted amber tail for weekly gradient
 )
 
-// weekdayPrefixes maps weekday to its lowercase 3-letter abbreviation (for parsing "mon 6pm" etc.).
-// Ordered long-first so "wednesday" matches before "wed" if full names ever appear.
-var weekdayPrefixes = map[time.Weekday]string{
-	time.Sunday:    "sun",
-	time.Monday:    "mon",
-	time.Tuesday:   "tue",
-	time.Wednesday: "wed",
-	time.Thursday:  "thu",
-	time.Friday:    "fri",
-	time.Saturday:  "sat",
+// weekdayPrefixes maps 3-letter lowercase abbreviation → time.Weekday.
+// Slice (not map) for deterministic iteration order.
+var weekdayPrefixes = []struct {
+	prefix  string
+	weekday time.Weekday
+}{
+	{"sun", time.Sunday},
+	{"mon", time.Monday},
+	{"tue", time.Tuesday},
+	{"wed", time.Wednesday},
+	{"thu", time.Thursday},
+	{"fri", time.Friday},
+	{"sat", time.Saturday},
 }
+
+// Pre-allocated layout slices to avoid per-call allocation in formatUntil.
+var (
+	dateTimeLayouts = []string{"Jan 2 3:04pm", "Jan 2 3pm", "Jan 2"}
+	timeOnlyLayouts = []string{"3:04pm", "3pm", "15:04"}
+)
 
 var (
 	labelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
@@ -276,36 +285,35 @@ func formatUntil(resetStr string) string {
 	}
 
 	nowInLoc := now.In(loc)
-	timeStr = strings.TrimSpace(timeStr)
 
 	// Normalize "at" separator: "Mar 14 at 3pm" → "Mar 14 3pm"
 	timeStr = strings.Replace(timeStr, " at ", " ", 1)
 
 	// Try date-based formats first: "Mar 14", "Mar 14 6pm", "Mar 14 6:30pm"
-	for _, layout := range []string{"Jan 2 3:04pm", "Jan 2 3pm", "Jan 2"} {
+	for _, layout := range dateTimeLayouts {
 		if t, err := time.Parse(layout, timeStr); err == nil {
 			reset := time.Date(nowInLoc.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc)
 			// If the date is in the past, assume next year
 			if !reset.After(now) {
 				reset = reset.AddDate(1, 0, 0)
 			}
-			return "resets in " + formatDuration(reset.Sub(now))
+			return IconClock + " " + formatDuration(reset.Sub(now))
 		}
 	}
 
 	// Try day-of-week prefix: "Mon 6pm", "Mon 6:30pm", "Mon"
 	lower := strings.ToLower(timeStr)
-	for wd, name := range weekdayPrefixes {
-		if !strings.HasPrefix(lower, name) {
+	for _, wp := range weekdayPrefixes {
+		if !strings.HasPrefix(lower, wp.prefix) {
 			continue
 		}
-		rest := strings.TrimSpace(lower[len(name):])
+		rest := strings.TrimSpace(lower[len(wp.prefix):])
 
 		// Parse optional time after weekday
 		hour, min := 0, 0
 		if rest != "" {
 			timeParsed := false
-			for _, layout := range []string{"3:04pm", "3pm", "15:04"} {
+			for _, layout := range timeOnlyLayouts {
 				if t, err := time.Parse(layout, rest); err == nil {
 					hour, min = t.Hour(), t.Minute()
 					timeParsed = true
@@ -318,12 +326,12 @@ func formatUntil(resetStr string) string {
 		}
 
 		reset := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), hour, min, 0, 0, loc)
-		daysAhead := (int(wd) - int(nowInLoc.Weekday()) + 7) % 7
+		daysAhead := (int(wp.weekday) - int(nowInLoc.Weekday()) + 7) % 7
 		if daysAhead == 0 && !reset.After(now) {
 			daysAhead = 7
 		}
 		reset = reset.Add(time.Duration(daysAhead) * 24 * time.Hour)
-		return "resets in " + formatDuration(reset.Sub(now))
+		return IconClock + " " + formatDuration(reset.Sub(now))
 	}
 
 	// Try time-only: "6pm", "6:30pm", "18:00"
@@ -333,11 +341,11 @@ func formatUntil(resetStr string) string {
 			if !reset.After(now) {
 				reset = reset.Add(24 * time.Hour)
 			}
-			return "resets in " + formatDuration(reset.Sub(now))
+			return IconClock + " " + formatDuration(reset.Sub(now))
 		}
 	}
 
-	return "resets " + timeStr
+	return IconClock + " " + timeStr
 }
 
 // formatDuration renders a duration as a compact human string: "3d 2h", "2h 30m", "45m", "<1m".
