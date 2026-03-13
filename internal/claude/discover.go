@@ -249,9 +249,8 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 			if cached.ProblemType != "" {
 				s.ProblemType = cached.ProblemType
 			}
-			// Title drift: synthesized title changed since last /rename apply
+			// Title drift: synthesized title exists but hasn't been applied yet
 			s.TitleDrift = cached.SynthesizedTitle != "" &&
-				cached.AppliedSynthesizedTitle != "" &&
 				cached.SynthesizedTitle != cached.AppliedSynthesizedTitle
 		}
 		s.CustomTitle = ReadCustomTitle(sessionID)

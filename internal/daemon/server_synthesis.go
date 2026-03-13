@@ -31,11 +31,6 @@ func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
-	// Send /rename to pane when fresh synthesis produces a synthesized title
-	if !fromCache && summary != nil && summary.SynthesizedTitle != "" {
-		tmux.SendKeys(req.PaneID, "/rename "+summary.SynthesizedTitle, "Enter")
-		claude.ApplySynthesizedTitle(req.SessionID)
-	}
 	r := resultResponse(SynthesizeResultData{
 		PaneID:    req.PaneID,
 		Summary:   summary,
@@ -109,10 +104,6 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 			if err != nil {
 				log.Printf("synthesize %s: %v", sessionID, err)
 				return
-			}
-			if !fromCache && summary != nil && summary.SynthesizedTitle != "" {
-				tmux.SendKeys(paneID, "/rename "+summary.SynthesizedTitle, "Enter")
-				claude.ApplySynthesizedTitle(sessionID)
 			}
 			mu.Lock()
 			results = append(results, SynthesizeResultData{
