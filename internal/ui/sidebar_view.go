@@ -132,16 +132,21 @@ func (m *SidebarModel) View() string {
 		}
 		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
 
-		currentBacklogProject := ""
+		currentBacklogGroup := ""
 		for i, backlog := range m.filteredBacklog {
-			if backlog.Project != currentBacklogProject {
-				currentBacklogProject = backlog.Project
-				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
-				if atProjectLevel && selectedProject == backlogPE {
-					m.selectedProjectRow = len(lines)
-					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
+			group := backlogGroupKey(backlog)
+			if group != currentBacklogGroup {
+				currentBacklogGroup = group
+				if len(backlog.Tags) > 0 {
+					lines = append(lines, renderProjectSubHeader(group))
 				} else {
-					lines = append(lines, renderProjectSubHeader(backlog.Project))
+					backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
+					if atProjectLevel && selectedProject == backlogPE {
+						m.selectedProjectRow = len(lines)
+						lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
+					} else {
+						lines = append(lines, renderProjectSubHeader(backlog.Project))
+					}
 				}
 			}
 			backlogCursor := len(m.filtered) + i
@@ -289,6 +294,9 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 			right = detail + sp(strings.Repeat(" ", diffPartWidth))
 		}
 	}
+	if s.HasOverlap {
+		right = withBg(OverlapStyle).Render(IconOverlap) + sp(" ") + right
+	}
 	rightWidth := lipgloss.Width(right)
 
 	// prefix is always 4 cells: "  ▌ " (selected) or "    " (unselected)
@@ -432,7 +440,17 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	return line
 }
 
+// backlogItemLineCount returns the number of terminal lines a rendered backlog item occupies.
+// Must stay in sync with renderBacklogItem.
+func backlogItemLineCount(b claude.Backlog) int {
+	if len(b.Tags) > 0 {
+		return 2
+	}
+	return 1
+}
+
 // renderBacklogItem renders a single backlog entry in the list.
+// Tagged items get a second line showing "#tag1 #tag2 …".
 func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog) string {
 	title := backlog.DisplayTitle()
 	title = strings.ReplaceAll(title, "\n", " ")
@@ -459,16 +477,80 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 		gap = 1
 	}
 
+	isLanding := isSelected && backlog.ID == m.landBacklogID && m.landFrame < jumpAnimFrames
+
+	var line string
 	if isSelected {
 		bg := lipgloss.NewStyle().Background(ColorSelectionBg)
-		return bg.Render("  ▌ ") +
-			bg.Render(IconBacklog+"  ") +
-			bg.Render(title) +
-			bg.Render(strings.Repeat(" ", gap)) +
-			bg.Render(age)
+		if isLanding {
+			t := float64(m.landFrame) / float64(jumpAnimFrames-1)
+			barColor := lipgloss.Color(blendHex("#60a5fa", "#ffffff", t))
+			barSt := lipgloss.NewStyle().Foreground(barColor).Background(ColorSelectionBg)
+			line = bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
+				bg.Render(IconBacklog+"  ") +
+				bg.Render(title) +
+				bg.Render(strings.Repeat(" ", gap)) +
+				bg.Render(age)
+		} else {
+			line = bg.Render("  ▌ ") +
+				bg.Render(IconBacklog+"  ") +
+				bg.Render(title) +
+				bg.Render(strings.Repeat(" ", gap)) +
+				bg.Render(age)
+		}
+	} else {
+		line = "    " + iconStr + title + strings.Repeat(" ", gap) + ageStr
 	}
 
-	return "    " + iconStr + title + strings.Repeat(" ", gap) + ageStr
+	showTagInput := isSelected && m.inlineTagBacklogID == backlog.ID && m.inlineTagInputView != ""
+	if len(backlog.Tags) > 0 || showTagInput {
+		indent := strings.Repeat(" ", iconWidth)
+		tagsStr := ""
+		if len(backlog.Tags) > 0 {
+			tagsStr = "#" + strings.Join(backlog.Tags, " #")
+			maxTagsWidth := m.width - prefixWidth - iconWidth - 2
+			if maxTagsWidth < 1 {
+				maxTagsWidth = 1
+			}
+			if lipgloss.Width(tagsStr) > maxTagsWidth {
+				tagsStr = ansi.Truncate(tagsStr, maxTagsWidth, "…")
+			}
+		}
+		if isSelected {
+			bg := lipgloss.NewStyle().Background(ColorSelectionBg)
+			if showTagInput {
+				sep := ""
+				if tagsStr != "" {
+					sep = "  "
+				}
+				line += "\n" + bg.Render("  ▌ ") +
+					TagBadgeStyle.Background(ColorSelectionBg).Render(indent+tagsStr+sep) +
+					m.inlineTagInputView
+			} else {
+				tagsContent := indent + tagsStr
+				padWidth := m.width - prefixWidth - lipgloss.Width(tagsContent)
+				if padWidth < 0 {
+					padWidth = 0
+				}
+				if isLanding {
+					t := float64(m.landFrame) / float64(jumpAnimFrames-1)
+					barColor := lipgloss.Color(blendHex("#60a5fa", "#ffffff", t))
+					barSt := lipgloss.NewStyle().Foreground(barColor).Background(ColorSelectionBg)
+					line += "\n" + bg.Render("  ") + barSt.Render("▌") + bg.Render(" ") +
+						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
+						bg.Render(strings.Repeat(" ", padWidth))
+				} else {
+					line += "\n" + bg.Render("  ▌ ") +
+						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
+						bg.Render(strings.Repeat(" ", padWidth))
+				}
+			}
+		} else {
+			line += "\n" + "    " + indent + TagBadgeStyle.Render(tagsStr)
+		}
+	}
+
+	return line
 }
 
 // subtitleMsgWidth returns the available text width for a subtitle line with the given icon.
@@ -587,9 +669,6 @@ func renderBadges(s claude.ClaudeSession, transform func(lipgloss.Style) lipglos
 	}
 	if s.ProblemType != "" {
 		badges = append(badges, problemTypeBadge(s.ProblemType, query))
-	}
-	if s.HasOverlap {
-		badges = append(badges, applyTransform(OverlapStyle).Render(IconOverlap))
 	}
 	if s.CompactCount > 0 {
 		badges = append(badges, applyTransform(ItemDetailStyle).Render(fmt.Sprintf("%s %d", IconCompact, s.CompactCount)))
@@ -882,17 +961,18 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	}
 	currentLine++ // "BACKLOG" group header
 
-	// Walk backlog items (each project gets a 1-line sub-header, each item is 1 line).
-	currentBacklogProject := ""
+	// Walk backlog items (each group gets a 1-line sub-header, each item is 1 or 2 lines).
+	currentBacklogGroup := ""
 	for _, backlog := range m.filteredBacklog {
-		if backlog.Project != currentBacklogProject {
-			currentBacklogProject = backlog.Project
-			currentLine++ // project sub-header (or selected project header — same 1 line)
+		group := backlogGroupKey(backlog)
+		if group != currentBacklogGroup {
+			currentBacklogGroup = group
+			currentLine++ // group sub-header (tag or project — always 1 line)
 		}
 		if line == currentLine {
 			return backlog.ID
 		}
-		currentLine++
+		currentLine += backlogItemLineCount(backlog)
 	}
 	return ""
 }
