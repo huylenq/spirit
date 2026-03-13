@@ -41,6 +41,9 @@ func (m *Model) applyPrefsFromText(text string) int {
 	if n, err := strconv.Atoi(prefs["sidebarWidthPct"]); err == nil {
 		m.sidebarWidthPct = n
 	}
+	if n, err := strconv.Atoi(prefs["chatOutlineWidth"]); err == nil {
+		m.detail.SetChatOutlineWidth(n)
+	}
 	m.applyLayout()
 	return unknowns
 }

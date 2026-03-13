@@ -209,6 +209,15 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// detailLocalX converts a terminal x coordinate to detail-view-local x.
+func (m Model) detailLocalX(termX int) int {
+	colOffset := 0
+	if !m.inFullscreenPopup {
+		colOffset = 1
+	}
+	return termX - colOffset - m.sidebarPanelWidth() - 1
+}
+
 // handleDetailClick handles left-clicks on the detail panel (e.g. chat outline messages).
 func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Click on backlog preview → enter edit mode
@@ -216,16 +225,49 @@ func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.execEditBacklog()
 	}
 
-	colOffset := 0
-	if !m.inFullscreenPopup {
-		colOffset = 1
-	}
-	// Convert terminal coords to detail-view-local coords.
-	// DetailPanelStyle has Padding(0,1), so the view content starts 1 col after the panel edge.
-	localX := msg.X - colOffset - m.sidebarPanelWidth() - 1
+	localX := m.detailLocalX(msg.X)
 	localY := msg.Y - contentStartRow
+
+	// Check if click is on the outline panel drag edge
+	if dragEdge := m.detail.ChatOutlineDragEdge(); dragEdge >= 0 {
+		if localX >= dragEdge-1 && localX <= dragEdge+1 {
+			m.outlineDragging = true
+			m.outlineDragStartX = msg.X
+			contentWidth := m.detail.Width() - 4
+			m.outlineDragStartW = m.detail.EffectivePanelWidth(contentWidth)
+			return m, nil
+		}
+	}
+
 	if idx := m.detail.ChatOutlineMsgAt(localX, localY); idx >= 0 {
 		m.detail.NavigateMsgTo(idx)
+	}
+	return m, nil
+}
+
+// handleOutlineDragMotion updates the outline panel width during a drag.
+func (m Model) handleOutlineDragMotion(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	delta := msg.X - m.outlineDragStartX
+	var newWidth int
+	switch m.chatOutlineMode {
+	case ChatOutlineDockedLeft:
+		// Dragging right = wider
+		newWidth = m.outlineDragStartW + delta
+	default:
+		// Docked-right and overlay: dragging left = wider
+		newWidth = m.outlineDragStartW - delta
+	}
+	m.detail.SetChatOutlineWidthFast(newWidth)
+	return m, nil
+}
+
+// handleOutlineDragRelease finalizes the drag and persists the new width.
+func (m Model) handleOutlineDragRelease() (tea.Model, tea.Cmd) {
+	m.outlineDragging = false
+	w := m.detail.ChatOutlineWidthOverride()
+	if w > 0 {
+		m.detail.SetChatOutlineWidth(w) // final reflow at the settled width
+		savePrefInt("chatOutlineWidth", w)
 	}
 	return m, nil
 }

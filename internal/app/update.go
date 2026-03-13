@@ -57,7 +57,7 @@ func copyToClipboard(text string) tea.Cmd {
 }
 
 // sessionDisplayTitle returns the effective display title for a session,
-// matching the sidebar panel's priority: custom title → headline → first message → "New session".
+// matching the sidebar panel's priority: custom title → synthesized title → first message → "New session".
 func sessionDisplayTitle(s claude.ClaudeSession) string {
 	title := s.DisplayName()
 	if title == "" {
@@ -299,8 +299,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var autoSynthCmds []tea.Cmd
 		for _, s := range msg.Sessions {
-			if prevSynth[s.PaneID] && !s.SynthesizePending && s.Headline != "" {
-				title := s.Headline
+			if prevSynth[s.PaneID] && !s.SynthesizePending && s.SynthesizedTitle != "" {
+				title := s.SynthesizedTitle
 				if runes := []rune(title); len(runes) > 60 {
 					title = string(runes[:59]) + "…"
 				}
@@ -424,13 +424,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.detail.SetSummary(msg.Summary)
 		}
-		// Update in-memory headline + problem type immediately so the list reflects it
+		// Update in-memory synthesized titles + problem type immediately so the list reflects it
 		if msg.Summary != nil {
 			for i := range m.sessions {
 				if m.sessions[i].PaneID == msg.PaneID {
-					if msg.Summary.Headline != "" {
-						m.sessions[i].Headline = msg.Summary.Headline
-					}
+					m.sessions[i].SynthesizedTitle = msg.Summary.SynthesizedTitle
 					if msg.Summary.ProblemType != "" {
 						m.sessions[i].ProblemType = msg.Summary.ProblemType
 					}
@@ -456,9 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if r.Summary != nil {
 				for i := range m.sessions {
 					if m.sessions[i].PaneID == r.PaneID {
-						if r.Summary.Headline != "" {
-							m.sessions[i].Headline = r.Summary.Headline
-						}
+						m.sessions[i].SynthesizedTitle = r.Summary.SynthesizedTitle
 						if r.Summary.ProblemType != "" {
 							m.sessions[i].ProblemType = r.Summary.ProblemType
 						}
@@ -584,6 +580,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if m.showHelp || m.showSpiritAnimal {
+			return m, nil
+		}
+		// Handle outline drag in progress (motion/release) before anything else.
+		if m.outlineDragging {
+			switch msg.Action {
+			case tea.MouseActionMotion:
+				return m.handleOutlineDragMotion(msg)
+			case tea.MouseActionRelease:
+				return m.handleOutlineDragRelease()
+			}
 			return m, nil
 		}
 		switch msg.Button {

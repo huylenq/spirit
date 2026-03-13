@@ -21,6 +21,7 @@ var PrefRegistry = []PrefDef{
 	{Key: "minimapMaxH", Label: "Minimap max height"},
 	{Key: "minimapCollapse", Label: "Minimap collapse"},
 	{Key: "chatOutlineMode", Label: "Chat outline mode"},
+	{Key: "chatOutlineWidth", Label: "Chat outline width"},
 	{Key: "sidebarWidthPct", Label: "Sidebar width %"},
 	{Key: "autoSynthesize", Label: "Auto-synthesize on idle"},
 }

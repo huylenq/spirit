@@ -55,7 +55,7 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 	}
 
 	contentWidth := m.width - 4
-	panelWidth := calcPanelWidth(contentWidth)
+	panelWidth := m.effectivePanelWidth(contentWidth)
 
 	// Determine the outline panel's left x within the detail view string.
 	// Overlay: overlayAt places panel at col = (contentWidth+2) - panelWidth - 1
@@ -70,6 +70,8 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 			vpWidth = 1
 		}
 		outlineLeft = vpWidth + 2
+	case chatOutlineDockedLeft:
+		outlineLeft = 1
 	default:
 		return -1
 	}

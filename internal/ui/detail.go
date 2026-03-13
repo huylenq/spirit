@@ -192,6 +192,17 @@ func (m *DetailModel) SetChatOutlineWidth(w int) {
 	}
 }
 
+// SetChatOutlineWidthFast updates the panel width override and adjusts the
+// viewport width without reflowing content. Use during drag motion to avoid
+// rewrapping content on every pixel; call SetChatOutlineWidth on drag release
+// for the final reflow.
+func (m *DetailModel) SetChatOutlineWidthFast(w int) {
+	m.chatOutlineWidthOverride = w
+	if m.ready {
+		m.viewport.Width = m.effectiveVPWidth(m.width)
+	}
+}
+
 // ChatOutlineWidthOverride returns the current width override (0 = default).
 func (m *DetailModel) ChatOutlineWidthOverride() int {
 	return m.chatOutlineWidthOverride
@@ -217,15 +228,15 @@ func (m *DetailModel) ChatOutlineDragEdge() int {
 	panelWidth := m.effectivePanelWidth(contentWidth)
 	switch m.chatOutlineMode {
 	case chatOutlineDocked:
-		// Gap column between viewport (left) and outline (right)
+		// Outline panel's left border (1 col right of the gap)
 		vpWidth := contentWidth - panelWidth - 3
 		if vpWidth < 1 {
 			vpWidth = 1
 		}
-		return vpWidth + 1
+		return vpWidth + 2
 	case chatOutlineDockedLeft:
-		// Gap column between outline (left) and viewport (right)
-		return panelWidth + 1
+		// First viewport column, just past the gap
+		return panelWidth + 2
 	case chatOutlineOverlay:
 		// Left edge of the overlay panel
 		return contentWidth - panelWidth
