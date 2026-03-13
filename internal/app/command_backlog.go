@@ -9,6 +9,21 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
+// findTmuxSessionForCWD returns the tmux session name to use for a given CWD.
+// Scans active sessions for a match, then falls back to origPane.
+// Returns "" if no session is available.
+func (m Model) findTmuxSessionForCWD(cwd string) string {
+	for _, s := range m.sessions {
+		if s.CWD == cwd && s.TmuxSession != "" {
+			return s.TmuxSession
+		}
+	}
+	if m.origPane.Captured {
+		return m.origPane.Session
+	}
+	return ""
+}
+
 func (m Model) execNewBacklogForCWD(cwd string) (Model, tea.Cmd) {
 	m.state = StateBacklogPrompt
 	m.activeBacklogCWD = cwd
@@ -82,16 +97,7 @@ func (m Model) execSubmitBacklog() (Model, tea.Cmd) {
 	}
 
 	// Need a tmux session to create the window in
-	var tmuxSession string
-	for _, s := range m.sessions {
-		if s.CWD == backlog.CWD && s.TmuxSession != "" {
-			tmuxSession = s.TmuxSession
-			break
-		}
-	}
-	if tmuxSession == "" && m.origPane.Captured {
-		tmuxSession = m.origPane.Session
-	}
+	tmuxSession := m.findTmuxSessionForCWD(backlog.CWD)
 	if tmuxSession == "" {
 		return m, func() tea.Msg { return flashErrorMsg("no tmux session detected") }
 	}
