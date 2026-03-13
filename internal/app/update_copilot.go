@@ -93,7 +93,7 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.copilot.ScrollUp(5)
 		return m, nil
 
-	case msg.String() == "ctrl+a":
+	case msg.String() == "alt+\"":
 		m.state = StateAdjustCopilot
 		m.copilotInput.TextInput().Blur()
 		m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)

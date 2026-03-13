@@ -31,49 +31,49 @@ type diffFileStat struct {
 }
 
 type DetailModel struct {
-	viewport               viewport.Model
-	session                *claude.ClaudeSession
-	content                string
-	userMessages           []string
-	msgOffsets             []int // line index in content for each userMessage; -1 if not found
-	msgCursor              int   // which user message we last navigated to
-	pendingMsgReset        bool  // set on session switch; reset msgCursor when messages arrive
-	diffStats              map[string]claude.FileDiffStat
-	diffFiles              []diffFileStat // cached sorted file entries
-	summary                *claude.SessionSummary
-	note                   string          // freeform note for this session (empty = no panel)
-	noteEditor             NoteEditorModel // inline textarea for editing the note
-	noteEditing            bool            // true while the note is being edited
-	relayView              string          // when set, rendered inline after the ❯ prompt line
-	hookEvents             []claude.HookEvent
-	showHooks              bool
-	chatOutlineMode         string // chatOutlineOverlay, chatOutlineDocked, chatOutlineDockedLeft, chatOutlineHidden
-	chatOutlineWidthOverride int  // 0 = use calcPanelWidth default
-	hookCursor             int
-	hookExpanded           map[int]bool   // per-entry expansion (keyed by filtered index)
-	hookExpandedJSON       map[int]string // lazy pretty-print cache
-	hookScroll             int
-	hookFilter             int                // 0=all, 1=handled only, 2=unhandled only
-	hookFiltered           []claude.HookEvent // cached filtered+reversed slice
-	transcriptEntries      []claude.TranscriptEntry
-	transcriptCursor       int            // selected entry index
-	transcriptScroll       int            // first visible entry index
-	transcriptExpanded     map[int]bool   // which entries are expanded
-	transcriptExpandedJSON map[int]string // lazy pretty-print cache
-	transcriptMaxTypeW     int            // cached max width of Type column
-	transcriptMaxCTypeW    int            // cached max width of ContentType column
-	showRawTranscript      bool
-	showDiffs              bool
-	diffHunks              []claude.FileDiffHunk
-	diffHunkFiles          []diffHunkFile
-	diffScroll             int
-	diffSimThreshold       float64 // similarity threshold for ~ vs separate -/+ lines
-	insightIdx             int    // random insight index, picked on session switch
-	renderedInsight        string // glamour-rendered insight (single line, ANSI-styled)
-	width                  int
-	height                 int
-	ready                  bool
-	allQuiet               AllQuietAnim
+	viewport                 viewport.Model
+	session                  *claude.ClaudeSession
+	content                  string
+	userMessages             []string
+	msgOffsets               []int // line index in content for each userMessage; -1 if not found
+	msgCursor                int   // which user message we last navigated to
+	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
+	diffStats                map[string]claude.FileDiffStat
+	diffFiles                []diffFileStat // cached sorted file entries
+	summary                  *claude.SessionSummary
+	note                     string          // freeform note for this session (empty = no panel)
+	noteEditor               NoteEditorModel // inline textarea for editing the note
+	noteEditing              bool            // true while the note is being edited
+	relayView                string          // when set, rendered inline after the ❯ prompt line
+	hookEvents               []claude.HookEvent
+	showHooks                bool
+	chatOutlineMode          string // chatOutlineOverlay, chatOutlineDocked, chatOutlineDockedLeft, chatOutlineHidden
+	chatOutlineWidthOverride int    // 0 = use calcPanelWidth default
+	hookCursor               int
+	hookExpanded             map[int]bool   // per-entry expansion (keyed by filtered index)
+	hookExpandedJSON         map[int]string // lazy pretty-print cache
+	hookScroll               int
+	hookFilter               int                // 0=all, 1=handled only, 2=unhandled only
+	hookFiltered             []claude.HookEvent // cached filtered+reversed slice
+	transcriptEntries        []claude.TranscriptEntry
+	transcriptCursor         int            // selected entry index
+	transcriptScroll         int            // first visible entry index
+	transcriptExpanded       map[int]bool   // which entries are expanded
+	transcriptExpandedJSON   map[int]string // lazy pretty-print cache
+	transcriptMaxTypeW       int            // cached max width of Type column
+	transcriptMaxCTypeW      int            // cached max width of ContentType column
+	showRawTranscript        bool
+	showDiffs                bool
+	diffHunks                []claude.FileDiffHunk
+	diffHunkFiles            []diffHunkFile
+	diffScroll               int
+	diffSimThreshold         float64 // similarity threshold for ~ vs separate -/+ lines
+	insightIdx               int     // random insight index, picked on session switch
+	renderedInsight          string  // glamour-rendered insight (single line, ANSI-styled)
+	width                    int
+	height                   int
+	ready                    bool
+	allQuiet                 AllQuietAnim
 }
 
 func NewDetailModel() DetailModel {
@@ -154,11 +154,11 @@ func (m *DetailModel) updateRenderedInsight(s *claude.ClaudeSession) {
 		return
 	}
 
-	// Pick the first non-empty line from glamour output
+	// Pick the first non-empty line from glamour output, dedented
 	for _, line := range strings.Split(rendered, "\n") {
 		stripped := strings.TrimSpace(ansi.Strip(line))
 		if stripped != "" {
-			m.renderedInsight = strings.TrimRight(line, " \t")
+			m.renderedInsight = strings.TrimSpace(line)
 			return
 		}
 	}
