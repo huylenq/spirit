@@ -734,18 +734,41 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 	anyLinesEmitted := false
 
 	for _, s := range m.allSorted {
+		order := sessionOrder(s)
+
+		// Skip collapsed sections — mirrors View()'s continue checks exactly
+		if !m.claudingExpanded && order == OrderAgentTurn {
+			continue
+		}
+		if !m.laterExpanded && order == OrderLater {
+			continue
+		}
+
 		// Group headers — must mirror View()'s logic exactly
 		if m.groupByProject {
-			if s.Project != currentProject {
-				currentProject = s.Project
+			// Emit LATER status header when entering the Later zone
+			if order == OrderLater && currentOrder != OrderLater {
+				currentOrder = OrderLater
+				currentProject = "" // reset to force project sub-header
 				if anyLinesEmitted {
 					currentLine++ // separator
 				}
 				anyLinesEmitted = true
-				currentLine++ // group header
+				currentLine++ // LATER status group header
+			}
+			if s.Project != currentProject {
+				currentProject = s.Project
+				if currentOrder == OrderLater {
+					currentLine++ // project sub-header (no separator within Later)
+				} else {
+					if anyLinesEmitted {
+						currentLine++ // separator
+					}
+					anyLinesEmitted = true
+					currentLine++ // group header
+				}
 			}
 		} else {
-			order := sessionOrder(s)
 			if order != currentOrder {
 				currentOrder = order
 				currentProject = ""
@@ -798,17 +821,40 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		anyLinesEmitted := false
 
 		for _, s := range m.allSorted {
+			order := sessionOrder(s)
+
+			// Skip collapsed sections — mirrors View()'s continue checks exactly
+			if !m.claudingExpanded && order == OrderAgentTurn {
+				continue
+			}
+			if !m.laterExpanded && order == OrderLater {
+				continue
+			}
+
 			if m.groupByProject {
-				if s.Project != currentProject {
-					currentProject = s.Project
+				// Emit LATER status header when entering the Later zone
+				if order == OrderLater && currentOrder != OrderLater {
+					currentOrder = OrderLater
+					currentProject = "" // reset to force project sub-header
 					if anyLinesEmitted {
 						currentLine++ // separator
 					}
 					anyLinesEmitted = true
-					currentLine++ // group header
+					currentLine++ // LATER status group header
+				}
+				if s.Project != currentProject {
+					currentProject = s.Project
+					if currentOrder == OrderLater {
+						currentLine++ // project sub-header (no separator within Later)
+					} else {
+						if anyLinesEmitted {
+							currentLine++ // separator
+						}
+						anyLinesEmitted = true
+						currentLine++ // group header
+					}
 				}
 			} else {
-				order := sessionOrder(s)
 				if order != currentOrder {
 					currentOrder = order
 					currentProject = ""

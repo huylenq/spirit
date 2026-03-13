@@ -85,6 +85,8 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMinimapClick(msg)
 	case panelSidebar:
 		return m.handleListClick(msg)
+	case panelDetail:
+		return m.handleDetailClick(msg)
 	}
 	return m, nil
 }
@@ -184,6 +186,22 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	} else if !isClaude {
 		return m, m.focusNonClaudePane()
+	}
+	return m, nil
+}
+
+// handleDetailClick handles left-clicks on the detail panel (e.g. chat outline messages).
+func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	colOffset := 0
+	if !m.inFullscreenPopup {
+		colOffset = 1
+	}
+	// Convert terminal coords to detail-view-local coords.
+	// DetailPanelStyle has Padding(0,1), so the view content starts 1 col after the panel edge.
+	localX := msg.X - colOffset - m.sidebarPanelWidth() - 1
+	localY := msg.Y - contentStartRow
+	if idx := m.detail.ChatOutlineMsgAt(localX, localY); idx >= 0 {
+		m.detail.NavigateMsgTo(idx)
 	}
 	return m, nil
 }
