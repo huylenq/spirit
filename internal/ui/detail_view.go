@@ -80,6 +80,13 @@ func (m *DetailModel) View() string {
 	badge := AvatarMnemonicBadge(s.AvatarAnimalIdx, s.AvatarColorIdx)
 	sessionTitle := avatar + " " + badge
 	if name := s.DisplayName(); name != "" {
+		// Strip newlines — FirstMessage can be multiline
+		name = strings.ReplaceAll(name, "\n", " ")
+		prefixWidth := lipgloss.Width(sessionTitle) + 1 // +1 for the separating space we'll prepend
+		maxNameWidth := m.width - prefixWidth - 2       // -2 matches line-1 right-margin convention
+		if maxNameWidth > 0 {
+			name = ansi.Truncate(name, maxNameWidth, "…")
+		}
 		sessionTitle += " " + name
 	}
 
