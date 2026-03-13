@@ -101,28 +101,7 @@ func (m Model) View() string {
 	// Detail panel (reduced height when queue section visible)
 	detailH := contentHeight - queueHeight
 	var detailContent string
-	if m.state == StateCopilot || m.state == StateCopilotConfirm {
-		// Copilot chat panel with input at bottom
-		inputView := m.copilotInput.View()
-		inputHeight := 0
-		if inputView != "" {
-			inputHeight = 1
-		}
-		chatH := detailH - inputHeight
-		if chatH < 1 {
-			chatH = 1
-		}
-		chat := ui.RenderCopilotChat(
-			m.copilot.Messages(), detailWidth, chatH,
-			m.copilot.ScrollOffset(), m.copilot.Streaming(),
-			m.copilot.PendingTool(),
-		)
-		if inputView != "" {
-			detailContent = chat + "\n" + inputView
-		} else {
-			detailContent = chat
-		}
-	} else if m.state == StateBacklogPrompt && !m.backlogOverlay {
+	if m.state == StateBacklogPrompt && !m.backlogOverlay {
 		project := ""
 		if m.activeBacklogCWD != "" {
 			project = filepath.Base(m.activeBacklogCWD)
@@ -239,6 +218,31 @@ func (m Model) View() string {
 		content = m.overlayPrompt(content, project, row, innerWidth)
 	}
 
+	// Copilot floating overlay (highest z-order — renders on top of everything)
+	if m.state == StateCopilot || m.state == StateCopilotConfirm {
+		const (
+			copilotMaxW = 70 // max overlay width in columns
+			copilotMinH = 5  // min overlay height (title + 1 msg + input + border)
+			marginR     = 2  // right margin from content edge
+			marginB     = 1  // bottom margin from content edge
+		)
+		overlayW := min(copilotMaxW, innerWidth-2*marginR)
+		maxOverlayH := max(contentHeight-2*marginB, copilotMinH)
+
+		inputView := m.copilotInput.View()
+		overlay := ui.RenderCopilotOverlay(
+			m.copilot.Messages(), inputView,
+			overlayW, maxOverlayH,
+			m.copilot.ScrollOffset(), m.copilot.Streaming(),
+			m.copilot.PendingTool(),
+		)
+
+		overlayH := lipgloss.Height(overlay)
+		row := max(contentHeight-overlayH-marginB, 1)
+		col := max(innerWidth-overlayW-marginR, 0)
+
+		content = ui.OverlayAt(content, overlay, row, col)
+	}
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization
 	var inner string

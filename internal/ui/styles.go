@@ -145,6 +145,11 @@ var (
 				BorderForeground(ColorBorder).
 				Padding(0, 1, 1, 1)
 
+	// AsideDockLeftStyle is for the aside panel (outline + notes) in docked-left
+	// mode: no border — the separator line is drawn as a standalone column in View().
+	AsideDockLeftStyle = lipgloss.NewStyle().
+				Padding(0, 1, 1, 1)
+
 	TranscriptTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorAccent)
@@ -288,4 +293,16 @@ var (
 	ColorNote     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#facc15"} // yellow
 	ColorBashCmd  = lipgloss.AdaptiveColor{Light: "#9B4523", Dark: "#CC785C"} // coral — Claude Code default pink
 	ColorSlashCmd = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple — slash commands
+
+	// Copilot floating overlay (indigo — distinct from blue accent and purple)
+	ColorCopilot = lipgloss.AdaptiveColor{Light: "#4f46e5", Dark: "#818cf8"}
+
+	CopilotOverlayStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorCopilot).
+				Padding(0, 1)
+
+	CopilotTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorCopilot)
 )

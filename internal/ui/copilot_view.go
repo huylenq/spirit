@@ -38,20 +38,8 @@ func toolStatusIcon(status string) string {
 	}
 }
 
-// RenderCopilotChat renders the copilot chat panel content.
-// Messages are rendered bottom-up (most recent at bottom), scrollable via scrollOff.
-func RenderCopilotChat(messages []CopilotMessage, width, height int, scrollOff int, streaming bool, pendingTool *CopilotToolConfirm) string {
-	if width < 4 {
-		width = 4
-	}
-	contentWidth := width - 2 // side padding
-
-	if len(messages) == 0 && pendingTool == nil {
-		placeholder := copilotUserStyle.Render("Ask the copilot anything about your sessions...")
-		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, placeholder)
-	}
-
-	// Render all messages into lines
+// copilotRenderLines converts messages into styled terminal lines.
+func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, pendingTool *CopilotToolConfirm) []string {
 	var allLines []string
 	for i, msg := range messages {
 		var rendered string
@@ -108,25 +96,56 @@ func RenderCopilotChat(messages []CopilotMessage, width, height int, scrollOff i
 		allLines = append(allLines, confirmLine)
 	}
 
-	// Apply scroll offset and take last `height` lines
-	totalLines := len(allLines)
-	end := totalLines - scrollOff
-	if end < 0 {
-		end = 0
-	}
-	start := end - height
-	if start < 0 {
-		start = 0
+	return allLines
+}
+
+// RenderCopilotOverlay renders the copilot as a bordered floating overlay box.
+// width is the desired outer box width (including border + padding).
+// maxHeight is the maximum outer box height (including border).
+// The overlay is fit-to-content: it shrinks when there are few messages,
+// and grows upward (from the bottom) until hitting maxHeight.
+func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, pendingTool *CopilotToolConfirm) string {
+	// Text content width: outer - border(2) - padding(2)
+	contentWidth := max(width-4, 4)
+
+	// Title line
+	title := CopilotTitleStyle.Render("Copilot")
+
+	inputHeight := 0
+	if inputView != "" {
+		inputHeight = 1
 	}
 
+	// Max chat lines: maxHeight - border(2) - title(1) - input
+	maxChatH := max(maxHeight-2-1-inputHeight, 1)
+
+	// Empty state
+	if len(messages) == 0 && pendingTool == nil {
+		placeholder := copilotUserStyle.Render("Ask the copilot anything...")
+		body := title + "\n" + placeholder
+		if inputView != "" {
+			body += "\n" + inputView
+		}
+		// Width param for lipgloss = outer - border(2), since Width includes padding
+		return CopilotOverlayStyle.Width(width - 2).Render(body)
+	}
+
+	allLines := copilotRenderLines(messages, contentWidth, streaming, pendingTool)
+
+	// Fit-to-content: natural height capped at max
+	chatH := max(min(len(allLines), maxChatH), 1)
+
+	// Apply scroll offset and take last chatH lines
+	end := max(len(allLines)-scrollOff, 0)
+	start := max(end-chatH, 0)
 	visible := allLines[start:end]
 
-	// Pad with empty lines if we have fewer lines than height
-	for len(visible) < height {
-		visible = append([]string{""}, visible...)
+	body := title + "\n" + strings.Join(visible, "\n")
+	if inputView != "" {
+		body += "\n" + inputView
 	}
 
-	return strings.Join(visible, "\n")
+	return CopilotOverlayStyle.Width(width - 2).Render(body)
 }
 
 // wrapText performs simple word wrapping to fit within maxWidth.
