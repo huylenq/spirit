@@ -36,10 +36,7 @@ func (m Model) View() string {
 	footer := m.renderFooter(innerWidth)
 
 	// Content area: total height minus top border, label, footer (and bottom border when not fullscreen)
-	contentHeight := m.height - 3
-	if !m.inFullscreenPopup {
-		contentHeight -= 1
-	}
+	contentHeight := m.contentHeight()
 
 	// If minimap should be docked, render it first to reserve vertical space
 	minimapDocked := false
