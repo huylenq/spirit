@@ -144,6 +144,10 @@ func (m *PromptEditorModel) SetSize(w, h int) {
 	m.input.SetHeight(h)
 }
 
+func (m *PromptEditorModel) SetHeight(h int) {
+	m.input.SetHeight(h)
+}
+
 // SetModel sets the model (toggle: same value clears it back to default).
 func (m *PromptEditorModel) SetModel(model string) {
 	if m.selectedModel == model {

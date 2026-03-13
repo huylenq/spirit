@@ -57,6 +57,14 @@ func (m Model) renderMessageToast() string {
 func (m Model) overlayPrompt(content, project string, row, innerWidth int) string {
 	col := lipgloss.Width(ui.IconFolder+" "+project) + 3 // 1 left pad + 1 right pad + 1 gap
 	overlayWidth := min(innerWidth-col, 72)
+
+	// Cap textarea height so the overlay fits within available vertical space.
+	// Chrome overhead: border(2) + padding(2) + header(1) + blanks(2) + hints(2) = 9
+	contentLines := strings.Count(content, "\n") + 1
+	availH := contentLines - row
+	taH := min(8, max(availH-9, 1))
+	m.promptEditor.SetHeight(taH)
+
 	overlayView := m.promptEditor.View(project, overlayWidth)
 	return ui.OverlayAt(content, overlayView, row, col)
 }
