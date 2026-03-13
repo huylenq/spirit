@@ -180,9 +180,11 @@ func (m DetailModel) renderChatOutline(width int) string {
 		innerWidth = 5
 	}
 
-	// Pre-compute the two continuation glyph variants to avoid per-iteration allocations.
+	// Pre-compute per-type bullet styles to avoid per-iteration allocations.
 	bulletContGlyph := lipgloss.NewStyle().Foreground(TranscriptBulletStyle.GetForeground()).Render("╰")
 	cursorContGlyph := lipgloss.NewStyle().Foreground(TranscriptCursorStyle.GetForeground()).Render("╰")
+	bashBulletStyle := TranscriptBulletStyle.Foreground(ColorBashCmd)
+	planBulletStyle := TranscriptBulletStyle.Foreground(ColorPlan)
 
 	var lines []string
 
@@ -191,22 +193,38 @@ func (m DetailModel) renderChatOutline(width int) string {
 	lines = append(lines, "") // blank line after title
 	for i, msg := range m.userMessages {
 		focused := i == m.msgCursor
+
+		// Flatten + detect/strip type prefix → promote prefix to bullet glyph.
+		flat := strings.ReplaceAll(msg, "\n", " ")
+		bulletGlyph := IconQuote
+		typedStyle := TranscriptBulletStyle
+		switch {
+		case strings.HasPrefix(flat, claude.BashCmdGlyph):
+			bulletGlyph = "!"
+			typedStyle = bashBulletStyle
+			flat = flat[len(claude.BashCmdGlyph):]
+		case strings.HasPrefix(flat, claude.PlanGlyph):
+			bulletGlyph = IconPlan
+			typedStyle = planBulletStyle
+			flat = flat[len(claude.PlanGlyph):]
+		}
+
 		var styledIndicator string
 		msgStyle := TranscriptMsgStyle
 		contGlyph := bulletContGlyph
 		if focused {
-			styledIndicator = TranscriptCursorStyle.Render(IconQuote + " ")
+			styledIndicator = TranscriptCursorStyle.Render(bulletGlyph + " ")
 			contGlyph = cursorContGlyph
 		} else {
-			styledIndicator = TranscriptBulletStyle.Render(IconQuote + " ")
+			styledIndicator = typedStyle.Render(bulletGlyph + " ")
 			msgStyle = ItemDetailStyle
 		}
+
 		// Allow up to 2 lines per message: innerWidth minus the 2-char indicator column
 		msgWidth := innerWidth - 2
 		if msgWidth < 1 {
 			msgWidth = 1
 		}
-		flat := strings.ReplaceAll(msg, "\n", " ")
 		if ansi.StringWidth(flat) <= msgWidth {
 			lines = append(lines, styledIndicator+msgStyle.Render(flat))
 		} else {
