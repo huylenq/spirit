@@ -156,6 +156,15 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqBacklogDelete:
 		return d.handleBacklogDelete(req.Data)
 
+	case ReqCopilotChat:
+		return d.handleCopilotChat(req.Data)
+
+	case ReqCopilotCancel:
+		return d.handleCopilotCancel()
+
+	case ReqCopilotStatus:
+		return d.handleCopilotStatus()
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r

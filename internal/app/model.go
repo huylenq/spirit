@@ -47,6 +47,8 @@ const (
 	StateMacroEdit            // inline macro editor open
 	StateTagRelay             // tag input relay open
 	StateNoteEdit             // session note editor open
+	StateCopilot              // copilot chat panel active
+	StateCopilotConfirm       // copilot tool confirmation pending
 )
 
 const defaultMinimapMaxH = 14
@@ -223,6 +225,8 @@ type Model struct {
 	deleteTargetBacklog  claude.Backlog // backlog item pending delete confirmation
 	macros               []claude.Macro // loaded macros (built-in + user)
 	macroEditor          ui.MacroEditorModel
+	copilot              ui.CopilotModel
+	copilotInput         ui.RelayModel
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -250,6 +254,8 @@ func NewModel(client *daemon.Client) Model {
 		minimap:           ui.NewMinimapModel(),
 		promptEditor:      ui.NewPromptEditorModel(),
 		macroEditor:       ui.NewMacroEditorModel(),
+		copilot:           ui.NewCopilotModel(),
+		copilotInput:      ui.NewCopilotRelayModel(),
 		macros:            claude.LoadMacros(nil),
 		chatOutlineMode:       loadPrefString("chatOutlineMode", ChatOutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),

@@ -121,6 +121,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case msg.String() == "@":
+		m.state = StateCopilot
+		m.copilotInput.Activate()
+		return m, nil
+
 	case key.Matches(msg, Keys.Macro):
 		m.state = StateMacro
 		return m, nil

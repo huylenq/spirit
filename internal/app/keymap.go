@@ -182,6 +182,7 @@ var Chords = []Chord{
 	{Keys: "gd", Help: "diffs"},
 	{Keys: "gh", Help: "hooks"},
 	{Keys: "gt", Help: "transcript json"},
+	{Keys: "gc", Help: "copilot"},
 	{Keys: "gg", Help: "top"},
 	{Keys: "gs", Help: "spirit animal"},
 }
@@ -190,6 +191,7 @@ func init() {
 	executors := map[string]func(m *Model) (Model, tea.Cmd){
 		"ys": func(m *Model) (Model, tea.Cmd) { return m.execCopySessionID() },
 		"yc": func(m *Model) (Model, tea.Cmd) { return m.execCaptureView() },
+		"gc": func(m *Model) (Model, tea.Cmd) { return execToggleCopilot(m) },
 		"gd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
 		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
 		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },

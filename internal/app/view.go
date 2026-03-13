@@ -101,7 +101,28 @@ func (m Model) View() string {
 	// Detail panel (reduced height when queue section visible)
 	detailH := contentHeight - queueHeight
 	var detailContent string
-	if m.state == StateBacklogPrompt && !m.backlogOverlay {
+	if m.state == StateCopilot || m.state == StateCopilotConfirm {
+		// Copilot chat panel with input at bottom
+		inputView := m.copilotInput.View()
+		inputHeight := 0
+		if inputView != "" {
+			inputHeight = 1
+		}
+		chatH := detailH - inputHeight
+		if chatH < 1 {
+			chatH = 1
+		}
+		chat := ui.RenderCopilotChat(
+			m.copilot.Messages(), detailWidth, chatH,
+			m.copilot.ScrollOffset(), m.copilot.Streaming(),
+			m.copilot.PendingTool(),
+		)
+		if inputView != "" {
+			detailContent = chat + "\n" + inputView
+		} else {
+			detailContent = chat
+		}
+	} else if m.state == StateBacklogPrompt && !m.backlogOverlay {
 		project := ""
 		if m.activeBacklogCWD != "" {
 			project = filepath.Base(m.activeBacklogCWD)

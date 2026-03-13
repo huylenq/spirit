@@ -269,6 +269,16 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("[y]") + "es " +
 			ui.FooterKeyStyle.Render("[n]") + "o"
 		return ui.FooterStyle.Width(width).Render(prompt)
+	case StateCopilot:
+		h := ui.FooterKeyStyle.Render("esc") + " back  " +
+			ui.FooterKeyStyle.Render("enter") + " send  " +
+			ui.FooterKeyStyle.Render("ctrl+c") + " cancel  " +
+			ui.FooterKeyStyle.Render("ctrl+d/u") + " scroll"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateCopilotConfirm:
+		h := ui.FooterKeyStyle.Render("y") + " allow  " +
+			ui.FooterKeyStyle.Render("n") + " deny"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateMinimapSettings:
 		h := ui.FooterKeyStyle.Render("M") + " cycle  " +
 			ui.FooterKeyStyle.Render("+/-") + " scale  " +

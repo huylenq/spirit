@@ -27,6 +27,15 @@ func NewQueueRelayModel() RelayModel {
 	return RelayModel{input: ti, origPrompt: "❮ "}
 }
 
+func NewCopilotRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = ""
+	ti.Prompt = "@ "
+	ti.PromptStyle = CopilotPromptStyle
+	ti.CharLimit = 512
+	return RelayModel{input: ti, origPrompt: "@ "}
+}
+
 func NewTagRelayModel() RelayModel {
 	ti := textinput.New()
 	ti.Placeholder = ""

@@ -5,6 +5,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/daemon"
 	"github.com/huylenq/claude-mission-control/internal/scripting"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
 // SessionsRefreshedMsg is sent when session discovery completes (pushed by daemon).
@@ -145,6 +146,11 @@ type DaemonReconnectedMsg struct {
 
 // MacroEditorExitedMsg is sent when the external $EDITOR process for a macro file exits.
 type MacroEditorExitedMsg struct{}
+
+// CopilotStreamChunkMsg delivers a streaming chunk from the copilot backend.
+type CopilotStreamChunkMsg struct {
+	Msg ui.CopilotStreamMsg
+}
 
 // LuaEvalDoneMsg is sent when an async Lua eval completes.
 type LuaEvalDoneMsg struct {

@@ -392,3 +392,25 @@ func (c *Client) BacklogUpdate(cwd, id, body string) (claude.Backlog, error) {
 func (c *Client) BacklogDelete(cwd, id string) error {
 	return c.rpcInto(Request{Type: ReqBacklogDelete, Data: marshalData(BacklogDeleteData{CWD: cwd, ID: id})}, nil)
 }
+
+// CopilotChat sends a message to the copilot and returns the full response (blocking).
+func (c *Client) CopilotChat(message string) (string, error) {
+	var result map[string]string
+	err := c.rpcInto(Request{Type: ReqCopilotChat, Data: marshalData(CopilotChatData{Message: message})}, &result)
+	if err != nil {
+		return "", err
+	}
+	return result["response"], nil
+}
+
+// CopilotCancel cancels any in-flight copilot prompt.
+func (c *Client) CopilotCancel() error {
+	return c.rpcInto(Request{Type: ReqCopilotCancel}, nil)
+}
+
+// CopilotStatus returns copilot readiness and stats.
+func (c *Client) CopilotStatus() (*CopilotStatusData, error) {
+	var data CopilotStatusData
+	err := c.rpcInto(Request{Type: ReqCopilotStatus}, &data)
+	return &data, err
+}

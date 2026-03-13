@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/copilot"
 )
 
 // autoSynthesize runs synthesis for a session that just became idle.
@@ -41,7 +42,7 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 
 	d.nudge() // show spinner immediately
 
-	_, _, err := claude.Summarize(sessionID)
+	summary, _, err := claude.Summarize(sessionID)
 
 	d.synthesizingMu.Lock()
 	delete(d.synthesizingPanes, paneID)
@@ -51,6 +52,18 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 	if err != nil {
 		log.Printf("auto-synth: session %s: %v", sessionID, err)
 		return
+	}
+
+	if d.copilotJournal != nil {
+		detail := ""
+		if summary != nil {
+			detail = summary.SynthesizedTitle
+		}
+		d.copilotJournal.Append(copilot.CopilotEvent{
+			Time: time.Now(), Type: copilot.EventSynthesized,
+			SessionID: sessionID,
+			Detail:    detail,
+		})
 	}
 
 	// No /rename SendKeys here — auto-synth must not inject keystrokes into

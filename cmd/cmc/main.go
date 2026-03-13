@@ -52,6 +52,12 @@ func main() {
 		case "dev":
 			runDev()
 			return
+		case "mcp-serve":
+			if err := runMCPServe(); err != nil {
+				fmt.Fprintf(os.Stderr, "mcp-serve: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "usage-dump":
 			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
 			if refresh {

@@ -64,14 +64,19 @@ const (
 	ReqBacklogCreate = "backlog_create"
 	ReqBacklogUpdate = "backlog_update"
 	ReqBacklogDelete = "backlog_delete"
+
+	ReqCopilotChat   = "copilot_chat"
+	ReqCopilotCancel = "copilot_cancel"
+	ReqCopilotStatus = "copilot_status"
 )
 
 // Response type constants.
 const (
-	RespPong     = "pong"
-	RespSessions = "sessions"
-	RespResult   = "result"
-	RespError    = "error"
+	RespPong          = "pong"
+	RespSessions      = "sessions"
+	RespResult        = "result"
+	RespError         = "error"
+	RespCopilotStream = "copilot_stream"
 )
 
 // --- Request data payloads ---
@@ -273,6 +278,27 @@ type BacklogListResultData struct {
 
 type BacklogItemResultData struct {
 	Backlog claude.Backlog `json:"backlog"`
+}
+
+// --- Copilot data payloads ---
+
+type CopilotChatData struct {
+	Message string `json:"message"`
+}
+
+type CopilotStatusData struct {
+	Ready       bool `json:"ready"`
+	EventsToday int  `json:"eventsToday"`
+	MemoryBytes int  `json:"memoryBytes"`
+}
+
+// CopilotStreamData wraps a stream message for the subscribe connection.
+type CopilotStreamData struct {
+	Type    string `json:"type"`              // "text_delta", "tool_call", "tool_update", "done", "error"
+	Content string `json:"content"`
+	ToolID  string `json:"tool_id,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Kind    string `json:"kind,omitempty"`
 }
 
 // --- Helpers ---

@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"fmt"
 	"slices"
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/copilot"
 )
 
 func (d *Daemon) pollLoop(stop chan struct{}) {
@@ -78,6 +80,23 @@ func (d *Daemon) poll() {
 		d.mu.Unlock()
 		return
 	}
+	// Emit copilot events for newly appeared sessions
+	if d.copilotJournal != nil {
+		oldIDs := make(map[string]bool, len(d.sessions))
+		for _, s := range d.sessions {
+			if s.SessionID != "" {
+				oldIDs[s.SessionID] = true
+			}
+		}
+		for _, s := range sessions {
+			if s.SessionID != "" && !oldIDs[s.SessionID] {
+				d.copilotJournal.Append(copilot.CopilotEvent{
+					Time: time.Now(), Type: copilot.EventSessionSpawned,
+					SessionID: s.SessionID, Project: s.Project,
+				})
+			}
+		}
+	}
 	d.sessions = sessions
 	d.version++
 	d.mu.Unlock()
@@ -121,11 +140,18 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 		// Capture paneID + sessionID before removal for auto-synthesis
 		endPaneID := d.sessions[idx].PaneID
 		endSessionID := d.sessions[idx].SessionID
+		endProject := d.sessions[idx].Project
 		d.sessions = append(d.sessions[:idx], d.sessions[idx+1:]...)
 		d.version++
 		sessions := d.sessions
 		d.mu.Unlock()
 		d.notifySubscribers(sessions)
+		if d.copilotJournal != nil && endSessionID != "" {
+			d.copilotJournal.Append(copilot.CopilotEvent{
+				Time: time.Now(), Type: copilot.EventSessionDied,
+				SessionID: endSessionID, Project: endProject,
+			})
+		}
 		if endSessionID != "" {
 			go d.autoSynthesize(endPaneID, endSessionID)
 			// Defer cleanup of debounce entry (after auto-synth has a chance to check it)
@@ -157,11 +183,19 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	status := claude.ParseStatus(nudge.Status)
 
 	if nudge.Status != "" && s.Status != status {
+		oldStatus := s.Status
 		if status == claude.StatusUserTurn && s.Status == claude.StatusAgentTurn {
 			becameUserTurn = true
 		}
 		s.Status = status
 		changed = true
+		if d.copilotJournal != nil {
+			d.copilotJournal.Append(copilot.CopilotEvent{
+				Time: time.Now(), Type: copilot.EventStatusChange,
+				SessionID: s.SessionID, Project: s.Project,
+				Detail: fmt.Sprintf("%s → %s", oldStatus, status),
+			})
+		}
 	}
 	if nudge.LastUserMessage != "" && s.LastUserMessage != nudge.LastUserMessage {
 		s.LastUserMessage = nudge.LastUserMessage
@@ -204,6 +238,12 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	if nudge.Compacted {
 		s.CompactCount++
 		changed = true
+		if d.copilotJournal != nil {
+			d.copilotJournal.Append(copilot.CopilotEvent{
+				Time: time.Now(), Type: copilot.EventCompacted,
+				SessionID: s.SessionID, Project: s.Project,
+			})
+		}
 	}
 
 	if !changed {

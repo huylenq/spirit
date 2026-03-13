@@ -79,6 +79,16 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
 		},
 
+		// --- Copilot ---
+		{
+			Name: "Copilot", Hotkey: "@",
+			Execute: func(m *Model) (Model, tea.Cmd) {
+				m.state = StateCopilot
+				m.copilotInput.Activate()
+				return *m, nil
+			},
+		},
+
 		// --- Global actions ---
 		{
 			Name: "Search", Hotkey: "/",

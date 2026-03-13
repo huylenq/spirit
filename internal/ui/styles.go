@@ -122,6 +122,11 @@ var (
 				Foreground(ColorWorking).
 				Bold(true)
 
+	// Copilot relay prompt
+	CopilotPromptStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent).
+				Bold(true)
+
 	// Tag relay prompt and badge
 	TagPromptStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).

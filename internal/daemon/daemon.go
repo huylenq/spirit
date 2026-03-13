@@ -1,17 +1,20 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/claude-mission-control/internal/copilot"
 )
 
 type subscriber struct {
@@ -74,6 +77,12 @@ type Daemon struct {
 	usageMu       sync.RWMutex
 	usageStats    *claude.UsageStats
 	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
+
+	copilotJournal   *copilot.Journal
+	copilotWorkspace *copilot.Workspace
+	copilotMemory    *copilot.Memory
+	copilotCancel    context.CancelFunc // cancel in-flight copilot prompt
+	copilotMu        sync.Mutex         // protects copilotCancel
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -141,6 +150,14 @@ func Run(info DaemonInfo) error {
 
 	// Recover queued messages from disk
 	d.recoverQueue()
+
+	// Initialize copilot subsystem
+	d.copilotWorkspace = copilot.NewWorkspace()
+	if err := d.copilotWorkspace.EnsureInitialized(); err != nil {
+		log.Printf("copilot workspace init: %v", err)
+	}
+	d.copilotJournal = copilot.NewJournal(filepath.Join(d.copilotWorkspace.Dir, "events"))
+	d.copilotMemory = copilot.NewMemory(d.copilotWorkspace.Dir)
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})

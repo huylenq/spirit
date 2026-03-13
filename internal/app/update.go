@@ -281,6 +281,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case CopilotStreamChunkMsg:
+		m.copilot.HandleStreamMsg(msg.Msg)
+		if msg.Msg.Type == "confirm" {
+			m.state = StateCopilotConfirm
+		}
+		// For synchronous (non-streaming) responses: text_delta is the full response,
+		// so auto-send a "done" to clear the streaming state.
+		if msg.Msg.Type == "text_delta" && m.copilot.Streaming() {
+			m.copilot.HandleStreamMsg(ui.CopilotStreamMsg{Type: "done"})
+		}
+		return m, nil
+
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
 		return m, cmd
@@ -656,6 +668,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMacroEdit(msg)
 	case StateNoteEdit:
 		return m.handleKeyNoteEdit(msg)
+	case StateCopilot:
+		return m.handleKeyCopilot(msg)
+	case StateCopilotConfirm:
+		return m.handleKeyCopilotConfirm(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}
