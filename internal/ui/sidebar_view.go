@@ -225,7 +225,7 @@ func renderStatusGroupHeader(order int) string {
 
 func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
 
-	// Display name priority: custom title → headline → first message → (new session)
+	// Display name priority: custom title → synthesized title → first message → (new session)
 	displayName := s.DisplayName()
 	isNewSession := displayName == ""
 	if isNewSession {
@@ -395,12 +395,12 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Match-context subtitles: show non-visible fields that matched the search
 	if hasQuery {
-		// Headline: shown when it's not the display name (i.e. customTitle is set) and matches
-		if s.SynthesizedTitle() != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle(), query) {
-			line += "\n" + m.renderSubtitleLine(s.SynthesizedTitle(), query, IconSynthTitle, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
+		// SynthesizedTitle: shown when it's not the display name (i.e. customTitle is set) and matches
+		if s.SynthesizedTitle != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle, query) {
+			line += "\n" + m.renderSubtitleLine(s.SynthesizedTitle, query, IconSynthTitle, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
-		// FirstMessage: shown when it's not the display name (customTitle or headline is set) and matches
-		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle() != "") && matchesNarrow(s.FirstMessage, query) {
+		// FirstMessage: shown when it's not the display name (customTitle or synthesized title is set) and matches
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle != "") && matchesNarrow(s.FirstMessage, query) {
 			rawFirst := strings.ReplaceAll(s.FirstMessage, "\n", " ")
 			line += "\n" + m.renderSubtitleLine(rawFirst, query, IconQuote, isSelected, isAutoJump, true, s.AvatarColorIdx, barSt)
 		}
@@ -1006,10 +1006,10 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 
 	hasQuery := query != ""
 	if hasQuery {
-		if s.SynthesizedTitle() != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle(), query) {
+		if s.SynthesizedTitle != "" && s.CustomTitle != "" && matchesNarrow(s.SynthesizedTitle, query) {
 			count++
 		}
-		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle() != "") && matchesNarrow(s.FirstMessage, query) {
+		if s.FirstMessage != "" && (s.CustomTitle != "" || s.SynthesizedTitle != "") && matchesNarrow(s.FirstMessage, query) {
 			count++
 		}
 	}

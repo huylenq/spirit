@@ -19,7 +19,7 @@ type WindowPaneInfo struct {
 	IsClaude    bool
 
 	// Claude-specific fields (empty if !IsClaude)
-	Headline        string
+	SynthesizedTitle string
 	LastUserMessage string
 	Status          string
 	Project         string
@@ -52,7 +52,7 @@ func GatherWindowPanes(sessionName string, windowIndex int, sessions []ClaudeSes
 
 		if cs, ok := sessionByPane[p.PaneID]; ok {
 			info.IsClaude = true
-			info.Headline = cs.Headline
+			info.SynthesizedTitle = cs.SynthesizedTitle
 			info.LastUserMessage = cs.LastUserMessage
 			info.Status = cs.Status.String()
 			info.Project = cs.Project
@@ -101,8 +101,8 @@ func GenerateWindowName(panes []WindowPaneInfo) (string, error) {
 		}
 		if p.IsClaude {
 			fmt.Fprintf(&b, "  running: Claude Code\n")
-			if p.Headline != "" {
-				fmt.Fprintf(&b, "  task: %s\n", p.Headline)
+			if p.SynthesizedTitle != "" {
+				fmt.Fprintf(&b, "  task: %s\n", p.SynthesizedTitle)
 			} else if p.LastUserMessage != "" {
 				// Truncate long messages
 				msg := p.LastUserMessage

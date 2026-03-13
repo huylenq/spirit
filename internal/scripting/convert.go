@@ -28,7 +28,7 @@ func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 
 	t.RawSetString("first_message", lua.LString(s.FirstMessage))
 	t.RawSetString("last_user_message", lua.LString(s.LastUserMessage))
-	t.RawSetString("headline", lua.LString(s.Headline))
+	t.RawSetString("synthesized_title", lua.LString(s.SynthesizedTitle))
 	t.RawSetString("custom_title", lua.LString(s.CustomTitle))
 	t.RawSetString("permission_mode", lua.LString(s.PermissionMode))
 	t.RawSetString("stop_reason", lua.LString(s.StopReason))

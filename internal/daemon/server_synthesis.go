@@ -31,9 +31,10 @@ func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
-	// Send /rename to pane when fresh synthesis produces a headline
-	if !fromCache && summary != nil && summary.Headline != "" {
-		tmux.SendKeys(req.PaneID, "/rename "+summary.Headline, "Enter")
+	// Send /rename to pane when fresh synthesis produces a synthesized title
+	if !fromCache && summary != nil && summary.SynthesizedTitle != "" {
+		tmux.SendKeys(req.PaneID, "/rename "+summary.SynthesizedTitle, "Enter")
+		claude.ApplySynthesizedTitle(req.SessionID)
 	}
 	r := resultResponse(SynthesizeResultData{
 		PaneID:    req.PaneID,
@@ -109,8 +110,9 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 				log.Printf("synthesize %s: %v", sessionID, err)
 				return
 			}
-			if !fromCache && summary != nil && summary.Headline != "" {
-				tmux.SendKeys(paneID, "/rename "+summary.Headline, "Enter")
+			if !fromCache && summary != nil && summary.SynthesizedTitle != "" {
+				tmux.SendKeys(paneID, "/rename "+summary.SynthesizedTitle, "Enter")
+				claude.ApplySynthesizedTitle(sessionID)
 			}
 			mu.Lock()
 			results = append(results, SynthesizeResultData{
@@ -127,5 +129,23 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 	go d.triggerDigest()
 
 	r := resultResponse(SynthesizeAllResultData{Results: results})
+	return &r
+}
+
+func (d *Daemon) handleApplyTitle(data json.RawMessage) *Response {
+	var req PaneSessionData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	cached := claude.ReadCachedSummary(req.SessionID)
+	if cached == nil || cached.SynthesizedTitle == "" {
+		r := errResponse("no synthesized title to apply")
+		return &r
+	}
+	tmux.SendKeys(req.PaneID, "/rename "+cached.SynthesizedTitle, "Enter")
+	claude.ApplySynthesizedTitle(req.SessionID)
+	d.nudge()
+	r := resultResponse(nil)
 	return &r
 }

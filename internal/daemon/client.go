@@ -213,6 +213,11 @@ func (c *Client) Summary(sessionID string) (*claude.SessionSummary, error) {
 	return data.Summary, err
 }
 
+// ApplyTitle sends /rename with the current SynthesizedTitle and marks it as applied.
+func (c *Client) ApplyTitle(paneID, sessionID string) error {
+	return c.rpcInto(Request{Type: ReqApplyTitle, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, nil)
+}
+
 // Synthesize triggers haiku synthesis. Daemon handles /rename side-effect.
 func (c *Client) Synthesize(paneID, sessionID string) (*claude.SessionSummary, bool, error) {
 	var data SynthesizeResultData

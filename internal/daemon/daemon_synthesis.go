@@ -16,7 +16,7 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 	}
 
 	// Skip if session already has a user-set custom title — synthesis
-	// headline wouldn't be displayed anyway (CustomTitle takes priority).
+	// synthesized title wouldn't be displayed anyway (CustomTitle takes priority).
 	if claude.ReadCustomTitle(sessionID) != "" {
 		return
 	}
@@ -54,7 +54,7 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 	}
 
 	// No /rename SendKeys here — auto-synth must not inject keystrokes into
-	// the user's input buffer. The Headline will appear in the TUI on the
+	// the user's input buffer. The SynthesizedTitle will appear in the TUI on the
 	// next poll cycle via DiscoverSessions → ReadCachedSummary.
 
 	// Trigger digest regeneration after synthesis

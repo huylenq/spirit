@@ -582,13 +582,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showHelp || m.showSpiritAnimal {
 			return m, nil
 		}
-		// Handle outline drag in progress (motion/release) before anything else.
+		// Handle panel drags in progress (motion/release) before anything else.
 		if m.outlineDragging {
 			switch msg.Action {
 			case tea.MouseActionMotion:
 				return m.handleOutlineDragMotion(msg)
 			case tea.MouseActionRelease:
 				return m.handleOutlineDragRelease()
+			}
+			return m, nil
+		}
+		if m.sidebarDragging {
+			switch msg.Action {
+			case tea.MouseActionMotion:
+				return m.handleSidebarDragMotion(msg)
+			case tea.MouseActionRelease:
+				return m.handleSidebarDragRelease()
 			}
 			return m, nil
 		}

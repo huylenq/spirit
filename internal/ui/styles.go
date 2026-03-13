@@ -279,5 +279,9 @@ var (
 	MacroEditorTitleStyle   = promptEditorTitle(ColorMacro)
 	MacroEditorKeyStyle     = lipgloss.NewStyle().Foreground(ColorMacro)
 
-	ColorNote = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#facc15"} // yellow
+	ColorNote     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#facc15"} // yellow
+	ColorBashCmd  = lipgloss.AdaptiveColor{Light: "#9B4523", Dark: "#CC785C"} // coral — Claude Code default pink
+	ColorSlashCmd = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple — slash commands
+
+	BashCmdPrefixStyle = lipgloss.NewStyle().Foreground(ColorBashCmd).Bold(true)
 )

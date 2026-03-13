@@ -185,6 +185,7 @@ func (m DetailModel) renderChatOutline(width int) string {
 	cursorContGlyph := lipgloss.NewStyle().Foreground(TranscriptCursorStyle.GetForeground()).Render("╰")
 	bashBulletStyle := TranscriptBulletStyle.Foreground(ColorBashCmd)
 	planBulletStyle := TranscriptBulletStyle.Foreground(ColorPlan)
+	slashBulletStyle := TranscriptBulletStyle.Foreground(ColorSlashCmd)
 
 	var lines []string
 
@@ -207,6 +208,10 @@ func (m DetailModel) renderChatOutline(width int) string {
 			bulletGlyph = IconPlan
 			typedStyle = planBulletStyle
 			flat = flat[len(claude.PlanGlyph):]
+		case strings.HasPrefix(flat, claude.SlashCmdGlyph):
+			bulletGlyph = "/"
+			typedStyle = slashBulletStyle
+			flat = flat[len(claude.SlashCmdGlyph):]
 		}
 
 		var styledIndicator string

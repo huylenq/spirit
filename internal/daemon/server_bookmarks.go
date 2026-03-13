@@ -111,7 +111,7 @@ func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
 			bm.Project = s.Project
 			bm.CWD = s.CWD
 			bm.GitBranch = s.GitBranch
-			bm.Headline = s.Headline
+			bm.SynthesizedTitle = s.SynthesizedTitle
 			bm.ProblemType = s.ProblemType
 			bm.CustomTitle = s.CustomTitle
 			bm.FirstMessage = s.FirstMessage

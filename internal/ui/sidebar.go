@@ -463,7 +463,7 @@ func (m *SidebarModel) applyNarrow() {
 // Returns -1 if no field matches.
 func bestNarrowScore(s claude.ClaudeSession, query string) int {
 	best := -1
-	for _, text := range []string{s.CustomTitle, s.Headline, s.FirstMessage, s.LastUserMessage, s.ProblemType} {
+	for _, text := range []string{s.CustomTitle, s.SynthesizedTitle, s.FirstMessage, s.LastUserMessage, s.ProblemType} {
 		if score := fuzzyScore(text, query); score > best {
 			best = score
 		}

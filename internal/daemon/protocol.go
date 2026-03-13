@@ -57,6 +57,7 @@ const (
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
 	ReqDigest                 = "digest"
+	ReqApplyTitle             = "apply_title"
 	ReqSetTags                = "set_tags"
 
 	ReqBacklogList   = "backlog_list"

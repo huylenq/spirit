@@ -167,17 +167,17 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		}
 		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
-			PaneID:          bm.PaneID,
-			Status:          StatusUserTurn,
-			Project:         bm.Project,
-			CWD:             bm.CWD,
-			Headline:        bm.Headline,
-			CustomTitle:     bm.CustomTitle,
-			FirstMessage:    bm.FirstMessage,
-			SessionID:       bm.SessionID,
-			IsPhantom:       true,
-			LaterBookmarkID: bm.ID,
-			LastChanged:     bm.CreatedAt,
+			PaneID:            bm.PaneID,
+			Status:            StatusUserTurn,
+			Project:           bm.Project,
+			CWD:               bm.CWD,
+			SynthesizedTitle: bm.SynthesizedTitle,
+			CustomTitle:       bm.CustomTitle,
+			FirstMessage:      bm.FirstMessage,
+			SessionID:         bm.SessionID,
+			IsPhantom:         true,
+			LaterBookmarkID:   bm.ID,
+			LastChanged:       bm.CreatedAt,
 		})
 	}
 
@@ -245,12 +245,14 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 			s.LastUserMessage = ReadLastUserMessage(sessionID)
 		}
 		if cached := ReadCachedSummary(sessionID); cached != nil {
-			if cached.Headline != "" {
-				s.Headline = cached.Headline
-			}
+			s.SynthesizedTitle = cached.SynthesizedTitle
 			if cached.ProblemType != "" {
 				s.ProblemType = cached.ProblemType
 			}
+			// Title drift: synthesized title changed since last /rename apply
+			s.TitleDrift = cached.SynthesizedTitle != "" &&
+				cached.AppliedSynthesizedTitle != "" &&
+				cached.SynthesizedTitle != cached.AppliedSynthesizedTitle
 		}
 		s.CustomTitle = ReadCustomTitle(sessionID)
 		s.FirstMessage = ReadFirstUserMessage(sessionID)

@@ -14,7 +14,7 @@ const (
 	IconGitCommit = "\ue729" // nf-dev-git_commit
 	// Subtitle icons
 	IconInput    = "\uf11c" // keyboard — last user message subtitle
-	IconHeadline = "\uf0eb" // lightbulb — headline match context
+	IconSynthTitle = "\uf0eb" // lightbulb — synthesized title match context
 	IconQueue    = "\uf017" // clock — queued message pending delivery
 	// Transcript
 	IconBullet = "\uf444" // nf-oct-dot_fill — bullet point for message list
@@ -27,6 +27,7 @@ const (
 	IconNewFile  = "\uf067" // nf-fa-plus — new file (Write only)
 	IconModified = "\uf040" // nf-fa-pencil — modified file (has Edit)
 	// Badge icons
+	IconPlan  = "\uf279" // nf-fa-map — plan message
 	IconSkill = "\uf0ad" // nf-fa-wrench — skill invocation badge
 	// Backlog
 	IconBacklog = "\uf0eb" // nf-fa-lightbulb_o — backlog item

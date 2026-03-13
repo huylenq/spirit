@@ -201,6 +201,9 @@ type Model struct {
 	outlineDragging      bool                      // true while drag-resizing the chat outline panel
 	outlineDragStartX    int                       // terminal x at drag start
 	outlineDragStartW    int                       // panel width at drag start
+	sidebarDragging      bool                      // true while drag-resizing the sidebar panel
+	sidebarDragStartX    int                       // terminal x at drag start
+	sidebarDragStartPct  int                       // sidebarWidthPct at drag start
 	jumpTrail            []string                  // pane IDs for jump history (like Vim's jumplist)
 	jumpCursor           int                       // position in jumpTrail; len(jumpTrail) = at head
 	nonClaudePane        *ui.MinimapPaneInfo       // focused non-Claude pane (minimap nav)
@@ -336,10 +339,7 @@ func (m Model) shouldDockMinimap() bool {
 // applyLayout recomputes and applies component sizes from m.width, m.height, m.sidebarWidthPct.
 func (m *Model) applyLayout() {
 	innerW := m.innerWidth()
-	contentHeight := m.height - 3 // top border + label + footer
-	if !m.inFullscreenPopup {
-		contentHeight -= 1 // bottom border
-	}
+	contentHeight := m.contentHeight()
 	minimapH := min(contentHeight/2, m.minimapMaxH)
 	m.minimap.SetSize(0, minimapH)
 	// Scale window cols proportionally to height, preserving the default 40:14 aspect ratio
@@ -347,21 +347,46 @@ func (m *Model) applyLayout() {
 	m.minimap.SetCollapse(m.minimapCollapse)
 
 	// When docked, subtract minimap height so panels shrink to make room
+	contentHeight = m.panelContentHeight(contentHeight)
+
+	sidebarWidth := m.sidebarPanelWidth()
+	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
+	m.detail.SetSize(innerW-sidebarWidth, contentHeight)
+}
+
+// applyLayoutFast recomputes component sizes like applyLayout but skips
+// expensive viewport content reflow. Use during drag; call applyLayout on release.
+func (m *Model) applyLayoutFast() {
+	innerW := m.innerWidth()
+	contentHeight := m.panelContentHeight(m.contentHeight())
+	sidebarWidth := m.sidebarPanelWidth()
+	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
+	m.detail.SetSizeFast(innerW-sidebarWidth, contentHeight)
+}
+
+// contentHeight returns the raw content height before minimap/divider adjustments.
+func (m Model) contentHeight() int {
+	h := m.height - 3 // top border + label + footer
+	if !m.inFullscreenPopup {
+		h-- // bottom border
+	}
+	return h
+}
+
+// panelContentHeight adjusts the raw content height for minimap docking and divider.
+func (m Model) panelContentHeight(raw int) int {
 	minimapDocked := false
 	if m.shouldDockMinimap() {
 		if _, mmViewH := m.minimap.ViewSize(); mmViewH > 0 {
-			contentHeight -= mmViewH
+			raw -= mmViewH
 			minimapDocked = true
 		}
 	}
 	// Divider line between content and footer (shown when minimap isn't docked above footer)
 	if !minimapDocked {
-		contentHeight -= 1
+		raw--
 	}
-
-	sidebarWidth := m.sidebarPanelWidth()
-	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
-	m.detail.SetSize(innerW-sidebarWidth, contentHeight)
+	return raw
 }
 
 func (m Model) Init() tea.Cmd {

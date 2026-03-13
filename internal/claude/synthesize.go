@@ -11,11 +11,24 @@ import (
 
 // SessionSummary holds the structured synthesis of a coding session.
 type SessionSummary struct {
-	Objective   string `json:"objective"`
-	Status      string `json:"status"`
-	ProblemType string `json:"problem_type"` // bug, feature, refactoring, etc.
-	Headline    string `json:"headline"`     // brief one-liner for list display
-	InputWords  int    `json:"input_words"`  // word count of user messages fed to haiku
+	Objective              string `json:"objective"`
+	Status                 string `json:"status"`
+	ProblemType            string `json:"problem_type"`             // bug, feature, refactoring, etc.
+	SynthesizedTitle       string `json:"headline"`                 // AI-generated one-liner for list display
+	AppliedSynthesizedTitle string `json:"applied_synthesized_title"` // last title sent via /rename (empty = never applied)
+	InputWords             int    `json:"input_words"`              // word count of user messages fed to haiku
+}
+
+// ApplySynthesizedTitle marks the current SynthesizedTitle as applied in the cache.
+// Called after successfully sending /rename to the tmux pane.
+func ApplySynthesizedTitle(sessionID string) {
+	cached := ReadCachedSummary(sessionID)
+	if cached == nil || cached.SynthesizedTitle == "" {
+		return
+	}
+	cached.AppliedSynthesizedTitle = cached.SynthesizedTitle
+	data, _ := json.Marshal(cached)
+	os.WriteFile(summaryFilePath(sessionID), data, 0o644)
 }
 
 func summaryFilePath(sessionID string) string {
@@ -61,7 +74,8 @@ func SummaryCacheInfo(sessionID string) (summaryMod, transcriptMod string, isFre
 // Returns (summary, fromCache, error). fromCache is true when the cached synthesis is still fresh.
 func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	// Return cached only if synthesis is still fresh (newer than transcript)
-	if cached := ReadCachedSummary(sessionID); cached != nil {
+	cached := ReadCachedSummary(sessionID)
+	if cached != nil {
 		transcriptPath, _ := findTranscriptPath(sessionID)
 		summaryPath := summaryFilePath(sessionID)
 		tInfo, tErr := os.Stat(transcriptPath)
@@ -82,8 +96,22 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	input := strings.Join(messages, "\n")
 	inputWords := len(strings.Fields(input))
 
+	// If there's an existing title, instruct the LLM to keep it unless the
+	// conversation goal has meaningfully changed.
+	prevTitle := ""
+	if cached != nil {
+		prevTitle = cached.SynthesizedTitle
+	}
+
+	titleInstruction := "<objective condensed to a single short phrase under 60 chars, no quotes, no period>"
+	if prevTitle != "" {
+		titleInstruction = fmt.Sprintf(
+			"<keep %q if the conversation goal is the same; only change if the purpose shifted significantly>",
+			prevTitle)
+	}
+
 	prompt := "Analyze these user messages from a coding session. Output ONLY valid JSON, no markdown fences:\n" +
-		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","problem_type":"<one of: bug, feature, refactoring, chore, docs, test, exploration, debug, performance>","headline":"<objective condensed to a single short phrase under 60 chars, no quotes, no period>"}` +
+		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","problem_type":"<one of: bug, feature, refactoring, chore, docs, test, exploration, debug, performance>","headline":"` + titleInstruction + `"}` +
 		"\n\n" + input
 
 	cmd := newLightweightClaude("Output ONLY valid JSON. No markdown, no explanation.", prompt)
@@ -105,13 +133,14 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	}
 	summary.InputWords = inputWords
 	go RecordSynthCall(SynthKindSummary, inputWords)
-	// Fallback: derive headline from objective if model omitted it
-	if summary.Headline == "" && summary.Objective != "" {
+
+	// Fallback: derive title from objective if model omitted it
+	if summary.SynthesizedTitle == "" && summary.Objective != "" {
 		h := summary.Objective
 		if len(h) > 60 {
 			h = h[:57] + "..."
 		}
-		summary.Headline = h
+		summary.SynthesizedTitle = h
 	}
 
 	// Write JSON to disk cache

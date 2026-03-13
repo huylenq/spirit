@@ -56,7 +56,7 @@ func (m Model) renderSessionPanel() string {
 	lines = append(lines, line("SessionID", s.SessionID))
 	lines = append(lines, line("Status", s.Status.String()))
 	lines = append(lines, line("CustomTitle", s.CustomTitle))
-	lines = append(lines, line("Headline", s.Headline))
+	lines = append(lines, line("SynthTitle", s.SynthesizedTitle))
 	lines = append(lines, line("FirstMsg", debugTruncate(s.FirstMessage, 40)))
 	lines = append(lines, line("LastUserMsg", debugTruncate(s.LastUserMessage, 40)))
 	lines = append(lines, line("PermMode", s.PermissionMode))

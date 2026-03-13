@@ -47,7 +47,7 @@ func luaUnlater(deps Deps) lua.LGFunction {
 	}
 }
 
-// synthesize(id) -> {headline, from_cache}
+// synthesize(id) -> {synthesized_title, from_cache}
 // Category: Features
 // Generate LLM summary for session.
 func luaSynthesize(deps Deps) lua.LGFunction {
@@ -62,14 +62,14 @@ func luaSynthesize(deps Deps) lua.LGFunction {
 		t := L.NewTable()
 		t.RawSetString("from_cache", lua.LBool(fromCache))
 		if summary != nil {
-			t.RawSetString("headline", lua.LString(summary.Headline))
+			t.RawSetString("synthesized_title", lua.LString(summary.SynthesizedTitle))
 		}
 		L.Push(t)
 		return 1
 	}
 }
 
-// synthesize_all() -> [{pane_id, headline, from_cache}]
+// synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
 // Category: Features
 // Generate LLM summaries for all sessions.
 func luaSynthesizeAll(deps Deps) lua.LGFunction {
@@ -85,7 +85,7 @@ func luaSynthesizeAll(deps Deps) lua.LGFunction {
 			entry.RawSetString("pane_id", lua.LString(r.PaneID))
 			entry.RawSetString("from_cache", lua.LBool(r.FromCache))
 			if r.Summary != nil {
-				entry.RawSetString("headline", lua.LString(r.Summary.Headline))
+				entry.RawSetString("synthesized_title", lua.LString(r.Summary.SynthesizedTitle))
 			}
 			t.Append(entry)
 		}
@@ -229,7 +229,7 @@ func luaDiffHunks(deps Deps) lua.LGFunction {
 	}
 }
 
-// summary(id) -> {headline}|nil
+// summary(id) -> {synthesized_title}|nil
 // Category: Features
 // Get cached summary for session, or nil.
 func luaSummary(deps Deps) lua.LGFunction {
@@ -245,7 +245,7 @@ func luaSummary(deps Deps) lua.LGFunction {
 			return 1
 		}
 		t := L.NewTable()
-		t.RawSetString("headline", lua.LString(summary.Headline))
+		t.RawSetString("synthesized_title", lua.LString(summary.SynthesizedTitle))
 		L.Push(t)
 		return 1
 	}

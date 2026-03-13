@@ -43,8 +43,8 @@ func GenerateDigest(sessions []ClaudeSession) (*WorkspaceDigest, error) {
 		if s.SessionID == "" || s.IsPhantom {
 			continue
 		}
-		if sum := ReadCachedSummary(s.SessionID); sum != nil && sum.Headline != "" {
-			headlines = append(headlines, sum.Headline)
+		if sum := ReadCachedSummary(s.SessionID); sum != nil && sum.SynthesizedTitle != "" {
+			headlines = append(headlines, sum.SynthesizedTitle)
 			summarized++
 		}
 		for f := range ReadDiffStats(s.SessionID) {

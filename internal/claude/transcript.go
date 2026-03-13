@@ -16,6 +16,8 @@ var systemTags = []string{
 	"local-command-caveat", "command-name", "command-message",
 	"command-args", "local-command-stdout",
 	"task-notification", "system-reminder",
+	"bash-stdout",
+	"bash-stderr",
 }
 
 // systemTagRe strips system-injected XML blocks from user message content.
@@ -28,9 +30,27 @@ var systemTagRe = func() *regexp.Regexp {
 // that accompanies task-notification blocks.
 var taskOutputBoilerplateRe = regexp.MustCompile(`Read the output file to retrieve the result: \S+`)
 
+// bashInputRe matches a <bash-input> tag and captures its content.
+var bashInputRe = regexp.MustCompile(`(?s)<bash-input[^>]*>(.*?)</bash-input>`)
+
+// commandNameRe extracts the slash command from <command-name>/foo</command-name>.
+var commandNameRe = regexp.MustCompile(`(?s)<command-name>\s*(.*?)\s*</command-name>`)
+
+// commandArgsRe extracts arguments from <command-args>...</command-args>.
+var commandArgsRe = regexp.MustCompile(`(?s)<command-args>\s*(.*?)\s*</command-args>`)
+
 // planMsgPrefix is the prefix Claude Code injects when a plan is approved via ExitPlanMode.
 // The full message is "Implement the following plan:\n\n# Plan Title\n\n## Context..."
 const planMsgPrefix = "Implement the following plan:"
+
+// PlanGlyph is the nf-fa-map glyph used to prefix plan messages in the outline.
+const PlanGlyph = "\uf279  "
+
+// BashCmdGlyph prefixes bash input commands in the outline.
+const BashCmdGlyph = "! "
+
+// SlashCmdGlyph prefixes slash command messages in the outline.
+const SlashCmdGlyph = "/ "
 
 // systemInjectedMsgs are messages injected by Claude Code internals (e.g. context
 // clear after plan tool exit) that should not be treated as real user messages.
@@ -93,10 +113,13 @@ func TranscriptPath(sessionID string) (string, error) {
 // --- Shared JSONL types ---
 
 type transcriptLine struct {
-	Type     string          `json:"type"`
-	IsMeta   bool            `json:"isMeta"`
-	Message  json.RawMessage `json:"message"`
-	UserType string          `json:"userType"`
+	Type        string          `json:"type"`
+	Subtype     string          `json:"subtype"`
+	IsMeta      bool            `json:"isMeta"`
+	Message     json.RawMessage `json:"message"`
+	Content     string          `json:"content"` // top-level text for system entries
+	UserType    string          `json:"userType"`
+	PlanContent string          `json:"planContent"`
 }
 
 type messageContent struct {
@@ -278,6 +301,14 @@ func buildEntrySummary(typ string, raw map[string]json.RawMessage, toolNames map
 }
 
 func buildUserSummary(raw map[string]json.RawMessage, toolNames map[string]string) string {
+	// Check planContent field first (set by Claude Code's ExitPlanMode)
+	if pc, ok := raw["planContent"]; ok {
+		var planContent string
+		if json.Unmarshal(pc, &planContent) == nil && planContent != "" {
+			return formatPlanTitle(planContent)
+		}
+	}
+
 	msgRaw, ok := raw["message"]
 	if !ok {
 		return ""
@@ -462,8 +493,35 @@ func extractAssistantText(line []byte) string {
 	return strings.TrimSpace(strings.Join(texts, " "))
 }
 
+// extractCommandText returns SlashCmdGlyph + "/name args" if s contains a
+// <command-name> tag, or "" otherwise.
+func extractCommandText(s string) string {
+	if !strings.Contains(s, "<command-name>") {
+		return ""
+	}
+	m := commandNameRe.FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+	cmd := strings.TrimPrefix(strings.TrimSpace(m[1]), "/")
+	if am := commandArgsRe.FindStringSubmatch(s); am != nil {
+		cmd += " " + strings.TrimSpace(am[1])
+	}
+	return SlashCmdGlyph + cmd
+}
+
 // stripSystemText removes system-injected XML blocks and boilerplate from user message text.
+// If a <bash-input> tag is present, returns its content prefixed with BashCmdGlyph.
+// If a <command-name> tag is present, returns the slash command prefixed with SlashCmdGlyph.
 func stripSystemText(s string) string {
+	if cmd := extractCommandText(s); cmd != "" {
+		return cmd
+	}
+	if strings.Contains(s, "<bash-input") {
+		if m := bashInputRe.FindStringSubmatch(s); m != nil {
+			return BashCmdGlyph + strings.TrimSpace(m[1])
+		}
+	}
 	if strings.Contains(s, "<") {
 		s = systemTagRe.ReplaceAllString(s, "")
 	}
@@ -478,8 +536,20 @@ func extractUserText(line []byte) string {
 	if err := json.Unmarshal(line, &tl); err != nil {
 		return ""
 	}
+	// Handle system/local_command entries (e.g. /rename) — only user-typed ones.
+	if tl.Type == "system" && tl.Subtype == "local_command" && tl.UserType == "external" {
+		return extractCommandText(tl.Content)
+	}
+
 	if tl.Type != "user" || tl.IsMeta {
 		return ""
+	}
+
+	// Detect plan messages via the dedicated planContent field (set by Claude
+	// Code's ExitPlanMode). This is more reliable than matching the message
+	// text prefix, which Anthropic could change at any time.
+	if tl.PlanContent != "" {
+		return formatPlanTitle(tl.PlanContent)
 	}
 
 	var msg messageContent
@@ -524,24 +594,41 @@ func extractUserText(line []byte) string {
 	return extractPlanTitle(result)
 }
 
+// formatPlanTitle extracts a display title from raw plan content markdown.
+// The planContent field is set by Claude Code's ExitPlanMode and contains
+// just the plan body (e.g. "# Plan Title\n\n## Context...").
+func formatPlanTitle(planContent string) string {
+	title := extractFirstHeading(planContent)
+	if title == "" {
+		return PlanGlyph
+	}
+	return PlanGlyph + title
+}
+
 // extractPlanTitle detects Claude-generated plan implementation messages
-// ("Implement the following plan:\n\n# Title...") and returns just "[plan] Title".
+// ("Implement the following plan:\n\n# Title...") and returns just the plan glyph + title.
 // Returns the original text unchanged for non-plan messages.
+// This is the legacy fallback for older transcripts without the planContent field.
 func extractPlanTitle(text string) string {
 	after, ok := strings.CutPrefix(text, planMsgPrefix)
 	if !ok {
 		return text
 	}
-	after = strings.TrimSpace(after)
-	title, _ := strings.CutPrefix(after, "# ")
-	// Take only the first line of the title (stop at next newline)
+	title := extractFirstHeading(strings.TrimSpace(after))
+	if title == "" {
+		return PlanGlyph
+	}
+	return PlanGlyph + title
+}
+
+// extractFirstHeading pulls the first markdown heading from text.
+// Handles "# Title" format, returns the title text (first line only).
+func extractFirstHeading(text string) string {
+	title, _ := strings.CutPrefix(text, "# ")
 	if idx := strings.IndexByte(title, '\n'); idx >= 0 {
 		title = title[:idx]
 	}
 	// Strip redundant "Plan: " prefix if present
 	title = strings.TrimPrefix(title, "Plan: ")
-	if title == "" {
-		return "[plan]"
-	}
-	return "[plan] " + title
+	return strings.TrimSpace(title)
 }

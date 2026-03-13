@@ -70,13 +70,14 @@ type ClaudeSession struct {
 	SessionID       string
 	FirstMessage    string // first user message in transcript (display name heuristic)
 	LastUserMessage string
-	// Display name priority: CustomTitle → Headline → FirstMessage → "(New session)"
+	// Display name priority: CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 	// CustomTitle: set by Claude Code's /rename (written to transcript as custom-title entry).
 	//   The daemon sends /rename via tmux.SendKeys after synthesis, but this only works
 	//   when the Claude Code session is idle at the prompt.
-	// Headline: derived from the summary cache (always available after synthesis).
+	// SynthesizedTitle: AI-generated one-liner (always available after synthesis).
 	//   Used as fallback when /rename hasn't been processed yet.
-	Headline                string   // brief one-liner from cached summary
+	SynthesizedTitle        string   // AI-generated title from cached summary
+	TitleDrift              bool     // SynthesizedTitle differs from last applied /rename
 	ProblemType             string   // bug, feature, refactoring, etc. from cached summary
 	CustomTitle             string   // user-set name via /rename in Claude Code
 	PermissionMode          string   // "plan", "bypassPermissions", etc. (empty = unknown)
@@ -99,13 +100,13 @@ type ClaudeSession struct {
 }
 
 // DisplayName returns the session's display name using the standard priority:
-// CustomTitle → Headline → FirstMessage. Returns "" if none are set.
+// CustomTitle → SynthesizedTitle → FirstMessage. Returns "" if none are set.
 func (s ClaudeSession) DisplayName() string {
 	switch {
 	case s.CustomTitle != "":
 		return s.CustomTitle
-	case s.Headline != "":
-		return s.Headline
+	case s.SynthesizedTitle != "":
+		return s.SynthesizedTitle
 	case s.FirstMessage != "":
 		return s.FirstMessage
 	default:
@@ -120,7 +121,7 @@ type LaterBookmark struct {
 	Project      string    `json:"project"`
 	CWD          string    `json:"cwd"`
 	GitBranch    string    `json:"gitBranch"`
-	Headline     string    `json:"headline"`
+	SynthesizedTitle string `json:"synthesizedTitle"`
 	ProblemType  string    `json:"problemType"`
 	CustomTitle  string    `json:"customTitle"`
 	FirstMessage string    `json:"firstMessage"`

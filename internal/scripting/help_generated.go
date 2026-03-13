@@ -76,13 +76,13 @@ later_kill(id)
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
 
-summary(id) -> {headline}|nil
+summary(id) -> {synthesized_title}|nil
   Get cached summary for session, or nil.
 
-synthesize(id) -> {headline, from_cache}
+synthesize(id) -> {synthesized_title, from_cache}
   Generate LLM summary for session.
 
-synthesize_all() -> [{pane_id, headline, from_cache}]
+synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
   Generate LLM summaries for all sessions.
 
 transcript(id) -> []string
@@ -126,7 +126,7 @@ toast(msg)
 
 ### Session Fields
 
-id, pane_id, project, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, headline, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, created_at, last_changed, display_name
+id, pane_id, project, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, synthesized_title, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, created_at, last_changed, display_name
 
 ### Backlog Fields
 

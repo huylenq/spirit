@@ -236,7 +236,8 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].LastChanged != b[i].LastChanged ||
 			a[i].LaterBookmarkID != b[i].LaterBookmarkID ||
 			a[i].IsPhantom != b[i].IsPhantom ||
-			a[i].Headline != b[i].Headline ||
+			a[i].SynthesizedTitle != b[i].SynthesizedTitle ||
+			a[i].TitleDrift != b[i].TitleDrift ||
 			a[i].LastUserMessage != b[i].LastUserMessage ||
 			a[i].PermissionMode != b[i].PermissionMode ||
 			a[i].LastActionCommit != b[i].LastActionCommit ||

@@ -81,13 +81,7 @@ func NewDetailModel() DetailModel {
 func (m *DetailModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	headerHeight := 3 // title + branch/diff + blank line
-	footerHeight := 2 // metadata line + blank
-	borderHeight := 2 // top + bottom border of content box
-	contentHeight := h - headerHeight - footerHeight - borderHeight
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
+	contentHeight := detailContentHeight(h)
 	vpWidth := m.effectiveVPWidth(w)
 	if !m.ready {
 		m.viewport = viewport.New(vpWidth, contentHeight)
@@ -103,6 +97,27 @@ func (m *DetailModel) SetSize(w, h int) {
 			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 		}
 	}
+}
+
+// SetSizeFast updates dimensions without reflowing viewport content.
+// Use during drag motion; call SetSize on release for full reflow.
+func (m *DetailModel) SetSizeFast(w, h int) {
+	m.width = w
+	m.height = h
+	if m.ready {
+		m.viewport.Width = m.effectiveVPWidth(w)
+		m.viewport.Height = detailContentHeight(h)
+	}
+}
+
+// detailContentHeight computes the viewport content height from the panel height.
+func detailContentHeight(h int) int {
+	// header(3: title + branch/diff + blank) + footer(2: metadata + blank) + border(2: top + bottom)
+	ch := h - 7
+	if ch < 1 {
+		return 1
+	}
+	return ch
 }
 
 // calcPanelWidth returns the default sidebar/overlay panel width for a given
