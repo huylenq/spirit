@@ -10,11 +10,23 @@ import (
 	"sync"
 )
 
-// localCmdTagRe strips injected local-command XML blocks from user message content.
-// When a user runs /clear (or other local commands) and immediately types a message,
-// Claude Code merges them into one user turn, so we must strip the command blocks
-// rather than reject the entire message.
-var localCmdTagRe = regexp.MustCompile(`(?s)<(?:local-command-caveat|command-name|command-message|command-args|local-command-stdout)[^>]*>.*?</(?:local-command-caveat|command-name|command-message|command-args|local-command-stdout)>`)
+// systemTags lists XML tag names injected by Claude Code into user turns
+// (local commands, task notifications, system reminders). Used to build systemTagRe.
+var systemTags = []string{
+	"local-command-caveat", "command-name", "command-message",
+	"command-args", "local-command-stdout",
+	"task-notification", "system-reminder",
+}
+
+// systemTagRe strips system-injected XML blocks from user message content.
+var systemTagRe = func() *regexp.Regexp {
+	alt := strings.Join(systemTags, "|")
+	return regexp.MustCompile(`(?s)<(?:` + alt + `)[^>]*>.*?</(?:` + alt + `)>`)
+}()
+
+// taskOutputBoilerplateRe strips the "Read the output file..." boilerplate
+// that accompanies task-notification blocks.
+var taskOutputBoilerplateRe = regexp.MustCompile(`Read the output file to retrieve the result: \S+`)
 
 // planMsgPrefix is the prefix Claude Code injects when a plan is approved via ExitPlanMode.
 // The full message is "Implement the following plan:\n\n# Plan Title\n\n## Context..."
@@ -278,7 +290,7 @@ func buildUserSummary(raw map[string]json.RawMessage, toolNames map[string]strin
 	// Content can be a string
 	var textContent string
 	if json.Unmarshal(msg.Content, &textContent) == nil {
-		return truncStr(flattenText(textContent), 60)
+		return truncStr(flattenText(stripSystemText(textContent)), 60)
 	}
 
 	// Or an array of content blocks
@@ -307,7 +319,7 @@ func buildUserSummary(raw map[string]json.RawMessage, toolNames map[string]strin
 		}
 		return name + suffix
 	default:
-		text := firstBlock.Text
+		text := stripSystemText(firstBlock.Text)
 		if text == "" {
 			return ""
 		}
@@ -450,6 +462,17 @@ func extractAssistantText(line []byte) string {
 	return strings.TrimSpace(strings.Join(texts, " "))
 }
 
+// stripSystemText removes system-injected XML blocks and boilerplate from user message text.
+func stripSystemText(s string) string {
+	if strings.Contains(s, "<") {
+		s = systemTagRe.ReplaceAllString(s, "")
+	}
+	if strings.Contains(s, "Read the output file") {
+		s = taskOutputBoilerplateRe.ReplaceAllString(s, "")
+	}
+	return strings.TrimSpace(s)
+}
+
 func extractUserText(line []byte) string {
 	var tl transcriptLine
 	if err := json.Unmarshal(line, &tl); err != nil {
@@ -468,7 +491,7 @@ func extractUserText(line []byte) string {
 	// Try string first
 	var textContent string
 	if err := json.Unmarshal(msg.Content, &textContent); err == nil {
-		stripped := strings.TrimSpace(localCmdTagRe.ReplaceAllString(textContent, ""))
+		stripped := stripSystemText(textContent)
 		if systemInjectedMsgs[stripped] {
 			return ""
 		}
@@ -484,7 +507,7 @@ func extractUserText(line []byte) string {
 	var texts []string
 	for _, b := range blocks {
 		if b.Type == "text" && b.Text != "" {
-			stripped := strings.TrimSpace(localCmdTagRe.ReplaceAllString(b.Text, ""))
+			stripped := stripSystemText(b.Text)
 			if stripped != "" {
 				texts = append(texts, stripped)
 			}
