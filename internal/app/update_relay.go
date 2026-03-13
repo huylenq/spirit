@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
 func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -137,6 +138,11 @@ func (m Model) applyTagsCmd(sessionID string, tags []string, flash string) tea.C
 }
 
 func (m Model) handleKeyTagRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Backlog tag relay: toggle inline #tags in body text
+	if b, ok := m.sidebar.SelectedBacklog(); ok {
+		return m.handleKeyTagRelayBacklog(msg, b)
+	}
+
 	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		m.state = StateNormal
@@ -181,6 +187,52 @@ func (m Model) handleKeyTagRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		lastTag := s.Tags[len(s.Tags)-1]
 		tags := s.Tags[:len(s.Tags)-1:len(s.Tags)-1] // cap to prevent backing-array reuse
 		return m, m.applyTagsCmd(s.SessionID, tags, "-#"+lastTag)
+	default:
+		ti := m.tagRelay.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		return m, cmd
+	}
+}
+
+// saveBacklogTagCmd writes updated backlog body to disk, flashes feedback, then chains re-discovery.
+func (m Model) saveBacklogTagCmd(id, cwd, newBody, flash string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			if err := claude.WriteBacklog(cwd, claude.Backlog{ID: id, Body: newBody}); err != nil {
+				return flashErrorMsg("save backlog: " + err.Error())
+			}
+			return backlogWrittenMsg{}
+		},
+		m.setFlash(flash, false, 3*time.Second),
+	)
+}
+
+func (m Model) handleKeyTagRelayBacklog(msg tea.KeyMsg, b claude.Backlog) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.tagRelay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		val := m.tagRelay.Confirm()
+		m.state = StateNormal
+		if val == "" {
+			return m, nil
+		}
+		newBody, removed := claude.ToggleBacklogTag(b.Body, val)
+		flash := "+#" + val
+		if removed {
+			flash = "-#" + val
+		}
+		return m, m.saveBacklogTagCmd(b.ID, b.CWD, newBody, flash)
+	case msg.String() == "backspace" && m.tagRelay.Value() == "":
+		if len(b.Tags) == 0 {
+			return m, nil
+		}
+		lastTag := b.Tags[len(b.Tags)-1]
+		newBody, _ := claude.ToggleBacklogTag(b.Body, lastTag)
+		return m, m.saveBacklogTagCmd(b.ID, b.CWD, newBody, "-#"+lastTag)
 	default:
 		ti := m.tagRelay.TextInput()
 		newTI, cmd := ti.Update(msg)

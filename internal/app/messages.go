@@ -112,6 +112,12 @@ type NewSessionCreatedMsg struct {
 	PaneID string
 }
 
+// backlogWrittenMsg signals a successful backlog write/delete.
+// Triggers re-discovery so the sidebar reflects the change.
+type backlogWrittenMsg struct {
+	flash string // optional success flash (empty = no flash from this msg)
+}
+
 // BacklogsRefreshedMsg is sent when backlog discovery completes.
 type BacklogsRefreshedMsg struct {
 	Backlogs []claude.Backlog

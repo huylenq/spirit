@@ -78,16 +78,12 @@ func (m Model) confirmDeleteBacklog() (Model, tea.Cmd) {
 	b := m.deleteTargetBacklog
 	m.state = StateNormal
 	m.deleteTargetBacklog = claude.Backlog{}
-	sessions := m.sessions
-	return m, tea.Batch(
-		func() tea.Msg {
-			if err := claude.RemoveBacklog(b.CWD, b.ID); err != nil {
-				return flashErrorMsg("delete backlog: " + err.Error())
-			}
-			return flashInfoMsg("backlog deleted")
-		},
-		m.discoverBacklogs(sessions),
-	)
+	return m, func() tea.Msg {
+		if err := claude.RemoveBacklog(b.CWD, b.ID); err != nil {
+			return flashErrorMsg("delete backlog: " + err.Error())
+		}
+		return backlogWrittenMsg{flash: "backlog deleted"}
+	}
 }
 
 func (m Model) execSubmitBacklog() (Model, tea.Cmd) {

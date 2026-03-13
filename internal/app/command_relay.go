@@ -14,7 +14,13 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 }
 
 func (m Model) execTagRelay() (Model, tea.Cmd) {
+	canTag := false
 	if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
+		canTag = true
+	} else if _, ok := m.sidebar.SelectedBacklog(); ok {
+		canTag = true
+	}
+	if canTag {
 		m.state = StateTagRelay
 		m.tagRelay.Activate()
 	}

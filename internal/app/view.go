@@ -57,14 +57,18 @@ func (m Model) View() string {
 	}
 
 	// Set relay views before rendering panels (sidebar.View() and detail.View() consume them)
-	var tagSessionID, tagInputView string
+	var tagSessionID, tagInputView, tagBacklogID string
 	if m.state == StateTagRelay {
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			tagSessionID = s.SessionID
 			tagInputView = m.tagRelay.View()
+		} else if b, ok := m.sidebar.SelectedBacklog(); ok {
+			tagBacklogID = b.ID
+			tagInputView = m.tagRelay.View()
 		}
 	}
 	m.sidebar.SetInlineTagInput(tagSessionID, tagInputView)
+	m.sidebar.SetInlineTagBacklogInput(tagBacklogID, tagInputView)
 
 	switch m.state {
 	case StatePromptRelay:

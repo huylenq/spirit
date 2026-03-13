@@ -66,16 +66,6 @@ func backlogTagKey(b claude.Backlog) string {
 	return ""
 }
 
-// backlogGroupKey returns the group boundary key for a backlog item.
-// For tagged items it returns "#<first-tag>" (used as the sub-header label).
-// For untagged items it returns the project name so project boundaries are detected.
-func backlogGroupKey(b claude.Backlog) string {
-	if len(b.Tags) > 0 {
-		return "#" + b.Tags[0]
-	}
-	return b.Project
-}
-
 // applyNarrowBacklog filters backlog items by the current narrow query and
 // sorts them by project, then tagged-first within project, then by tag group, then CreatedAt.
 func (m *SidebarModel) applyNarrowBacklog() {

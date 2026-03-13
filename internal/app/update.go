@@ -360,6 +360,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.waitForDaemonUpdate())
 		return m, tea.Batch(cmds...)
 
+	case backlogWrittenMsg:
+		cmds := []tea.Cmd{m.discoverBacklogs(m.sessions)}
+		if msg.flash != "" {
+			cmds = append(cmds, m.setFlash(msg.flash, false, 2*time.Second))
+		}
+		return m, tea.Batch(cmds...)
+
 	case BacklogsRefreshedMsg:
 		m.sidebar.SetBacklog(msg.Backlogs)
 		return m, nil
