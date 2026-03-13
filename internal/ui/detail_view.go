@@ -172,6 +172,9 @@ func (m *DetailModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, "", meta)
 }
 
+// outlineGap is the number of space columns between the styled bullet glyph and message text.
+const outlineGap = 1
+
 // renderChatOutline renders the user messages outline panel with a border.
 func (m DetailModel) renderChatOutline(width int) string {
 	// Inner width for text (subtract border 2 + padding 2)
@@ -214,30 +217,36 @@ func (m DetailModel) renderChatOutline(width int) string {
 			flat = flat[len(claude.SlashCmdGlyph):]
 		}
 
-		var styledIndicator string
 		msgStyle := TranscriptMsgStyle
 		contGlyph := bulletContGlyph
+		var styledGlyph string
 		if focused {
-			styledIndicator = TranscriptCursorStyle.Render(bulletGlyph + " ")
+			// Only the default quote glyph adopts cursor color; typed glyphs keep their own color.
+			if bulletGlyph == IconQuote {
+				styledGlyph = TranscriptCursorStyle.Render(bulletGlyph)
+			} else {
+				styledGlyph = typedStyle.Render(bulletGlyph)
+			}
 			contGlyph = cursorContGlyph
 		} else {
-			styledIndicator = typedStyle.Render(bulletGlyph + " ")
+			styledGlyph = typedStyle.Render(bulletGlyph)
 			msgStyle = ItemDetailStyle
 		}
+		// Indicator = styled glyph (includes style padding) + uniform gap.
+		// Use lipgloss.Width on the rendered result to account for Padding(0,1) on bullet styles.
+		styledIndicator := styledGlyph + strings.Repeat(" ", outlineGap)
+		indicatorWidth := lipgloss.Width(styledIndicator)
 
-		// Allow up to 2 lines per message: innerWidth minus the 2-char indicator column
-		msgWidth := innerWidth - 2
-		if msgWidth < 1 {
-			msgWidth = 1
-		}
+		// Allow up to 2 lines per message: innerWidth minus this indicator's visual width.
+		msgWidth := max(1, innerWidth-indicatorWidth)
 		if ansi.StringWidth(flat) <= msgWidth {
 			lines = append(lines, styledIndicator+msgStyle.Render(flat))
 		} else {
 			// Two-line display: word-wrap at msgWidth, truncate second line.
-			// ╰ aligned with the first char of the message on line 1 (col 4).
+			// ╰ aligns with the first character of line 1 text, then outlineGap before wrapped text.
 			line1, rest := wordWrapFirst(flat, msgWidth)
-			indent := "    " + contGlyph + " "
-			line2 := ansi.Truncate(rest, msgWidth-2, "…")
+			indent := strings.Repeat(" ", indicatorWidth) + contGlyph + " "
+			line2 := ansi.Truncate(rest, max(1, msgWidth-2), "…")
 			lines = append(lines,
 				styledIndicator+msgStyle.Render(line1),
 				indent+msgStyle.Render(line2),

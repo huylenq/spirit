@@ -3,7 +3,9 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
 // User message navigation for DetailModel.
@@ -98,20 +100,29 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 	}
 
 	// Mirror renderChatOutline() line counting to map contentRow → message index.
+	// Must match prefix stripping and indicatorWidth logic in renderChatOutline().
 	innerWidth := panelWidth - 4
 	if innerWidth < 5 {
 		innerWidth = 5
 	}
-	msgWidth := innerWidth - 2
-	if msgWidth < 1 {
-		msgWidth = 1
-	}
+	// All bullet styles share the same Padding(0,1), so indicatorWidth is constant.
+	indicatorWidth := lipgloss.Width(TranscriptBulletStyle.Render("x")) + outlineGap
 	row := 2
 	for i, msg := range m.userMessages {
 		if row > contentRow {
 			return -1
 		}
 		flat := strings.ReplaceAll(msg, "\n", " ")
+		// Strip type prefixes — same as renderChatOutline().
+		switch {
+		case strings.HasPrefix(flat, claude.BashCmdGlyph):
+			flat = flat[len(claude.BashCmdGlyph):]
+		case strings.HasPrefix(flat, claude.PlanGlyph):
+			flat = flat[len(claude.PlanGlyph):]
+		case strings.HasPrefix(flat, claude.SlashCmdGlyph):
+			flat = flat[len(claude.SlashCmdGlyph):]
+		}
+		msgWidth := max(1, innerWidth-indicatorWidth)
 		if contentRow == row {
 			return i
 		}
