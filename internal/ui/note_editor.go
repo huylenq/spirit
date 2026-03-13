@@ -25,7 +25,7 @@ func NewNoteEditorModel() NoteEditorModel {
 	plain := TranscriptMsgStyle
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.FocusedStyle.Text = plain
-	ta.FocusedStyle.Placeholder = plain
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorMuted)
 	ta.FocusedStyle.CursorLine = plain
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
 	ta.BlurredStyle = ta.FocusedStyle

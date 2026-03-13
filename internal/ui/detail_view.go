@@ -92,7 +92,7 @@ func (m *DetailModel) View() string {
 
 	header := line1 + "\n" + sessionTitle + "\n"
 
-	// Content viewport, optionally with transcript side panel
+	// Content viewport, optionally with aside panel (chat outline + notes)
 	contentWidth := m.width - 4
 	vpRaw := m.viewport.View()
 	if m.relayView != "" {
@@ -110,20 +110,53 @@ func (m *DetailModel) View() string {
 		vpWidth := contentWidth - chatOutlineWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
-		var sideCol string
+		var aside string
+		noteVertStart := -1 // row in aside where note begins (-1 = no highlight)
 		switch {
 		case showChatOutline && showNote:
-			sideCol = lipgloss.JoinVertical(lipgloss.Left, m.renderChatOutline(chatOutlineWidth), m.renderNotePanel(chatOutlineWidth))
+			outline := m.renderChatOutline(chatOutlineWidth)
+			note := m.renderNotePanel(chatOutlineWidth)
+			if m.chatOutlineMode == chatOutlineDockedLeft {
+				sepStyle := BorderCharStyle
+				if m.noteEditing {
+					sepStyle = NoteCharStyle
+					noteVertStart = lipgloss.Height(outline) + 1 // after outline + h-separator
+				}
+				sep := sepStyle.Render(strings.Repeat("─", chatOutlineWidth))
+				aside = lipgloss.JoinVertical(lipgloss.Left, outline, sep, note)
+			} else {
+				aside = lipgloss.JoinVertical(lipgloss.Left, outline, note)
+			}
 		case showChatOutline:
-			sideCol = m.renderChatOutline(chatOutlineWidth)
+			aside = m.renderChatOutline(chatOutlineWidth)
 		default:
-			sideCol = m.renderNotePanel(chatOutlineWidth)
+			aside = m.renderNotePanel(chatOutlineWidth)
+			if m.noteEditing && m.chatOutlineMode == chatOutlineDockedLeft {
+				noteVertStart = 0
+			}
 		}
 		var joined string
 		if m.chatOutlineMode == chatOutlineDockedLeft {
-			joined = lipgloss.JoinHorizontal(lipgloss.Top, sideCol, " ", vpPanel)
+			// Full-height separator: standalone │ column replaces the gap.
+			sepHeight := max(lipgloss.Height(aside), lipgloss.Height(vpPanel))
+			normalSep := BorderCharStyle.Render("│")
+			sepLines := make([]string, sepHeight)
+			for i := range sepLines {
+				sepLines[i] = normalSep
+			}
+			if noteVertStart >= 0 {
+				noteSep := NoteCharStyle.Render("│")
+				for i := noteVertStart; i < sepHeight; i++ {
+					sepLines[i] = noteSep
+				}
+				// Round the corner where h-separator meets v-separator.
+				if noteVertStart > 0 {
+					sepLines[noteVertStart-1] = NoteCharStyle.Render("╮")
+				}
+			}
+			joined = lipgloss.JoinHorizontal(lipgloss.Top, aside, strings.Join(sepLines, "\n"), vpPanel)
 		} else {
-			joined = lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", sideCol)
+			joined = lipgloss.JoinHorizontal(lipgloss.Top, vpPanel, " ", aside)
 		}
 		joinedClip := lipgloss.NewStyle().MaxWidth(contentWidth).Render(joined)
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
@@ -205,8 +238,15 @@ func stripOutlinePrefix(flat string) string {
 
 // renderChatOutline renders the user messages outline panel with a border.
 func (m DetailModel) renderChatOutline(width int) string {
-	// Inner width for text (subtract border 2 + padding 2)
-	innerWidth := width - 4
+	// Pick panel style: docked-left uses borderless style (separator drawn in View);
+	// others use full rounded border.
+	panelStyle := TranscriptOverlayStyle
+	borderCols := 4 // border(2) + padding(2)
+	if m.chatOutlineMode == chatOutlineDockedLeft {
+		panelStyle = AsideDockLeftStyle
+		borderCols = 2 // padding(2) only, no border
+	}
+	innerWidth := width - borderCols
 	if innerWidth < 5 {
 		innerWidth = 5
 	}
@@ -282,7 +322,7 @@ func (m DetailModel) renderChatOutline(width int) string {
 	}
 
 	content := strings.Join(lines, "\n")
-	return TranscriptOverlayStyle.
+	return panelStyle.
 		Width(width).
 		Render(content)
 }
@@ -290,7 +330,13 @@ func (m DetailModel) renderChatOutline(width int) string {
 // renderNotePanel renders the session note panel with a border.
 // When noteEditing is true, it shows the textarea for inline editing.
 func (m *DetailModel) renderNotePanel(width int) string {
-	innerWidth := width - 4
+	panelStyle := NoteOverlayStyle
+	borderCols := 6 // border(2) + padding(4)
+	if m.chatOutlineMode == chatOutlineDockedLeft {
+		panelStyle = NoteDockedStyle
+		borderCols = 4 // padding(4) only, no border
+	}
+	innerWidth := width - borderCols
 	if innerWidth < 5 {
 		innerWidth = 5
 	}
@@ -311,7 +357,7 @@ func (m *DetailModel) renderNotePanel(width int) string {
 		borderColor = ColorNote
 	}
 	content := titleLine + "\n\n" + body
-	return TranscriptOverlayStyle.
+	return panelStyle.
 		BorderForeground(borderColor).
 		Width(width).
 		Render(content)

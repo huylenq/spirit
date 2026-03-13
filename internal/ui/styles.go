@@ -30,6 +30,7 @@ var (
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
+	NoteCharStyle    = lipgloss.NewStyle().Foreground(ColorNote)
 	BorderLabelStyle = lipgloss.NewStyle().Align(lipgloss.Right).PaddingRight(1)
 
 	TitleStyle = lipgloss.NewStyle().
@@ -149,6 +150,10 @@ var (
 	// mode: no border — the separator line is drawn as a standalone column in View().
 	AsideDockLeftStyle = lipgloss.NewStyle().
 				Padding(0, 1, 1, 1)
+
+	// Note panel uses extra padding vs. the base overlay/docked styles.
+	NoteOverlayStyle   = TranscriptOverlayStyle.Padding(1, 2, 1, 2)
+	NoteDockedStyle    = AsideDockLeftStyle.Padding(1, 2, 1, 2)
 
 	TranscriptTitleStyle = lipgloss.NewStyle().
 				Bold(true).
