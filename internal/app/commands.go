@@ -81,7 +81,7 @@ func buildCommands() []Command {
 
 		// --- Copilot ---
 		{
-			Name: "Copilot", Hotkey: "@",
+			Name: "Copilot", Hotkey: "'",
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				m.state = StateCopilot
 				m.copilotInput.Activate()
