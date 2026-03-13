@@ -217,15 +217,6 @@ func (m Model) View() string {
 		content = m.overlayPrompt(content, project, row, innerWidth)
 	}
 
-	if m.flashMsg != "" {
-		style := ui.FlashInfoStyle
-		if m.flashIsError {
-			style = ui.FlashErrorStyle
-		}
-		footer = style.Width(innerWidth).Render(m.flashMsg)
-	} else if m.pendingChord != "" {
-		footer = ui.FooterStyle.Width(innerWidth).Render(m.renderChordHints())
-	}
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization
 	var inner string

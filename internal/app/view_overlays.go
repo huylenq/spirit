@@ -123,7 +123,19 @@ func (m Model) renderSearchBar(width int) string {
 }
 
 // renderFooter renders the context-sensitive footer bar.
+// Transient overrides (flash, chord hints) take priority over state-specific content.
 func (m Model) renderFooter(width int) string {
+	if m.flashMsg != "" {
+		style := ui.FlashInfoStyle
+		if m.flashIsError {
+			style = ui.FlashErrorStyle
+		}
+		return style.Width(width).Render(m.flashMsg)
+	}
+	if m.pendingChord != "" {
+		return ui.FooterStyle.Width(width).Render(m.renderChordHints())
+	}
+
 	switch m.state {
 	case StateMacro:
 		h := ui.FooterKeyStyle.Render("<key>") + " run  " +
