@@ -109,7 +109,7 @@ func (d *Daemon) usageLoop(stop chan struct{}) {
 		go d.fetchUsage()
 	}
 
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 
 	for {
