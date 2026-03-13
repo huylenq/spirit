@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -227,6 +228,7 @@ type Model struct {
 	macroEditor          ui.MacroEditorModel
 	copilot              ui.CopilotModel
 	copilotInput         ui.RelayModel
+	copilotVisible       bool // overlay rendered but may not be focused (StateNormal + visible = read-only)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -275,6 +277,17 @@ func NewModel(client *daemon.Client) Model {
 		m.detail.SetChatOutlineWidth(w)
 	}
 	return m
+}
+
+// syncAllQuietAnim starts or stops the mobile animation based on sidebar state.
+func (m *Model) syncAllQuietAnim() tea.Cmd {
+	if m.sidebar.IsAllQuiet() && !m.detail.AllQuietAnimActive() {
+		return m.detail.StartAllQuietAnim()
+	}
+	if !m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
+		m.detail.StopAllQuietAnim()
+	}
+	return nil
 }
 
 // toast enqueues a message for display in the toast overlay and schedules its removal.
@@ -446,14 +459,32 @@ func (m Model) subscribeToDaemon() tea.Cmd {
 	}
 }
 
-// waitForDaemonUpdate blocks until the daemon pushes the next session snapshot.
+// waitForDaemonUpdate blocks until the daemon pushes the next message on the
+// subscribe connection. Dispatches to the appropriate Msg type based on response type
+// (session snapshots vs copilot stream events).
 func (m Model) waitForDaemonUpdate() tea.Cmd {
 	return func() tea.Msg {
-		sessions, usage, err := m.client.ReadNext()
+		resp, err := m.client.ReadNextResponse()
 		if err != nil {
 			return DaemonDisconnectedMsg{Err: err}
 		}
-		return SessionsRefreshedMsg{Sessions: sessions, Usage: usage}
+		switch resp.Type {
+		case daemon.RespCopilotStream:
+			var data daemon.CopilotStreamData
+			json.Unmarshal(resp.Data, &data)
+			return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
+				Type:    data.Type,
+				Content: data.Content,
+				ToolID:  data.ToolID,
+				Status:  data.Status,
+				Kind:    data.Kind,
+			}}
+		default:
+			// RespSessions or unknown — treat as session update
+			var data daemon.SessionsData
+			json.Unmarshal(resp.Data, &data)
+			return SessionsRefreshedMsg{Sessions: data.Sessions, Usage: data.Usage}
+		}
 	}
 }
 

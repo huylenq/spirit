@@ -294,15 +294,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Msg.Type == "confirm" {
 			m.state = StateCopilotConfirm
 		}
-		// For synchronous (non-streaming) responses: text_delta is the full response,
-		// so auto-send a "done" to clear the streaming state.
-		if msg.Msg.Type == "text_delta" && m.copilot.Streaming() {
-			m.copilot.HandleStreamMsg(ui.CopilotStreamMsg{Type: "done"})
-		}
-		return m, nil
+		// Re-invoke subscribe loop to receive the next event
+		return m, m.waitForDaemonUpdate()
 
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
+		return m, cmd
+
+	case ui.AllQuietTickMsg:
+		cmd := m.detail.TickAllQuiet()
 		return m, cmd
 
 	case SessionsRefreshedMsg:
@@ -374,6 +374,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Always discover backlog items so the collapsed badge count stays accurate
 		cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
+		// Start/stop all-quiet animation based on sidebar state
+		if cmd := m.syncAllQuietAnim(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		// Auto-synthesis completion toasts
 		cmds = append(cmds, autoSynthCmds...)
 		// Wait for next daemon push
@@ -389,7 +393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BacklogsRefreshedMsg:
 		m.sidebar.SetBacklog(msg.Backlogs)
-		return m, nil
+		return m, m.syncAllQuietAnim()
 
 	case PreviewReadyMsg:
 		if msg.Err != nil {
@@ -602,6 +606,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		frame := m.spinner.View()
 		m.sidebar.SetSpinnerView(frame)
 		m.minimap.SetSpinnerView(frame)
+		m.copilot.TickSpinner()
 		return m, cmd
 
 	case tea.MouseMsg:
@@ -647,6 +652,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// alt+' toggles copilot visibility from any state.
+	if msg.String() == "alt+'" {
+		return execToggleCopilot(&m)
+	}
+
 	switch m.state {
 	case StateSearching:
 		return m.handleKeySearching(msg)

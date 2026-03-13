@@ -14,7 +14,8 @@ var (
 	copilotToolStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
 	copilotThoughtStyle = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
 	copilotErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
-	copilotPlanStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
+	copilotHeartbeatStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#818cf8")).Italic(true) // indigo
+	copilotPlanStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
 	copilotConfirmStyle = lipgloss.NewStyle().
 				Background(lipgloss.AdaptiveColor{Light: "#fef3c7", Dark: "#422006"}).
 				Foreground(lipgloss.AdaptiveColor{Light: "#92400e", Dark: "#fbbf24"}).
@@ -39,7 +40,7 @@ func toolStatusIcon(status string) string {
 }
 
 // copilotRenderLines converts messages into styled terminal lines.
-func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, pendingTool *CopilotToolConfirm) []string {
+func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm) []string {
 	var allLines []string
 	for i, msg := range messages {
 		var rendered string
@@ -48,11 +49,15 @@ func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming b
 			lines := wrapText("> "+msg.Content, contentWidth)
 			rendered = copilotUserStyle.Render(lines)
 
+		case "heartbeat":
+			lines := wrapText("\u2764 "+msg.Content, contentWidth) // ❤ heartbeat prefix
+			rendered = copilotHeartbeatStyle.Render(lines)
+
 		case "copilot":
 			text := msg.Content
-			// Append streaming cursor to last copilot message
+			// Append animated streaming cursor to last copilot message
 			if streaming && i == len(messages)-1 {
-				text += "\u258C" // ▌
+				text += streamCursor
 			}
 			lines := wrapText(text, contentWidth)
 			rendered = copilotTextStyle.Render(lines)
@@ -104,12 +109,16 @@ func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming b
 // maxHeight is the maximum outer box height (including border).
 // The overlay is fit-to-content: it shrinks when there are few messages,
 // and grows upward (from the bottom) until hitting maxHeight.
-func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, pendingTool *CopilotToolConfirm) string {
+func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm, focused bool) string {
 	// Text content width: outer - border(2) - padding(2)
 	contentWidth := max(width-4, 4)
 
-	// Title line
-	title := CopilotTitleStyle.Render("Copilot")
+	// Title line — dim when unfocused
+	titleStyle := CopilotTitleStyle
+	if !focused {
+		titleStyle = CopilotTitleDimStyle
+	}
+	title := titleStyle.Render("Copilot")
 
 	inputHeight := 0
 	if inputView != "" {
@@ -119,18 +128,30 @@ func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, ma
 	// Max chat lines: maxHeight - border(2) - title(1) - input
 	maxChatH := max(maxHeight-2-1-inputHeight, 1)
 
-	// Empty state
-	if len(messages) == 0 && pendingTool == nil {
+	overlayStyle := CopilotOverlayStyle
+	if !focused {
+		overlayStyle = CopilotOverlayDimStyle
+	}
+
+	// Empty state (or streaming with only a user message, no copilot response yet)
+	if len(messages) == 0 && pendingTool == nil && !streaming {
 		placeholder := copilotUserStyle.Render("Ask the copilot anything...")
 		body := title + "\n" + placeholder
 		if inputView != "" {
 			body += "\n" + inputView
 		}
-		// Width param for lipgloss = outer - border(2), since Width includes padding
-		return CopilotOverlayStyle.Width(width - 2).Render(body)
+		return overlayStyle.Width(width - 2).Render(body)
 	}
 
-	allLines := copilotRenderLines(messages, contentWidth, streaming, pendingTool)
+	allLines := copilotRenderLines(messages, contentWidth, streaming, streamCursor, pendingTool)
+
+	// If streaming but no copilot message has arrived yet, show the animated cursor
+	if streaming && len(allLines) > 0 {
+		lastMsg := messages[len(messages)-1]
+		if lastMsg.Role == "user" || lastMsg.Role == "heartbeat" {
+			allLines = append(allLines, copilotTextStyle.Render(streamCursor))
+		}
+	}
 
 	// Fit-to-content: natural height capped at max
 	chatH := max(min(len(allLines), maxChatH), 1)
@@ -145,7 +166,7 @@ func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, ma
 		body += "\n" + inputView
 	}
 
-	return CopilotOverlayStyle.Width(width - 2).Render(body)
+	return overlayStyle.Width(width - 2).Render(body)
 }
 
 // wrapText performs simple word wrapping to fit within maxWidth.

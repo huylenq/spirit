@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/textinput"
+import (
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
+)
 
 type RelayModel struct {
 	input      textinput.Model
@@ -121,4 +124,9 @@ func (m RelayModel) View() string {
 
 func (m *RelayModel) TextInput() *textinput.Model {
 	return &m.input
+}
+
+// SetPromptStyle changes the prompt style without touching focus or value.
+func (m *RelayModel) SetPromptStyle(style lipgloss.Style) {
+	m.input.PromptStyle = style
 }

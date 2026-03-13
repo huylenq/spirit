@@ -6,22 +6,58 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
-// execToggleCopilot toggles the copilot panel on/off.
-func execToggleCopilot(m *Model) (Model, tea.Cmd) {
+// execOpenCopilot opens or re-focuses the copilot. Never hides it.
+func execOpenCopilot(m *Model) (Model, tea.Cmd) {
 	if m.state == StateCopilot || m.state == StateCopilotConfirm {
-		m.state = StateNormal
-	} else {
+		return *m, nil // already focused, no-op
+	}
+	if m.copilotVisible {
+		// Visible but unfocused → re-focus
 		m.state = StateCopilot
+		m.copilotInput.TextInput().Focus()
+		m.copilotInput.SetPromptStyle(ui.CopilotPromptStyle)
+	} else {
+		// Hidden → open focused
+		m.state = StateCopilot
+		m.copilotVisible = true
 		m.copilotInput.Activate()
 	}
 	return *m, nil
+}
+
+// execToggleCopilot cycles the copilot overlay through three states:
+//   - Hidden → focused (open with input active)
+//   - Focused → hidden (gc while focused closes it)
+//   - Unfocused (visible, StateNormal) → focused (gc re-focuses)
+func execToggleCopilot(m *Model) (Model, tea.Cmd) {
+	if m.state == StateCopilot || m.state == StateCopilotConfirm {
+		// Focused → hide
+		m.state = StateNormal
+		m.copilotVisible = false
+	} else if m.copilotVisible {
+		// Visible but unfocused → hide
+		m.copilotVisible = false
+	} else {
+		// Hidden → open focused
+		m.state = StateCopilot
+		m.copilotVisible = true
+		m.copilotInput.Activate()
+	}
+	return *m, nil
+}
+
+// unfocusCopilot transitions the copilot from focused to unfocused (visible but read-only).
+func (m *Model) unfocusCopilot() {
+	m.state = StateNormal
+	m.copilotInput.TextInput().Blur()
+	m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
 }
 
 // handleKeyCopilot handles key events when the copilot chat panel is active.
 func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, Keys.Escape):
-		m.state = StateNormal
+		m.unfocusCopilot()
 		return m, nil
 
 	case msg.String() == "enter":
@@ -46,7 +82,7 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.copilot.Streaming() {
 			return m, m.cancelCopilotChat()
 		}
-		m.state = StateNormal
+		m.unfocusCopilot()
 		return m, nil
 
 	case msg.String() == "ctrl+d":
@@ -82,22 +118,17 @@ func (m Model) handleKeyCopilotConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// sendCopilotChat sends the user's message to the copilot via the daemon RPC.
-// The call is blocking (synchronous), so it runs as a Bubble Tea command.
+// sendCopilotChat fires off the copilot prompt to the daemon.
+// Stream events arrive via the subscribe connection, not the RPC return.
 func (m *Model) sendCopilotChat(message string) tea.Cmd {
 	return func() tea.Msg {
-		response, err := m.client.CopilotChat(message)
-		if err != nil {
+		if err := m.client.CopilotChat(message); err != nil {
 			return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
 				Type:    "error",
 				Content: err.Error(),
 			}}
 		}
-		// Send the full response as a text delta, then done
-		return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
-			Type:    "text_delta",
-			Content: response,
-		}}
+		return nil // stream events arrive via subscribe connection
 	}
 }
 
@@ -115,11 +146,10 @@ func (m *Model) clearCopilotHistory() tea.Cmd {
 }
 
 // cancelCopilotChat cancels the in-flight copilot prompt.
+// The daemon pushes "done" via the stream when the subprocess exits.
 func (m *Model) cancelCopilotChat() tea.Cmd {
 	return func() tea.Msg {
 		_ = m.client.CopilotCancel()
-		return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
-			Type: "done",
-		}}
+		return nil // daemon pushes "done" via stream when subprocess exits
 	}
 }

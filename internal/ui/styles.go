@@ -127,6 +127,8 @@ var (
 	CopilotPromptStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
 				Bold(true)
+	CopilotPromptDimStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
 
 	// Tag relay prompt and badge
 	TagPromptStyle = lipgloss.NewStyle().
@@ -307,7 +309,24 @@ var (
 				BorderForeground(ColorCopilot).
 				Padding(0, 1)
 
+	CopilotOverlayDimStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(ColorMuted).
+				Padding(0, 1)
+
 	CopilotTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorCopilot)
+
+	CopilotTitleDimStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	// Footer chat bubble (powerline pill with neutral surface)
+	ColorBubbleBg = lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2d2d2d"}
+
+	BubbleCapStyle   = lipgloss.NewStyle().Foreground(ColorBubbleBg)
+	BubbleTextStyle  = lipgloss.NewStyle().Background(ColorBubbleBg)
+	BubbleLeftCap    = BubbleCapStyle.Render("\ue0b2")
+	BubbleRightCap   = BubbleCapStyle.Render("\ue0b4")
+	InsightLabelStyle = lipgloss.NewStyle().Foreground(ColorLater).Bold(true)
 )

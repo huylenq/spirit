@@ -109,6 +109,12 @@ func (m Model) View() string {
 		detailContent = m.renderBacklogEditor(project, detailWidth, detailH)
 	} else if backlog, ok := m.sidebar.SelectedBacklog(); ok {
 		detailContent = m.renderBacklogPreview(backlog, detailWidth, detailH, m.backlogScroll)
+	} else if m.sidebar.IsAllQuiet() {
+		detailContent = m.detail.ViewAllQuiet(ui.AllQuietCounts{
+			Clauding: m.sidebar.ClaudingCount(),
+			Later:    m.sidebar.LaterCount(),
+			Backlog:  m.sidebar.BacklogCount(),
+		})
 	} else {
 		detailContent = m.detail.View()
 	}
@@ -219,7 +225,9 @@ func (m Model) View() string {
 	}
 
 	// Copilot floating overlay (highest z-order — renders on top of everything)
-	if m.state == StateCopilot || m.state == StateCopilotConfirm {
+	// Visible when copilotVisible=true, regardless of focus state.
+	// Input is only shown when focused (StateCopilot/StateCopilotConfirm).
+	if m.copilotVisible {
 		const (
 			copilotMaxW = 70 // max overlay width in columns
 			copilotMinH = 5  // min overlay height (title + 1 msg + input + border)
@@ -229,12 +237,15 @@ func (m Model) View() string {
 		overlayW := min(copilotMaxW, innerWidth-2*marginR)
 		maxOverlayH := max(contentHeight-2*marginB, copilotMinH)
 
+		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
 		inputView := m.copilotInput.View()
 		overlay := ui.RenderCopilotOverlay(
 			m.copilot.Messages(), inputView,
 			overlayW, maxOverlayH,
 			m.copilot.ScrollOffset(), m.copilot.Streaming(),
+			m.copilot.StreamingCursor(),
 			m.copilot.PendingTool(),
+			focused,
 		)
 
 		overlayH := lipgloss.Height(overlay)

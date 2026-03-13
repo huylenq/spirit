@@ -122,9 +122,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case msg.String() == "'":
-		m.state = StateCopilot
-		m.copilotInput.Activate()
-		return m, nil
+		return execOpenCopilot(&m)
 
 	case key.Matches(msg, Keys.Macro):
 		m.state = StateMacro
@@ -394,31 +392,32 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newVal := !m.sidebar.LaterExpanded()
 		m.sidebar.SetLaterExpanded(newVal)
 		savePrefBool("laterCollapsed", !newVal)
+		flashText := "LATER collapsed"
 		if newVal {
-			return m, m.setFlash("LATER expanded", false, 2*time.Second)
+			flashText = "LATER expanded"
 		}
-		return m, m.setFlash("LATER collapsed", false, 2*time.Second)
+		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
 
 	case key.Matches(msg, Keys.ClaudingToggle):
 		newVal := !m.sidebar.ClaudingExpanded()
 		m.sidebar.SetClaudingExpanded(newVal)
 		savePrefBool("claudingCollapsed", !newVal)
+		flashText := "CLAUDING collapsed"
 		if newVal {
-			return m, m.setFlash("CLAUDING expanded", false, 2*time.Second)
+			flashText = "CLAUDING expanded"
 		}
-		return m, m.setFlash("CLAUDING collapsed", false, 2*time.Second)
+		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
 
 	case key.Matches(msg, Keys.BacklogToggle):
 		newVal := !m.sidebar.BacklogExpanded()
 		m.sidebar.SetBacklogExpanded(newVal)
 		savePrefBool("backlogExpanded", newVal)
 		if newVal {
-			// Trigger discovery so backlog items appear immediately
 			flashCmd := m.setFlash("BACKLOG expanded", false, 2*time.Second)
 			discoverCmd := m.discoverBacklogs(m.sessions)
-			return m, tea.Batch(flashCmd, discoverCmd)
+			return m, tea.Batch(flashCmd, discoverCmd, m.syncAllQuietAnim())
 		}
-		return m, m.setFlash("BACKLOG collapsed", false, 2*time.Second)
+		return m, tea.Batch(m.setFlash("BACKLOG collapsed", false, 2*time.Second), m.syncAllQuietAnim())
 
 	case key.Matches(msg, Keys.Minimap):
 		m.showMinimap = !m.showMinimap
