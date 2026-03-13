@@ -20,6 +20,7 @@ const (
 	EventDigestGenerated   CopilotEventType = "digest_generated"
 	EventSkillInvoked      CopilotEventType = "skill_invoked"
 	EventSessionBookmarked CopilotEventType = "session_bookmarked"
+	EventHeartbeat         CopilotEventType = "heartbeat"
 )
 
 // CopilotEvent is a single entry in the copilot event journal.

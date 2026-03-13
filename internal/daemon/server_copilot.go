@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,8 +51,8 @@ func (d *Daemon) loadCopilotHistory() {
 	d.copilotHistoryMu.Unlock()
 }
 
-// handleCopilotChat invokes Claude CLI with the copilot prompt and returns the full response.
-// This is a synchronous (blocking) RPC — the TUI shows "thinking..." while waiting.
+// handleCopilotChat starts a streaming copilot prompt in the background.
+// Returns an immediate "streaming" ack; actual tokens arrive via the subscribe connection.
 func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 	var req CopilotChatData
 	if err := json.Unmarshal(data, &req); err != nil || req.Message == "" {
@@ -63,7 +64,7 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 	preamble := d.buildCopilotPreamble()
 	fullPrompt := preamble + "\n\n" + req.Message
 
-	// Cancel any existing copilot prompt
+	// Cancel any existing copilot prompt (including heartbeat)
 	d.copilotMu.Lock()
 	if d.copilotCancel != nil {
 		d.copilotCancel()
@@ -71,29 +72,25 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	d.copilotCancel = cancel
 	d.copilotMu.Unlock()
-	defer cancel()
 
-	// Run claude CLI synchronously
-	output, err := d.runCopilotPrompt(ctx, fullPrompt)
-	if err != nil {
-		r := errResponse(fmt.Sprintf("copilot: %v", err))
-		return &r
-	}
+	// Run streaming in background; results push to subscribers
+	go func() {
+		defer d.clearCopilotCancel()
+		output, err := d.runCopilotPromptStreaming(ctx, fullPrompt)
+		if err != nil {
+			d.pushCopilotStream(CopilotStreamData{Type: "error", Content: err.Error()})
+			d.pushCopilotStream(CopilotStreamData{Type: "done"})
+			return
+		}
+		// Persist full response to history
+		now := time.Now()
+		d.appendCopilotHistory(
+			CopilotHistoryMsg{Role: "user", Content: req.Message, Time: now},
+			CopilotHistoryMsg{Role: "copilot", Content: output, Time: now},
+		)
+	}()
 
-	// Persist to in-memory history and disk so it survives TUI and daemon restart.
-	now := time.Now()
-	d.copilotHistoryMu.Lock()
-	d.copilotHistory = append(d.copilotHistory,
-		CopilotHistoryMsg{Role: "user", Content: req.Message, Time: now},
-		CopilotHistoryMsg{Role: "copilot", Content: output, Time: now},
-	)
-	if len(d.copilotHistory) > maxCopilotHistory {
-		d.copilotHistory = d.copilotHistory[len(d.copilotHistory)-maxCopilotHistory:]
-	}
-	d.saveCopilotHistory()
-	d.copilotHistoryMu.Unlock()
-
-	r := resultResponse(map[string]string{"response": output})
+	r := resultResponse(map[string]string{"status": "streaming"})
 	return &r
 }
 
@@ -118,9 +115,10 @@ func (d *Daemon) handleCopilotClearHistory() *Response {
 	return &r
 }
 
-// runCopilotPrompt invokes the Claude CLI as a subprocess and returns its output.
-func (d *Daemon) runCopilotPrompt(ctx context.Context, prompt string) (string, error) {
-	// Build MCP config JSON so copilot can call cmc tools
+// runCopilotPromptStreaming invokes the Claude CLI with stream-json output,
+// parsing and pushing events to subscribers in real-time. Returns the full
+// accumulated text response for history persistence.
+func (d *Daemon) runCopilotPromptStreaming(ctx context.Context, prompt string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("find executable: %w", err)
@@ -131,7 +129,8 @@ func (d *Daemon) runCopilotPrompt(ctx context.Context, prompt string) (string, e
 	args := []string{
 		"-p", prompt,
 		"--model", "sonnet",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose",
 		"--max-turns", "10",
 		"--mcp-config", mcpConfig,
 		"--allowedTools", "mcp__cmc__*",
@@ -139,20 +138,63 @@ func (d *Daemon) runCopilotPrompt(ctx context.Context, prompt string) (string, e
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = d.copilotWorkspace.Dir
-	cmd.Stderr = os.Stderr // claude logs to stderr
+	cmd.Stderr = os.Stderr
+	// Clear CLAUDECODE to avoid "nested sessions" rejection when the daemon
+	// was started from within a Claude Code session.
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
-	output, err := cmd.Output()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		return "", fmt.Errorf("stdout pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start claude: %w", err)
+	}
+
+	var fullText strings.Builder
+	parser := &copilotStreamParser{}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024) // large buffer for tool results
+
+	sentDone := false
+	for scanner.Scan() {
+		events := parser.Parse(scanner.Bytes())
+		for _, evt := range events {
+			if evt.Type == "text_delta" {
+				fullText.WriteString(evt.Content)
+			}
+			if evt.Type == "done" {
+				sentDone = true
+			}
+			d.pushCopilotStream(evt)
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
 		if ctx.Err() == context.Canceled {
+			if !sentDone {
+				d.pushCopilotStream(CopilotStreamData{Type: "done"})
+			}
 			return "", fmt.Errorf("cancelled")
 		}
 		if ctx.Err() == context.DeadlineExceeded {
+			if !sentDone {
+				d.pushCopilotStream(CopilotStreamData{Type: "done"})
+			}
 			return "", fmt.Errorf("timed out after 3 minutes")
+		}
+		if !sentDone {
+			d.pushCopilotStream(CopilotStreamData{Type: "done"})
 		}
 		return "", fmt.Errorf("claude: %w", err)
 	}
 
-	return strings.TrimSpace(string(output)), nil
+	// Ensure done is sent even if result line was missing
+	if !sentDone {
+		d.pushCopilotStream(CopilotStreamData{Type: "done"})
+	}
+
+	return strings.TrimSpace(fullText.String()), nil
 }
 
 // buildCopilotPreamble assembles context from live daemon state for the copilot prompt.
@@ -193,4 +235,39 @@ func (d *Daemon) handleCopilotStatus() *Response {
 		MemoryBytes: len(memContent),
 	})
 	return &r
+}
+
+// clearCopilotCancel cancels and nils copilotCancel under the mutex.
+// Call this when a copilot prompt (user-initiated or heartbeat) finishes.
+func (d *Daemon) clearCopilotCancel() {
+	d.copilotMu.Lock()
+	if d.copilotCancel != nil {
+		d.copilotCancel()
+		d.copilotCancel = nil
+	}
+	d.copilotMu.Unlock()
+}
+
+// appendCopilotHistory appends messages, trims to max, and persists to disk.
+func (d *Daemon) appendCopilotHistory(msgs ...CopilotHistoryMsg) {
+	d.copilotHistoryMu.Lock()
+	d.copilotHistory = append(d.copilotHistory, msgs...)
+	if len(d.copilotHistory) > maxCopilotHistory {
+		d.copilotHistory = d.copilotHistory[len(d.copilotHistory)-maxCopilotHistory:]
+	}
+	d.saveCopilotHistory()
+	d.copilotHistoryMu.Unlock()
+}
+
+// filterEnv returns a copy of environ with the named key removed.
+func filterEnv(environ []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(environ))
+	for _, e := range environ {
+		if len(e) >= len(prefix) && e[:len(prefix)] == prefix {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }

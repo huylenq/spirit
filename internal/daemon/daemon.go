@@ -18,8 +18,9 @@ import (
 )
 
 type subscriber struct {
-	ch   chan []claude.ClaudeSession
-	done chan struct{}
+	ch      chan []claude.ClaudeSession
+	copilot chan CopilotStreamData // buffered; streaming events from copilot subprocess
+	done    chan struct{}
 }
 
 // commitDoneEntry tracks a pending commit operation (commit-only or commit-and-done).
@@ -81,8 +82,8 @@ type Daemon struct {
 	copilotJournal   *copilot.Journal
 	copilotWorkspace *copilot.Workspace
 	copilotMemory    *copilot.Memory
-	copilotCancel    context.CancelFunc // cancel in-flight copilot prompt
-	copilotMu        sync.Mutex         // protects copilotCancel
+	copilotCancel context.CancelFunc // non-nil while a copilot prompt is in-flight
+	copilotMu    sync.Mutex         // protects copilotCancel
 	copilotHistory   []CopilotHistoryMsg
 	copilotHistoryMu sync.RWMutex
 
@@ -168,6 +169,9 @@ func Run(info DaemonInfo) error {
 
 	go d.usageLoop(pollStop)
 
+	// Start heartbeat loop (reads HEARTBEAT.md periodically)
+	go d.heartbeatLoop(pollStop)
+
 	// Start idle timeout checker
 	go d.idleWatcher(sigCh)
 
@@ -224,13 +228,28 @@ func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
 
 func (d *Daemon) addSubscriber() *subscriber {
 	sub := &subscriber{
-		ch:   make(chan []claude.ClaudeSession, 1),
-		done: make(chan struct{}),
+		ch:      make(chan []claude.ClaudeSession, 1),
+		copilot: make(chan CopilotStreamData, 256),
+		done:    make(chan struct{}),
 	}
 	d.subMu.Lock()
 	d.subscribers[sub] = struct{}{}
 	d.subMu.Unlock()
 	return sub
+}
+
+// pushCopilotStream sends a copilot event to all subscribers. Non-blocking per subscriber:
+// if the buffer is full, the event is dropped (the full text is in history after completion).
+func (d *Daemon) pushCopilotStream(event CopilotStreamData) {
+	d.subMu.Lock()
+	defer d.subMu.Unlock()
+	for sub := range d.subscribers {
+		select {
+		case sub.copilot <- event:
+		default:
+			// buffer full — skip (subscriber too slow)
+		}
+	}
 }
 
 func (d *Daemon) removeSubscriber(sub *subscriber) {

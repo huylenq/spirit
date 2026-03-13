@@ -118,11 +118,23 @@ func GenerateClaudeMD(bs *BootstrapFiles) string {
 	b.WriteString("\n\n")
 	b.WriteString(strings.TrimSpace(bs.User))
 	b.WriteString("\n\n")
+
+	// Include heartbeat tasks if configured
+	hb := ParseHeartbeat(bs.Heartbeat)
+	if hb.IsActive() {
+		b.WriteString("## Heartbeat Tasks\n")
+		b.WriteString("The following tasks are checked periodically by the heartbeat system.\n")
+		b.WriteString("When invoked as a heartbeat, execute these checks and report findings concisely.\n\n")
+		b.WriteString(hb.Tasks)
+		b.WriteString("\n\n")
+	}
+
 	b.WriteString(`## Behavior
 - Use your MCP tools to take actions. Don't just describe what you would do — do it.
 - When asked to remember something, use the memory_append tool.
 - Reference sessions by name/project. Be specific about times and events.
-- You act ONLY when asked. You do not take autonomous actions.
+- In interactive mode, you act ONLY when asked. You do not take autonomous actions.
+- In heartbeat mode, execute the heartbeat tasks and report findings. Be brief.
 `)
 	return b.String()
 }
@@ -232,6 +244,13 @@ send_message, kill_session, spawn_session, commit, commit_done, bookmark_kill
 
 const defaultHeartbeat = `# HEARTBEAT.md
 
-# Keep this file empty to skip heartbeat API calls.
+# Keep this file empty to skip heartbeat checks.
 # Add tasks below when you want the copilot to check something periodically.
+# Set interval with an HTML comment: <!-- interval: 30m --> (default: 30m, min: 1m)
+#
+# Example:
+# <!-- interval: 15m -->
+# - Check if any sessions have been idle for more than 1 hour
+# - Look for file overlaps between active sessions
+# - Flag sessions that have compacted more than twice
 `
