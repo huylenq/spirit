@@ -244,6 +244,9 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		} else {
 			s.LastUserMessage = ReadLastUserMessage(sessionID)
 		}
+		aInfo := ReadLastAssistantInfo(sessionID)
+		s.LastAssistantMessage = aInfo.Message
+		s.Insights = aInfo.Insights
 		if cached := ReadCachedSummary(sessionID); cached != nil {
 			s.SynthesizedTitle = cached.SynthesizedTitle
 			if cached.ProblemType != "" {

@@ -690,6 +690,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyCopilot(msg)
 	case StateCopilotConfirm:
 		return m.handleKeyCopilotConfirm(msg)
+	case StateAdjustCopilot:
+		return m.handleKeyAdjustCopilot(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}

@@ -132,6 +132,9 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 		summary = SessionSummary{Objective: raw}
 	}
 	summary.InputWords = inputWords
+	if cached != nil {
+		summary.AppliedSynthesizedTitle = cached.AppliedSynthesizedTitle
+	}
 	go RecordSynthCall(SynthKindSummary, inputWords)
 
 	// Fallback: derive title from objective if model omitted it

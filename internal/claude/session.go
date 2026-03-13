@@ -68,8 +68,10 @@ type ClaudeSession struct {
 	IsPhantom       bool      // true when session has no live tmux pane (created from bookmark)
 	LaterBookmarkID string    // links to the bookmark file (empty if not a Deferred session)
 	SessionID       string
-	FirstMessage    string // first user message in transcript (display name heuristic)
-	LastUserMessage string
+	FirstMessage         string // first user message in transcript (display name heuristic)
+	LastUserMessage      string
+	LastAssistantMessage string   // last assistant text response
+	Insights             []string // all ★ Insight blocks (oldest first)
 	// Display name priority: CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 	// CustomTitle: set by Claude Code's /rename (written to transcript as custom-title entry).
 	//   The daemon sends /rename via tmux.SendKeys after synthesis, but this only works

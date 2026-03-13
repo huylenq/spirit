@@ -151,6 +151,127 @@ func ReadLastUserMessage(sessionID string) string {
 	return result
 }
 
+// --- Last assistant info cache (single scan for message + insight) ---
+
+// AssistantInfo holds the last assistant text message and all ★ Insight blocks
+// extracted from a single scan of the transcript tail.
+type AssistantInfo struct {
+	Message  string   // last assistant text
+	Insights []string // all ★ Insight blocks found (oldest first)
+}
+
+type assistantInfoCacheEntry struct {
+	info    AssistantInfo
+	modTime time.Time
+}
+
+var (
+	assistantInfoCache   = make(map[string]assistantInfoCacheEntry)
+	assistantInfoCacheMu sync.Mutex
+)
+
+const (
+	insightMarker = "★ Insight"
+	insightDelim  = "─────────"
+)
+
+// extractInsight pulls the content between ★ Insight delimiters from text.
+// Uses LastIndex because earlier occurrences may be conversational references,
+// while the actual block is always near the end.
+func extractInsight(text string) string {
+	idx := strings.LastIndex(text, insightMarker)
+	if idx < 0 {
+		return ""
+	}
+	rest := text[idx:]
+	nl := strings.Index(rest, "\n")
+	if nl < 0 {
+		return ""
+	}
+	rest = rest[nl+1:]
+	if end := strings.Index(rest, insightDelim); end > 0 {
+		return strings.TrimSpace(rest[:end])
+	}
+	return strings.TrimSpace(rest)
+}
+
+// ReadLastAssistantInfo does a single reverse scan of the transcript tail,
+// extracting both the last assistant message and the most recent ★ Insight block.
+// Caches by mtime — one file read serves both values.
+func ReadLastAssistantInfo(sessionID string) AssistantInfo {
+	path, err := findTranscriptPath(sessionID)
+	if err != nil {
+		return AssistantInfo{}
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return AssistantInfo{}
+	}
+
+	assistantInfoCacheMu.Lock()
+	if cached, ok := assistantInfoCache[sessionID]; ok && cached.modTime.Equal(info.ModTime()) {
+		assistantInfoCacheMu.Unlock()
+		return cached.info
+	}
+	assistantInfoCacheMu.Unlock()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return AssistantInfo{}
+	}
+	defer f.Close()
+
+	const tailSize = 256 * 1024
+	size := info.Size()
+	offset := size - tailSize
+	if offset < 0 {
+		offset = 0
+	}
+
+	buf := make([]byte, size-offset)
+	n, _ := f.ReadAt(buf, offset)
+	if n == 0 {
+		return AssistantInfo{}
+	}
+
+	var result AssistantInfo
+	raw := string(buf[:n])
+	lines := strings.Split(raw, "\n")
+	assistantTag := []byte(`"type":"assistant"`)
+	// Reverse scan: collect last message + all insights
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == "" {
+			continue
+		}
+		line := []byte(lines[i])
+		// Cheap pre-filter: skip JSON unmarshal for non-assistant lines
+		if !bytes.Contains(line, assistantTag) {
+			continue
+		}
+		text := extractAssistantText(line)
+		if text == "" {
+			continue
+		}
+		if result.Message == "" {
+			result.Message = text
+		}
+		if insight := extractInsight(text); insight != "" {
+			result.Insights = append(result.Insights, insight)
+		}
+	}
+	// Reverse collected insights so they're in chronological order (oldest first)
+	for i, j := 0, len(result.Insights)-1; i < j; i, j = i+1, j-1 {
+		result.Insights[i], result.Insights[j] = result.Insights[j], result.Insights[i]
+	}
+
+	assistantInfoCacheMu.Lock()
+	assistantInfoCache[sessionID] = assistantInfoCacheEntry{info: result, modTime: info.ModTime()}
+	assistantInfoCacheMu.Unlock()
+
+	return result
+}
+
 // ReadUserMessages extracts user-typed messages from a session transcript.
 // Uses incremental reads — only parses new content appended since last read.
 func ReadUserMessages(sessionID string) ([]string, error) {

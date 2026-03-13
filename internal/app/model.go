@@ -50,6 +50,7 @@ const (
 	StateNoteEdit             // session note editor open
 	StateCopilot              // copilot chat panel active
 	StateCopilotConfirm       // copilot tool confirmation pending
+	StateAdjustCopilot        // copilot overlay resize/reposition mode
 )
 
 const defaultMinimapMaxH = 14
@@ -229,6 +230,10 @@ type Model struct {
 	copilot              ui.CopilotModel
 	copilotInput         ui.RelayModel
 	copilotVisible       bool // overlay rendered but may not be focused (StateNormal + visible = read-only)
+	copilotOffX          int  // horizontal offset from default position (negative = left)
+	copilotOffY          int  // vertical offset from default position (negative = up)
+	copilotDW            int  // delta width from default (positive = wider)
+	copilotDH            int  // delta max-height from default (positive = taller)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -258,6 +263,10 @@ func NewModel(client *daemon.Client) Model {
 		macroEditor:       ui.NewMacroEditorModel(),
 		copilot:           ui.NewCopilotModel(),
 		copilotInput:      ui.NewCopilotRelayModel(),
+		copilotOffX:       loadPrefInt("copilotOffX", 0),
+		copilotOffY:       loadPrefInt("copilotOffY", 0),
+		copilotDW:         loadPrefInt("copilotDW", 0),
+		copilotDH:         loadPrefInt("copilotDH", 0),
 		macros:            claude.LoadMacros(nil),
 		chatOutlineMode:       loadPrefString("chatOutlineMode", ChatOutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),

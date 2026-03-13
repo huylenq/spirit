@@ -150,6 +150,12 @@ func (m *SidebarModel) View() string {
 		}
 	}
 
+	// Skeleton placeholder when all sections are collapsed
+	if len(lines) == 0 && m.IsAllQuiet() {
+		lines = append(lines, "")
+		lines = append(lines, ItemDetailStyle.Render("    All clear"))
+	}
+
 	// Pin collapsed section badges at the bottom (clauding, later, and/or backlog when hidden)
 	claudingCount := m.claudingCount // cached by applyNarrow; non-zero only when !claudingExpanded
 	laterCount := m.laterCount       // cached by applyNarrow; non-zero only when !laterExpanded

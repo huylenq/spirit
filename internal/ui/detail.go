@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math/rand"
 	"sort"
 	"strings"
 	"unicode"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
@@ -66,9 +68,12 @@ type DetailModel struct {
 	diffHunkFiles          []diffHunkFile
 	diffScroll             int
 	diffSimThreshold       float64 // similarity threshold for ~ vs separate -/+ lines
+	insightIdx             int    // random insight index, picked on session switch
+	renderedInsight        string // glamour-rendered insight (single line, ANSI-styled)
 	width                  int
 	height                 int
 	ready                  bool
+	allQuiet               AllQuietAnim
 }
 
 func NewDetailModel() DetailModel {
@@ -112,12 +117,52 @@ func (m *DetailModel) SetSizeFast(w, h int) {
 
 // detailContentHeight computes the viewport content height from the panel height.
 func detailContentHeight(h int) int {
-	// header(3: title + branch/diff + blank) + footer(2: metadata + blank) + border(2: top + bottom)
-	ch := h - 7
+	// header(2: branch/diff + avatar) + footer(1: meta) + border(2: top + bottom)
+	ch := h - 5
 	if ch < 1 {
 		return 1
 	}
 	return ch
+}
+
+// updateRenderedInsight renders the current insight through glamour and caches
+// the first non-empty line as a single ANSI-styled string for the footer bubble.
+func (m *DetailModel) updateRenderedInsight(s *claude.ClaudeSession) {
+	if len(s.Insights) == 0 {
+		m.renderedInsight = ""
+		return
+	}
+
+	insight := s.Insights[m.insightIdx%len(s.Insights)]
+	renderWidth := m.width - 4
+	if renderWidth < 20 {
+		renderWidth = 20
+	}
+
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(renderWidth),
+	)
+	if err != nil {
+		m.renderedInsight = ""
+		return
+	}
+
+	rendered, err := r.Render(insight)
+	if err != nil {
+		m.renderedInsight = ""
+		return
+	}
+
+	// Pick the first non-empty line from glamour output
+	for _, line := range strings.Split(rendered, "\n") {
+		stripped := strings.TrimSpace(ansi.Strip(line))
+		if stripped != "" {
+			m.renderedInsight = strings.TrimRight(line, " \t")
+			return
+		}
+	}
+	m.renderedInsight = ""
 }
 
 // calcPanelWidth returns the default sidebar/overlay panel width for a given
@@ -272,6 +317,7 @@ func (m *DetailModel) ClearSession() {
 	m.userMessages = nil
 	m.diffFiles = nil
 	m.summary = nil
+	m.renderedInsight = ""
 }
 
 // SetNonClaudePane shows a raw terminal capture for a non-Claude pane.
@@ -287,6 +333,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 		m.diffFiles = nil
 		m.diffStats = nil
 		m.summary = nil
+		m.renderedInsight = ""
 	}
 	if m.content == content {
 		return // skip re-render when content unchanged (daemon re-captures every ~1s)
@@ -305,9 +352,16 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	if isNewSession {
 		m.hookScroll = 0
 		m.pendingMsgReset = true
+		if len(s.Insights) > 0 {
+			m.insightIdx = rand.Intn(len(s.Insights))
+		}
 	}
 	m.session = s
 	m.content = content
+
+	// Pre-render insight markdown through glamour for the footer bubble
+	m.updateRenderedInsight(s)
+
 	m.recomputeOffsets()
 	if m.ready {
 		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
@@ -430,6 +484,18 @@ func (m *DetailModel) SetShowRawTranscript(show bool) {
 		m.transcriptExpandedJSON = make(map[int]string)
 	}
 }
+
+// StartAllQuietAnim initializes and starts the mobile animation.
+func (m *DetailModel) StartAllQuietAnim() tea.Cmd { return m.allQuiet.Init() }
+
+// StopAllQuietAnim halts the mobile animation.
+func (m *DetailModel) StopAllQuietAnim() { m.allQuiet.Stop() }
+
+// TickAllQuiet advances the animation by one frame.
+func (m *DetailModel) TickAllQuiet() tea.Cmd { return m.allQuiet.Tick() }
+
+// AllQuietAnimActive reports whether the animation is running.
+func (m *DetailModel) AllQuietAnimActive() bool { return m.allQuiet.Active() }
 
 // runeWidth returns the display width of a rune without allocating a string.
 // CJK wide characters are 2 cells; everything else is 1.

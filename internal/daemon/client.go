@@ -178,9 +178,16 @@ func (c *Client) Subscribe() ([]claude.ClaudeSession, *claude.UsageStats, error)
 	return data.Sessions, data.Usage, nil
 }
 
+// ReadNextResponse blocks until the daemon pushes the next message on the subscribe connection.
+// Returns the raw Response so callers can switch on Type (sessions vs copilot stream).
+func (c *Client) ReadNextResponse() (Response, error) {
+	return readResponse(c.subScanner)
+}
+
 // ReadNext blocks until the daemon pushes the next session update.
+// Kept for backward compat; internally calls ReadNextResponse and assumes RespSessions.
 func (c *Client) ReadNext() ([]claude.ClaudeSession, *claude.UsageStats, error) {
-	resp, err := readResponse(c.subScanner)
+	resp, err := c.ReadNextResponse()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -393,14 +400,11 @@ func (c *Client) BacklogDelete(cwd, id string) error {
 	return c.rpcInto(Request{Type: ReqBacklogDelete, Data: marshalData(BacklogDeleteData{CWD: cwd, ID: id})}, nil)
 }
 
-// CopilotChat sends a message to the copilot and returns the full response (blocking).
-func (c *Client) CopilotChat(message string) (string, error) {
+// CopilotChat sends a message to the copilot and returns after the daemon acknowledges.
+// Actual streaming events arrive via the subscribe connection (ReadNextResponse).
+func (c *Client) CopilotChat(message string) error {
 	var result map[string]string
-	err := c.rpcInto(Request{Type: ReqCopilotChat, Data: marshalData(CopilotChatData{Message: message})}, &result)
-	if err != nil {
-		return "", err
-	}
-	return result["response"], nil
+	return c.rpcInto(Request{Type: ReqCopilotChat, Data: marshalData(CopilotChatData{Message: message})}, &result)
 }
 
 // CopilotCancel cancels any in-flight copilot prompt.

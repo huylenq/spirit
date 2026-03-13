@@ -27,13 +27,18 @@ type CopilotToolConfirm struct {
 	ToolName string
 }
 
+// copilotStreamingFrames is the animated cursor shown while the copilot is streaming.
+// A radar-sweep effect: the dot orbits through quadrants.
+var copilotStreamingFrames = []string{"◴", "◷", "◶", "◵"}
+
 // CopilotModel manages copilot conversation state and scroll position.
 type CopilotModel struct {
-	messages    []CopilotMessage
-	scrollOff   int  // scroll offset from bottom (0 = at bottom)
-	streaming   bool
-	pendingTool *CopilotToolConfirm
-	usageInfo   string
+	messages     []CopilotMessage
+	scrollOff    int  // scroll offset from bottom (0 = at bottom)
+	streaming    bool
+	pendingTool  *CopilotToolConfirm
+	usageInfo    string
+	spinnerFrame int // incremented by app-level spinner tick
 }
 
 // NewCopilotModel creates a new empty copilot model.
@@ -193,7 +198,18 @@ func (c *CopilotModel) UsageInfo() string {
 	return c.usageInfo
 }
 
+// TickSpinner advances the spinner frame counter. Called from the app-level spinner tick.
+func (c *CopilotModel) TickSpinner() {
+	c.spinnerFrame++
+}
+
+// StreamingCursor returns the current animated cursor character for the streaming state.
+func (c *CopilotModel) StreamingCursor() string {
+	return copilotStreamingFrames[c.spinnerFrame%len(copilotStreamingFrames)]
+}
+
 // LoadHistory replaces the message list with historical messages (called on TUI reconnect).
 func (c *CopilotModel) LoadHistory(msgs []CopilotMessage) {
 	c.messages = msgs
+	c.scrollOff = 0
 }

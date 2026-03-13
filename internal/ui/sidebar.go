@@ -170,6 +170,16 @@ func (m SidebarModel) ClaudingExpanded() bool {
 	return m.claudingExpanded
 }
 
+func (m SidebarModel) ClaudingCount() int { return m.claudingCount }
+func (m SidebarModel) LaterCount() int    { return m.laterCount }
+func (m SidebarModel) BacklogCount() int  { return len(m.backlogs) }
+
+// IsAllQuiet returns true when sessions exist but none are cursor-navigable
+// (all hidden behind collapsed sections, no YOUR TURN items, not in search mode).
+func (m SidebarModel) IsAllQuiet() bool {
+	return len(m.items) > 0 && len(m.filtered) == 0 && len(m.filteredBacklog) == 0 && m.narrow == ""
+}
+
 func NewSidebarModel() SidebarModel {
 	return SidebarModel{
 		diffStats:           make(map[string]map[string]claude.FileDiffStat),

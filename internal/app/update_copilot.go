@@ -93,6 +93,12 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.copilot.ScrollUp(5)
 		return m, nil
 
+	case msg.String() == "ctrl+a":
+		m.state = StateAdjustCopilot
+		m.copilotInput.TextInput().Blur()
+		m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
+		return m, nil
+
 	default:
 		// Forward to copilot input relay
 		var cmd tea.Cmd
@@ -152,4 +158,46 @@ func (m *Model) cancelCopilotChat() tea.Cmd {
 		_ = m.client.CopilotCancel()
 		return nil // daemon pushes "done" via stream when subprocess exits
 	}
+}
+
+// handleKeyAdjustCopilot handles key events in StateAdjustCopilot (resize/reposition mode).
+// Arrows move the overlay; shift+arrows resize it; r resets; esc/enter returns to chat.
+func (m Model) handleKeyAdjustCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up":
+		m.copilotOffY--
+		savePrefInt("copilotOffY", m.copilotOffY)
+	case "down":
+		m.copilotOffY++
+		savePrefInt("copilotOffY", m.copilotOffY)
+	case "left":
+		m.copilotOffX--
+		savePrefInt("copilotOffX", m.copilotOffX)
+	case "right":
+		m.copilotOffX++
+		savePrefInt("copilotOffX", m.copilotOffX)
+	case "shift+left":
+		m.copilotDW -= 5
+		savePrefInt("copilotDW", m.copilotDW)
+	case "shift+right":
+		m.copilotDW += 5
+		savePrefInt("copilotDW", m.copilotDW)
+	case "shift+up":
+		m.copilotDH += 3
+		savePrefInt("copilotDH", m.copilotDH)
+	case "shift+down":
+		m.copilotDH -= 3
+		savePrefInt("copilotDH", m.copilotDH)
+	case "r":
+		m.copilotOffX, m.copilotOffY, m.copilotDW, m.copilotDH = 0, 0, 0, 0
+		savePrefInt("copilotOffX", 0)
+		savePrefInt("copilotOffY", 0)
+		savePrefInt("copilotDW", 0)
+		savePrefInt("copilotDH", 0)
+	case "esc", "enter":
+		m.state = StateCopilot
+		m.copilotInput.TextInput().Focus()
+		m.copilotInput.SetPromptStyle(ui.CopilotPromptStyle)
+	}
+	return m, nil
 }

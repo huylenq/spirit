@@ -134,7 +134,7 @@ func (d *Daemon) handleApplyTitle(data json.RawMessage) *Response {
 		r := errResponse("no synthesized title to apply")
 		return &r
 	}
-	tmux.SendKeys(req.PaneID, "/rename "+cached.SynthesizedTitle, "Enter")
+	tmux.SendKeysLiteral(req.PaneID, "/rename "+cached.SynthesizedTitle)
 	claude.ApplySynthesizedTitle(req.SessionID)
 	d.nudge()
 	r := resultResponse(nil)

@@ -234,23 +234,34 @@ func (m Model) View() string {
 			marginR     = 2  // right margin from content edge
 			marginB     = 1  // bottom margin from content edge
 		)
-		overlayW := min(copilotMaxW, innerWidth-2*marginR)
-		maxOverlayH := max(contentHeight-2*marginB, copilotMinH)
+		adjustMode := m.state == StateAdjustCopilot
+		overlayW := min(copilotMaxW+m.copilotDW, innerWidth-4)
+		overlayW = max(overlayW, 20)
+		maxOverlayH := min(max(contentHeight-2*marginB+m.copilotDH, copilotMinH), contentHeight-2)
 
 		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
-		inputView := m.copilotInput.View()
+		inputView := ""
+		if !adjustMode {
+			inputView = m.copilotInput.View()
+		}
 		overlay := ui.RenderCopilotOverlay(
 			m.copilot.Messages(), inputView,
 			overlayW, maxOverlayH,
 			m.copilot.ScrollOffset(), m.copilot.Streaming(),
 			m.copilot.StreamingCursor(),
 			m.copilot.PendingTool(),
-			focused,
+			focused || adjustMode,
+			adjustMode,
 		)
 
 		overlayH := lipgloss.Height(overlay)
-		row := max(contentHeight-overlayH-marginB, 1)
-		col := max(innerWidth-overlayW-marginR, 0)
+		// Default anchor: bottom-right. Offsets shift from that anchor; clamp to content area.
+		row := contentHeight - overlayH - marginB + m.copilotOffY
+		row = max(row, 1)
+		row = min(row, contentHeight-overlayH)
+		col := innerWidth - overlayW - marginR + m.copilotOffX
+		col = max(col, 0)
+		col = min(col, innerWidth-overlayW)
 
 		content = ui.OverlayAt(content, overlay, row, col)
 	}

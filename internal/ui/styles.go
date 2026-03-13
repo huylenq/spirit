@@ -329,4 +329,5 @@ var (
 	BubbleLeftCap    = BubbleCapStyle.Render("\ue0b2")
 	BubbleRightCap   = BubbleCapStyle.Render("\ue0b4")
 	InsightLabelStyle = lipgloss.NewStyle().Foreground(ColorLater).Bold(true)
+	InsightSepStyle   = lipgloss.NewStyle().Foreground(ColorBorder)
 )

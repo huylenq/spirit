@@ -109,16 +109,21 @@ func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming b
 // maxHeight is the maximum outer box height (including border).
 // The overlay is fit-to-content: it shrinks when there are few messages,
 // and grows upward (from the bottom) until hitting maxHeight.
-func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm, focused bool) string {
+// adjustMode replaces the title with a keybinding hint for resize/reposition mode.
+func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm, focused bool, adjustMode bool) string {
 	// Text content width: outer - border(2) - padding(2)
 	contentWidth := max(width-4, 4)
 
-	// Title line — dim when unfocused
+	// Title line — dim when unfocused; hint when in adjust mode
 	titleStyle := CopilotTitleStyle
 	if !focused {
 		titleStyle = CopilotTitleDimStyle
 	}
-	title := titleStyle.Render("Copilot")
+	titleText := "Copilot"
+	if adjustMode {
+		titleText = "↑↓←→ move · ⇧←→ width · ⇧↑↓ height · r reset · esc done"
+	}
+	title := titleStyle.Render(titleText)
 
 	inputHeight := 0
 	if inputView != "" {

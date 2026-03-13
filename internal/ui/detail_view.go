@@ -90,7 +90,7 @@ func (m *DetailModel) View() string {
 		sessionTitle += " " + name
 	}
 
-	header := line1 + "\n" + sessionTitle + "\n"
+	header := line1 + "\n" + sessionTitle
 
 	// Content viewport, optionally with aside panel (chat outline + notes)
 	contentWidth := m.width - 4
@@ -194,7 +194,7 @@ func (m *DetailModel) View() string {
 		contentBox = m.renderDiffOverlay(contentWidth, m.viewport.Height)
 	}
 
-	// Footer metadata
+	// Bottom bar: session title (left) + footer metadata (right-aligned)
 	var metaParts []string
 	if s.SessionID != "" {
 		short := s.SessionID
@@ -209,7 +209,86 @@ func (m *DetailModel) View() string {
 	}
 	meta := DetailMetaStyle.Render(strings.Join(metaParts, "  "))
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, "", meta)
+	footer := m.renderFooter(s, avatar, badge, meta)
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, footer)
+}
+
+// renderFooter builds the bottom bar: label + content (left) + metadata (right-aligned).
+// Insight footer: "★ Insight │ <glamour-rendered text>". No bubble — glamour provides styling.
+// Non-insight footer: avatar+badge bubble with last assistant message.
+func (m *DetailModel) renderFooter(s *claude.ClaudeSession, avatar, badge, meta string) string {
+	metaWidth := lipgloss.Width(meta)
+
+	if m.renderedInsight != "" {
+		label := InsightLabelStyle.Render("★ Insight")
+		sep := InsightSepStyle.Render(" │ ")
+		prefix := label + sep
+		prefixWidth := lipgloss.Width(prefix)
+		// overhead: prefix + gap(2) + margin(2)
+		maxW := m.width - prefixWidth - metaWidth - 4
+		if len(s.Insights) > 1 {
+			maxW -= 2
+		}
+		content := prefix
+		if maxW > 0 {
+			text := ansi.Truncate(m.renderedInsight, maxW, "…")
+			if len(s.Insights) > 1 {
+				text += " ↩"
+			}
+			content = prefix + text
+		}
+		contentWidth := lipgloss.Width(content)
+		gap := m.width - contentWidth - metaWidth - 2
+		if gap < 1 {
+			gap = 1
+		}
+		return content + strings.Repeat(" ", gap) + meta
+	}
+
+	// Non-insight: avatar+badge bubble with last assistant message
+	bubblePrefix := avatar + " " + badge + " "
+	prefixWidth := lipgloss.Width(bubblePrefix)
+	overheadFixed := prefixWidth + 8 // leftCap(1) + " "(1) + " "(1) + rightCap(1) + gap(2) + margin(2)
+
+	lastResp := bubblePrefix
+	bubbleMsg := s.LastAssistantMessage
+	if bubbleMsg != "" {
+		firstLine, _, multiline := strings.Cut(bubbleMsg, "\n")
+		maxW := m.width - metaWidth - overheadFixed
+		if multiline {
+			maxW -= 2
+		}
+		if maxW > 0 {
+			text := ansi.Truncate(firstLine, maxW, "…")
+			if multiline {
+				text += " ↩"
+			}
+			lastResp = bubblePrefix + BubbleLeftCap + BubbleTextStyle.Render(" "+text+" ") + BubbleRightCap
+		}
+	}
+
+	lastRespWidth := lipgloss.Width(lastResp)
+	gap := m.width - lastRespWidth - metaWidth - 2
+	if gap < 1 {
+		gap = 1
+	}
+	return lastResp + strings.Repeat(" ", gap) + meta
+}
+
+// AllQuietCounts holds per-section counts for the all-quiet dashboard.
+type AllQuietCounts struct {
+	Clauding int
+	Later    int
+	Backlog  int
+}
+
+// ViewAllQuiet renders the animated mobile scene with a contextual dashboard.
+func (m *DetailModel) ViewAllQuiet(counts AllQuietCounts) string {
+	if m.allQuiet.Active() {
+		return m.allQuiet.Render(m.width, m.height, counts)
+	}
+	return renderStaticDashboard(m.width, m.height, counts)
 }
 
 // outlineGap is the number of space columns between the styled bullet glyph and message text.

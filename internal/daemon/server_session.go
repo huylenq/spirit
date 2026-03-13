@@ -23,7 +23,7 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 		return
 	}
 
-	// Block and push updates
+	// Block and push updates (session snapshots + copilot stream events)
 	for {
 		select {
 		case sessions := <-sub.ch:
@@ -31,6 +31,14 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 				Type:    RespSessions,
 				Data:    marshalData(SessionsData{Sessions: sessions, Usage: d.currentUsage()}),
 				Version: d.currentVersion(),
+			}
+			if err := enc.Encode(resp); err != nil {
+				return
+			}
+		case event := <-sub.copilot:
+			resp := Response{
+				Type: RespCopilotStream,
+				Data: marshalData(event),
 			}
 			if err := enc.Encode(resp); err != nil {
 				return
