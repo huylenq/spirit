@@ -3,12 +3,16 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
+
+// tzCache caches loaded *time.Location by name to avoid repeated disk reads from time.LoadLocation.
+var tzCache sync.Map // map[string]*time.Location
 
 const (
 	rippleFrames   = 15
@@ -18,6 +22,18 @@ const (
 	colorWeeklyBg      = "#1e1608" // dark amber background for weekly fill
 	colorWeeklyTail    = "#3d2b00" // muted amber tail for weekly gradient
 )
+
+// weekdayPrefixes maps weekday to its lowercase 3-letter abbreviation (for parsing "mon 6pm" etc.).
+// Ordered long-first so "wednesday" matches before "wed" if full names ever appear.
+var weekdayPrefixes = map[time.Weekday]string{
+	time.Sunday:    "sun",
+	time.Monday:    "mon",
+	time.Tuesday:   "tue",
+	time.Wednesday: "wed",
+	time.Thursday:  "thu",
+	time.Friday:    "fri",
+	time.Saturday:  "sat",
+}
 
 var (
 	labelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
@@ -215,17 +231,10 @@ func (m *UsageBarModel) LabelView() string {
 		return ""
 	}
 
-	trimTZ := func(s string) string {
-		if i := strings.Index(s, " ("); i >= 0 {
-			return s[:i]
-		}
-		return s
-	}
-
 	s := m.stats
 	parts := []string{fmt.Sprintf("session %d%%", m.sessionPct)}
 	if s.SessionResets != "" {
-		parts[0] += " resets " + trimTZ(s.SessionResets)
+		parts[0] += " " + formatUntil(s.SessionResets)
 	}
 	if s.WeekAllPct > 0 || s.WeekAllResets != "" {
 		seg := fmt.Sprintf("week %d%%", s.WeekAllPct)
@@ -233,15 +242,126 @@ func (m *UsageBarModel) LabelView() string {
 			seg += fmt.Sprintf(" (sonnet %d%%)", s.WeekSonnetPct)
 		}
 		if s.WeekAllResets != "" {
-			seg += " resets " + trimTZ(s.WeekAllResets)
+			seg += " " + formatUntil(s.WeekAllResets)
 		}
 		if s.WeekSonnetResets != "" && s.WeekSonnetResets != s.WeekAllResets {
-			seg += " · sonnet resets " + trimTZ(s.WeekSonnetResets)
+			seg += " · sonnet " + formatUntil(s.WeekSonnetResets)
 		}
 		parts = append(parts, seg)
 	}
 
 	return labelStyle.Render(strings.Join(parts, " · "))
+}
+
+// formatUntil converts a reset time string like "6pm (Asia/Saigon)", "Mon 6pm (UTC)",
+// or "Mar 14 (Asia/Saigon)" into a relative duration like "resets in 2h 30m".
+// Falls back to "resets <time>" on parse failure.
+func formatUntil(resetStr string) string {
+	now := time.Now()
+
+	// Extract timezone from parentheses
+	loc := time.Local
+	timeStr := strings.TrimSpace(resetStr)
+	if i := strings.Index(resetStr, "("); i >= 0 {
+		timeStr = strings.TrimSpace(resetStr[:i])
+		if j := strings.Index(resetStr[i:], ")"); j >= 0 {
+			tzName := resetStr[i+1 : i+j]
+			if v, ok := tzCache.Load(tzName); ok {
+				loc = v.(*time.Location)
+			} else if l, err := time.LoadLocation(tzName); err == nil {
+				tzCache.Store(tzName, l)
+				loc = l
+			}
+		}
+	}
+
+	nowInLoc := now.In(loc)
+	timeStr = strings.TrimSpace(timeStr)
+
+	// Normalize "at" separator: "Mar 14 at 3pm" → "Mar 14 3pm"
+	timeStr = strings.Replace(timeStr, " at ", " ", 1)
+
+	// Try date-based formats first: "Mar 14", "Mar 14 6pm", "Mar 14 6:30pm"
+	for _, layout := range []string{"Jan 2 3:04pm", "Jan 2 3pm", "Jan 2"} {
+		if t, err := time.Parse(layout, timeStr); err == nil {
+			reset := time.Date(nowInLoc.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc)
+			// If the date is in the past, assume next year
+			if !reset.After(now) {
+				reset = reset.AddDate(1, 0, 0)
+			}
+			return "resets in " + formatDuration(reset.Sub(now))
+		}
+	}
+
+	// Try day-of-week prefix: "Mon 6pm", "Mon 6:30pm", "Mon"
+	lower := strings.ToLower(timeStr)
+	for wd, name := range weekdayPrefixes {
+		if !strings.HasPrefix(lower, name) {
+			continue
+		}
+		rest := strings.TrimSpace(lower[len(name):])
+
+		// Parse optional time after weekday
+		hour, min := 0, 0
+		if rest != "" {
+			timeParsed := false
+			for _, layout := range []string{"3:04pm", "3pm", "15:04"} {
+				if t, err := time.Parse(layout, rest); err == nil {
+					hour, min = t.Hour(), t.Minute()
+					timeParsed = true
+					break
+				}
+			}
+			if !timeParsed {
+				break // weekday prefix matched but time didn't parse — fall through
+			}
+		}
+
+		reset := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), hour, min, 0, 0, loc)
+		daysAhead := (int(wd) - int(nowInLoc.Weekday()) + 7) % 7
+		if daysAhead == 0 && !reset.After(now) {
+			daysAhead = 7
+		}
+		reset = reset.Add(time.Duration(daysAhead) * 24 * time.Hour)
+		return "resets in " + formatDuration(reset.Sub(now))
+	}
+
+	// Try time-only: "6pm", "6:30pm", "18:00"
+	for _, layout := range []string{"3:04pm", "3pm", "15:04"} {
+		if t, err := time.Parse(layout, strings.ToLower(timeStr)); err == nil {
+			reset := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), t.Hour(), t.Minute(), 0, 0, loc)
+			if !reset.After(now) {
+				reset = reset.Add(24 * time.Hour)
+			}
+			return "resets in " + formatDuration(reset.Sub(now))
+		}
+	}
+
+	return "resets " + timeStr
+}
+
+// formatDuration renders a duration as a compact human string: "3d 2h", "2h 30m", "45m", "<1m".
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "<1m"
+	}
+	totalMin := int(d.Minutes())
+	days := totalMin / (60 * 24)
+	hours := (totalMin / 60) % 24
+	mins := totalMin % 60
+	if days > 0 && hours > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	if days > 0 {
+		return fmt.Sprintf("%dd", days)
+	}
+	if hours > 0 && mins > 0 {
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dm", mins)
 }
 
 // blendHex linearly interpolates between two hex colors.

@@ -504,12 +504,15 @@ func sortByProject(sessions []claude.ClaudeSession) {
 }
 
 func sortByStatus(sessions []claude.ClaudeSession) {
-	// Primary: session order (UserTurn, AgentTurn, Later); secondary: newest created first (newest at top)
+	// Primary: session order (UserTurn, AgentTurn, Later); secondary: project name alphabetically;
+	// tertiary: newest created first (newest at top)
 	for i := 1; i < len(sessions); i++ {
 		for j := i; j > 0; j-- {
 			a, b := sessions[j-1], sessions[j]
-			if sessionOrder(a) > sessionOrder(b) ||
-				(sessionOrder(a) == sessionOrder(b) && a.CreatedAt.Before(b.CreatedAt)) {
+			ao, bo := sessionOrder(a), sessionOrder(b)
+			if ao > bo ||
+				(ao == bo && a.Project > b.Project) ||
+				(ao == bo && a.Project == b.Project && a.CreatedAt.Before(b.CreatedAt)) {
 				sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
 			} else {
 				break
