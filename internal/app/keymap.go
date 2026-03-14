@@ -13,7 +13,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
 		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
-		k.JumpBack, k.Note,
+		k.JumpBack, k.Note, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -136,6 +136,10 @@ type KeyMap struct {
 
 	// Toggle auto-jump after send/commit
 	AutoJumpToggle key.Binding
+
+	// Number slot jump/bind (video-game style)
+	SlotJump key.Binding
+	SlotBind key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -415,11 +419,11 @@ var Keys = KeyMap{
 		key.WithHelp("A", "new session at path"),
 	),
 	JumpBack: key.NewBinding(
-		key.WithKeys("ctrl+o"),
-		key.WithHelp("ctrl+o/i", "jump back/fwd"),
+		key.WithKeys("["),
+		key.WithHelp("[/]", "jump back/fwd"),
 	),
 	JumpForward: key.NewBinding(
-		key.WithKeys("ctrl+i"), // ctrl+i and tab are the same byte (0x09) in terminals
+		key.WithKeys("]"),
 	),
 	MessageLog: key.NewBinding(
 		key.WithKeys("!"),
@@ -444,5 +448,13 @@ var Keys = KeyMap{
 	AutoJumpToggle: key.NewBinding(
 		key.WithKeys("alt+."),
 		key.WithHelp("alt+.", "toggle autojump"),
+	),
+	SlotJump: key.NewBinding(
+		key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+		key.WithHelp("1-9", "jump to slot"),
+	),
+	SlotBind: key.NewBinding(
+		key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"),
+		key.WithHelp("alt+1-9", "bind slot"),
 	),
 }

@@ -194,6 +194,7 @@ type Model struct {
 	sidebarWidthPct      int // percentage of total width for the sidebar
 	ready                bool
 	err                  error
+	autoJumpTextUntil    time.Time         // show "ON"/"OFF" text next to autojump glyph until this time
 	flashMsg             string            // transient message overlay
 	flashIsError         bool              // true = error style, false = info style
 	flashExpiry          time.Time         // when to auto-dismiss the flash
@@ -810,7 +811,7 @@ func (m *Model) recordJump() {
 	m.jumpCursor = len(m.jumpTrail)
 }
 
-// jumpBack navigates to the previous entry in the jump trail (ctrl+o).
+// jumpBack navigates to the previous entry in the jump trail ([).
 // Returns the target paneID, or "" if there's nowhere to go.
 func (m *Model) jumpBack() string {
 	if len(m.jumpTrail) == 0 {
@@ -833,7 +834,7 @@ func (m *Model) jumpBack() string {
 	return m.jumpTrail[m.jumpCursor]
 }
 
-// jumpForward navigates to the next entry in the jump trail (ctrl+i).
+// jumpForward navigates to the next entry in the jump trail (]).
 // Returns the target paneID, or "" if already at head.
 func (m *Model) jumpForward() string {
 	if m.jumpCursor >= len(m.jumpTrail)-1 {

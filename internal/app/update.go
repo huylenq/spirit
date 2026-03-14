@@ -127,7 +127,7 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 	if !m.sidebar.SelectByPaneID(targetID) {
 		return nil
 	}
-	m.recordJump() // register destination so ctrl+i can reach it
+	m.recordJump() // register destination so ] can reach it
 	s, ok := m.sidebar.SelectedItem()
 	if !ok {
 		return nil
@@ -187,7 +187,8 @@ func (m *Model) tryInitialSelection() bool {
 	var moved bool
 	var targetPaneID string
 	if m.rotateNext {
-		if tid := m.sidebar.AutoJumpTarget(""); tid != "" {
+		// Skip originating pane so ctrl+tab always rotates to a different session
+		if tid := m.sidebar.AutoJumpTarget(m.origPane.PaneID); tid != "" {
 			if m.sidebar.SelectByPaneID(tid) {
 				moved = true
 				targetPaneID = tid
@@ -219,9 +220,9 @@ func (m *Model) tryInitialSelection() bool {
 		}
 	}
 	if moved {
-		m.recordJump() // register destination so ctrl+i can reach it
+		m.recordJump() // register destination so ] can reach it
 		// Activation flash animations
-		m.sidebar.SetLand(targetPaneID, ui.JumpAnimFrames)
+		m.sidebar.SetLand(targetPaneID, ui.ActivateAnimFrames)
 		if m.rotateNext && m.origPane.PaneID != targetPaneID {
 			// Ctrl+Tab: fading ghost trail on the origin pane
 			m.sidebar.SetTrail(m.origPane.PaneID)
@@ -720,7 +721,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// double-taps when tab is pressed in unrelated states (search, palette, etc.).
 	if msg.String() == "tab" {
 		switch m.state {
-		case StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
+		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
 			now := time.Now()
 			if now.Sub(m.lastTabTime) < doubleTabThreshold {
 				m.lastTabTime = time.Time{} // reset to avoid triple-tap

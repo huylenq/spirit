@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -121,6 +122,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case msg.String() == "tab":
+		return execOpenCopilot(&m)
+
 	case key.Matches(msg, Keys.Macro):
 		m.state = StateMacro
 		return m, nil
@@ -156,6 +160,28 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail.CycleHookFilter()
 		return m, nil
 
+	case msg.String() == "f":
+		m.sidebar.ToggleFlagSelected()
+		return m, nil
+
+	case isSlotKey(msg.String()):
+		n := slotKeyNum(msg.String())
+		paneID := m.sidebar.PaneIDForSlot(n)
+		if paneID == "" {
+			return m, nil
+		}
+		return m.doJump(paneID)
+
+	case isAltSlotKey(msg.String()):
+		n := altSlotKeyNum(msg.String())
+		if m.sidebar.BindSlot(n) {
+			if m.sidebar.PaneIDForSlot(n) != "" {
+				return m, m.setFlash(fmt.Sprintf("Bound to slot %d", n), false, 3*time.Second)
+			}
+			return m, m.setFlash(fmt.Sprintf("Unbound slot %d", n), false, 3*time.Second)
+		}
+		return m, nil
+
 	case m.showRawTranscript && msg.String() == "e":
 		if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {
 			return m, openTranscriptInEditor(m.origPane.Session, s.SessionID)
@@ -176,10 +202,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case key.Matches(msg, Keys.JumpBack):
+	case !m.showDiffs && key.Matches(msg, Keys.JumpBack):
 		return m.doJump(m.jumpBack())
 
-	case key.Matches(msg, Keys.JumpForward):
+	case !m.showDiffs && key.Matches(msg, Keys.JumpForward):
 		target := m.jumpForward()
 		// At the live head with no forward history: auto-jump to next target
 		if target == "" {
@@ -402,11 +428,8 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newVal := !Flag("autoJump")
 		savePrefBool("autoJump", newVal)
 		m.sidebar.ShowAutoJump = newVal
-		flash := "autojump OFF"
-		if newVal {
-			flash = "autojump ON"
-		}
-		return m, m.setFlash(flash, false, 2*time.Second)
+		m.autoJumpTextUntil = time.Now().Add(2 * time.Second)
+		return m, nil
 
 	case key.Matches(msg, Keys.BacklogToggle):
 		newVal := !m.sidebar.BacklogExpanded()
@@ -629,4 +652,24 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// isSlotKey returns true for digit keys "1" through "9".
+func isSlotKey(s string) bool {
+	return len(s) == 1 && s[0] >= '1' && s[0] <= '9'
+}
+
+// slotKeyNum converts a slot digit key string to its int value (1-9).
+func slotKeyNum(s string) int {
+	return int(s[0] - '0')
+}
+
+// isAltSlotKey returns true for alt+digit keys "alt+1" through "alt+9".
+func isAltSlotKey(s string) bool {
+	return len(s) == 5 && s[:4] == "alt+" && s[4] >= '1' && s[4] <= '9'
+}
+
+// altSlotKeyNum converts an alt+digit key string to its int value (1-9).
+func altSlotKeyNum(s string) int {
+	return int(s[4] - '0')
 }
