@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// EventsDir returns the default events directory path (~/.cache/cmc/copilot/events).
+func EventsDir() string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".cache", "cmc", "copilot", "events")
+	os.MkdirAll(dir, 0o755) //nolint:errcheck
+	return dir
+}
+
 // Journal is an append-only NDJSON event log.
 // Storage: baseDir/YYYY-MM-DD.ndjson (one file per day).
 type Journal struct {

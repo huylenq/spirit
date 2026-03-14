@@ -7,9 +7,9 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -79,12 +79,12 @@ type Daemon struct {
 	usageStats    *claude.UsageStats
 	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
 
-	copilotJournal   *copilot.Journal
-	copilotWorkspace *copilot.Workspace
-	copilotMemory    *copilot.Memory
-	copilotCancel context.CancelFunc // non-nil while a copilot prompt is in-flight
-	copilotMu    sync.Mutex         // protects copilotCancel
-	copilotHistory   []CopilotHistoryMsg
+	copilotJournal  *copilot.Journal
+	copilotCancel   context.CancelFunc // non-nil while a copilot prompt is in-flight
+	copilotMu       sync.Mutex         // protects copilotCancel
+	copilotPreamble atomic.Bool        // inject live sessions into copilot prompts
+	acpClient       *acpClient         // long-lived ACP subprocess for copilot
+	copilotHistory   []CopilotHistoryMsg // in-memory only (TUI display within daemon session)
 	copilotHistoryMu sync.RWMutex
 
 	listener   net.Listener
@@ -155,22 +155,15 @@ func Run(info DaemonInfo) error {
 	d.recoverQueue()
 
 	// Initialize copilot subsystem
-	d.copilotWorkspace = copilot.NewWorkspace()
-	if err := d.copilotWorkspace.EnsureInitialized(); err != nil {
-		log.Printf("copilot workspace init: %v", err)
-	}
-	d.copilotJournal = copilot.NewJournal(filepath.Join(d.copilotWorkspace.Dir, "events"))
-	d.copilotMemory = copilot.NewMemory(d.copilotWorkspace.Dir)
-	d.loadCopilotHistory()
+	d.copilotJournal = copilot.NewJournal(copilot.EventsDir())
+	d.copilotPreamble.Store(true)
+	d.acpClient = &acpClient{} // lazy-started on first copilot prompt
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})
 	go d.pollLoop(pollStop)
 
 	go d.usageLoop(pollStop)
-
-	// Start heartbeat loop (reads HEARTBEAT.md periodically)
-	go d.heartbeatLoop(pollStop)
 
 	// Start idle timeout checker
 	go d.idleWatcher(sigCh)
@@ -185,6 +178,7 @@ func Run(info DaemonInfo) error {
 	log.Printf("daemon shutting down on %v", sig)
 
 	close(pollStop)
+	d.acpClient.Stop()
 	d.listener.Close()
 	os.Remove(d.socketPath)
 	os.Remove(d.pidPath)

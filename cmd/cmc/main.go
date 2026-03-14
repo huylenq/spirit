@@ -52,11 +52,8 @@ func main() {
 		case "dev":
 			runDev()
 			return
-		case "mcp-serve":
-			if err := runMCPServe(); err != nil {
-				fmt.Fprintf(os.Stderr, "mcp-serve: %v\n", err)
-				os.Exit(1)
-			}
+		case "agent":
+			runAgent()
 			return
 		case "usage-dump":
 			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
@@ -87,6 +84,9 @@ func main() {
 				fmt.Printf("week_all=%d%% resets=%q\n", usage.WeekAllPct, usage.WeekAllResets)
 				fmt.Printf("week_sonnet=%d%% resets=%q\n", usage.WeekSonnetPct, usage.WeekSonnetResets)
 			}
+			return
+		case "_gen-skill":
+			fmt.Print(genSkillMD())
 			return
 		case "--agent-help":
 			printAgentHelp()
@@ -136,6 +136,7 @@ Usage:
   echo '<expr>' | cmc eval   Evaluate Lua from stdin
   cmc orchestrator register <session-id>     Exclude session from eval sessions()
   cmc orchestrator unregister <session-id>   Re-include session
+  cmc agent <verb>  Machine-friendly session management (for AI agents)
   cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   cmc setup            Install Claude Code hooks into ~/.claude/settings.json
   cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
@@ -156,43 +157,7 @@ Files:
 }
 
 func printAgentHelp() {
-	fmt.Print(`# cmc — Claude Mission Control
-
-CLI for monitoring and controlling Claude Code sessions across tmux panes.
-Requires a running daemon (auto-started on first use).
-
-## CLI Commands
-
-cmc eval -e '<lua>'              Evaluate inline Lua, print JSON result to stdout
-cmc eval <file.lua>              Evaluate Lua file
-echo '<lua>' | cmc eval          Evaluate from stdin
-cmc orchestrator register <id>   Exclude session ID from sessions()
-cmc orchestrator unregister <id> Re-include session ID
-cmc capture [COLSxROWS]         Text snapshot of TUI to stdout
-cmc daemon --check               Exit 0 if daemon running
-cmc daemon --stop                Stop daemon
-
-` + scripting.LuaScriptingReference + `
-
-## Examples
-
-# List idle sessions
-cmc eval -e 'return sessions({status = "idle"})'
-
-# Send to all idle sessions
-cmc eval -e 'for _, s in ipairs(sessions({status="idle"})) do send(s.id, "run tests") end'
-
-# Spawn, work, collect results
-cmc eval -e '
-  s = spawn("/tmp/myproject")
-  send(s.session_id, "fix the tests", {wait="idle", timeout=300})
-  return diff_stats(s.session_id)
-'
-
-# Orchestrator self-exclusion
-cmc orchestrator register <my-session-id>
-cmc eval -e 'return sessions()'  -- won't include the orchestrator
-`)
+	fmt.Print(agentHelpText())
 }
 
 func runDaemon() {

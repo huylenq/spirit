@@ -417,6 +417,16 @@ func (c *Client) CopilotClearHistory() error {
 	return c.rpcInto(Request{Type: ReqCopilotClearHistory}, nil)
 }
 
+// CopilotTogglePreamble toggles the live session preamble injection.
+// Returns the new state ("on" or "off").
+func (c *Client) CopilotTogglePreamble() (string, error) {
+	var result map[string]string
+	if err := c.rpcInto(Request{Type: ReqCopilotTogglePreamble}, &result); err != nil {
+		return "", err
+	}
+	return result["preamble"], nil
+}
+
 // CopilotHistory returns the full copilot conversation history from the daemon.
 func (c *Client) CopilotHistory() ([]CopilotHistoryMsg, error) {
 	var data CopilotHistoryData

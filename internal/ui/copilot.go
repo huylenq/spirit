@@ -55,6 +55,15 @@ func (c *CopilotModel) AddUserMessage(content string) {
 	})
 }
 
+// AddInfoMessage appends a short system info message (e.g. "preamble: on").
+func (c *CopilotModel) AddInfoMessage(content string) {
+	c.messages = append(c.messages, CopilotMessage{
+		Role:    "info",
+		Content: content,
+		Time:    time.Now(),
+	})
+}
+
 // HandleStreamMsg processes a streaming chunk and updates state accordingly.
 func (c *CopilotModel) HandleStreamMsg(msg CopilotStreamMsg) {
 	switch msg.Type {

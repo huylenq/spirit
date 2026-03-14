@@ -69,7 +69,8 @@ const (
 	ReqCopilotCancel       = "copilot_cancel"
 	ReqCopilotStatus       = "copilot_status"
 	ReqCopilotHistory      = "copilot_history"
-	ReqCopilotClearHistory = "copilot_clear_history"
+	ReqCopilotClearHistory    = "copilot_clear_history"
+	ReqCopilotTogglePreamble = "copilot_toggle_preamble"
 )
 
 // Response type constants.
@@ -291,7 +292,6 @@ type CopilotChatData struct {
 type CopilotStatusData struct {
 	Ready       bool `json:"ready"`
 	EventsToday int  `json:"eventsToday"`
-	MemoryBytes int  `json:"memoryBytes"`
 }
 
 // CopilotHistoryMsg is a persisted copilot conversation turn (user or copilot role).

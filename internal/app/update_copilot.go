@@ -68,6 +68,11 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.copilotInput.Activate()
 				return m, m.clearCopilotHistory()
 			}
+			if text == "/preamble" {
+				m.copilotInput.Deactivate()
+				m.copilotInput.Activate()
+				return m, m.toggleCopilotPreamble()
+			}
 			if text != "" {
 				m.copilot.AddUserMessage(text)
 				m.copilot.SetStreaming(true)
@@ -148,6 +153,22 @@ func (m *Model) clearCopilotHistory() tea.Cmd {
 			}}
 		}
 		return CopilotHistoryReadyMsg{} // empty = clear
+	}
+}
+
+// toggleCopilotPreamble toggles live session injection and shows the new state.
+func (m *Model) toggleCopilotPreamble() tea.Cmd {
+	return func() tea.Msg {
+		state, err := m.client.CopilotTogglePreamble()
+		if err != nil {
+			return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
+				Type:    "error",
+				Content: "toggle preamble: " + err.Error(),
+			}}
+		}
+		// Show as a copilot info message (not text_delta which appends to last message)
+		m.copilot.AddInfoMessage("preamble: " + state)
+		return nil
 	}
 }
 

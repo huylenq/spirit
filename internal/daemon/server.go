@@ -171,6 +171,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCopilotClearHistory:
 		return d.handleCopilotClearHistory()
 
+	case ReqCopilotTogglePreamble:
+		return d.handleCopilotTogglePreamble()
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r
