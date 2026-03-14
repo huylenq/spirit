@@ -220,9 +220,10 @@ func (m Model) renderFooter(width int) string {
 		}
 		return ui.FooterStyle.Width(width).Render(h)
 	case StatePrefsEditor:
-		h := ui.FooterKeyStyle.Render("ctrl+s") + " save  " +
-			ui.FooterKeyStyle.Render("tab") + " complete  " +
-			ui.FooterKeyStyle.Render("esc") + " cancel"
+		h := ui.FooterKeyStyle.Render("j/k") + " navigate  " +
+			ui.FooterKeyStyle.Render("space") + " toggle  " +
+			ui.FooterKeyStyle.Render("h/l") + " adjust  " +
+			ui.FooterKeyStyle.Render("esc") + " close"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateSearching:
 		h := ui.FooterKeyStyle.Render("C-j/k") + ui.FooterDimStyle.Render(" navigate  ") +
@@ -233,6 +234,10 @@ func (m Model) renderFooter(width int) string {
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
+	case StateNewSessionPathInput:
+		h := ui.FooterKeyStyle.Render("enter") + " next  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateNewSessionPrompt:
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel  " +
@@ -240,6 +245,16 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("o") + "pus " +
 			ui.FooterKeyStyle.Render("s") + "onnet " +
 			ui.FooterKeyStyle.Render("h") + "aiku"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateLaterWait:
+		label := "later"
+		if m.laterKillMode {
+			label = "later+kill"
+		}
+		h := m.laterRelay.View() + "  " +
+			ui.FooterKeyStyle.Render("enter") + " " + label + "  " +
+			ui.FooterDimStyle.Render("e.g. 5m, 1h, 30s  empty=forever  ") +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateQueueRelay:
 		h := ui.FooterKeyStyle.Render("enter") + " append  " +
@@ -270,14 +285,22 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("[n]") + "o"
 		return ui.FooterStyle.Width(width).Render(prompt)
 	case StateCopilot:
-		h := ui.FooterKeyStyle.Render("esc") + " back  " +
+		h := ui.FooterKeyStyle.Render("tab") + " back  " +
 			ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("ctrl+c") + " cancel  " +
-			ui.FooterKeyStyle.Render("ctrl+d/u") + " scroll"
+			ui.FooterKeyStyle.Render("ctrl+d/u") + " scroll  " +
+			ui.FooterKeyStyle.Render("⇧tab") + " " + ui.FooterDimStyle.Render(m.copilotMode)
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateCopilotConfirm:
 		h := ui.FooterKeyStyle.Render("y") + " allow  " +
 			ui.FooterKeyStyle.Render("n") + " deny"
+		return ui.FooterStyle.Width(width).Render(h)
+	case StateDestroyer:
+		h := ui.FooterKeyStyle.Render("tab") + " tool  " +
+			ui.FooterKeyStyle.Render("1-4") + " select  " +
+			ui.FooterKeyStyle.Render("click") + " destroy  " +
+			ui.FooterKeyStyle.Render("esc") + " rebuild  " +
+			ui.FooterKeyStyle.Render("q") + " quit"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateMinimapSettings:
 		h := ui.FooterKeyStyle.Render("M") + " cycle  " +
@@ -291,4 +314,13 @@ func (m Model) renderFooter(width int) string {
 		}
 		return ui.FooterStyle.Width(width).Render(hints)
 	}
+}
+
+func (m Model) renderPathInputOverlay(overlayWidth int) string {
+	// HelpOverlayStyle has border(1+1) + padding(2+2) = 6 overhead.
+	// .Width() sets the inner content width, so outer width = Width + 6.
+	innerWidth := max(overlayWidth-6, 20)
+	m.pathInput.TextInput().Width = innerWidth
+	title := ui.HelpTitleStyle.Render("New session path")
+	return ui.HelpOverlayStyle.Width(innerWidth).Render(title + "\n\n" + m.pathInput.View())
 }

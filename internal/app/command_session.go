@@ -106,6 +106,16 @@ func (m Model) execNewSession() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execNewSessionAtPath() (Model, tea.Cmd) {
+	if !m.origPane.Captured {
+		return m, func() tea.Msg { return flashErrorMsg("no tmux session detected") }
+	}
+	m.newSessionTmuxSess = m.origPane.Session
+	m.state = StateNewSessionPathInput
+	m.pathInput.Activate()
+	return m, nil
+}
+
 // spawnNewSession creates the tmux window, launches claude, and optionally
 // registers a pending prompt with the daemon for delivery once the session is ready.
 func (m Model) spawnNewSession(prompt, model string, planning bool, worktree string) tea.Cmd {

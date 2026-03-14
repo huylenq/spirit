@@ -2,12 +2,47 @@ package app
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
 const debugMinimap = false
+
+// viewInner renders the content area (sidebar + detail panels) without borders, label, or footer.
+// Used by the destroyer to snapshot the current TUI state for decomposition into particles.
+func (m Model) viewInner() string {
+	innerWidth := m.innerWidth()
+	contentHeight := m.contentHeight()
+	sidebarWidth := m.sidebarPanelWidth()
+	detailWidth := innerWidth - sidebarWidth - m.copilotDockedWidth()
+
+	sidebarContent := m.sidebar.View()
+	sidebarPanel := ui.SidebarPanelStyle.
+		Width(sidebarWidth).
+		Height(contentHeight).
+		MaxHeight(contentHeight).
+		Render(sidebarContent)
+
+	var detailContent string
+	if m.sidebar.IsAllQuiet() {
+		detailContent = m.detail.ViewAllQuiet(ui.AllQuietCounts{
+			Clauding: m.sidebar.ClaudingCount(),
+			Later:    m.sidebar.LaterCount(),
+			Backlog:  m.sidebar.BacklogCount(),
+		})
+	} else {
+		detailContent = m.detail.View()
+	}
+	detailPanel := ui.DetailPanelStyle.
+		Width(detailWidth).
+		Height(contentHeight).
+		MaxHeight(contentHeight).
+		Render(detailContent)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, detailPanel)
+}
 
 func (m Model) View() string {
 	if !m.ready {
@@ -37,6 +72,30 @@ func (m Model) View() string {
 
 	// Content area: total height minus top border, label, footer (and bottom border when not fullscreen)
 	contentHeight := m.contentHeight()
+
+	// Destroyer mode: replace entire content area with particle physics
+	if m.state == StateDestroyer && m.destroyer != nil {
+		// Subtract 1 for the divider line (same as the normal path at line ~110)
+		destroyerH := contentHeight - 1
+		content := m.destroyer.View()
+		// Pad to fill content height
+		lines := strings.Split(content, "\n")
+		for len(lines) < destroyerH {
+			lines = append(lines, strings.Repeat(" ", innerWidth))
+		}
+		content = strings.Join(lines[:destroyerH], "\n")
+
+		var inner string
+		divider := ui.FooterDivider(innerWidth)
+		inner = labelLine + "\n" + content + "\n" + divider + "\n" + footer
+
+		if m.inFullscreenPopup {
+			return topBorder + "\n" + inner
+		}
+		bordered := ui.AddSideBorders(inner, innerWidth)
+		bottomBorder := ui.BottomBorder(m.width)
+		return topBorder + "\n" + bordered + "\n" + bottomBorder
+	}
 
 	// If minimap should be docked, render it first to reserve vertical space
 	minimapDocked := false
@@ -78,7 +137,8 @@ func (m Model) View() string {
 
 	// Sidebar panel
 	sidebarWidth := m.sidebarPanelWidth()
-	detailWidth := innerWidth - sidebarWidth
+	copilotDockedW := m.copilotDockedWidth()
+	detailWidth := innerWidth - sidebarWidth - copilotDockedW
 
 	sidebarContent := m.sidebar.View()
 	sidebarPanel := ui.SidebarPanelStyle.
@@ -130,8 +190,28 @@ func (m Model) View() string {
 		rightColumn = detailPanel + "\n" + queueView
 	}
 
-	// Main content: list | right column (preview + optional queue)
-	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
+	// Copilot docked panel (if in docked mode and visible)
+	var copilotDockedPanel string
+	if copilotDockedW > 0 {
+		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
+		inputView := m.copilotInput.View() // always show (dimmed when unfocused)
+		copilotDockedPanel = ui.RenderCopilotPanel(
+			m.copilot.Messages(), inputView,
+			copilotDockedW, contentHeight,
+			m.copilot.ScrollOffset(), m.copilot.Streaming(),
+			m.copilot.StreamingCursor(),
+			m.copilot.PendingTool(),
+			focused,
+		)
+	}
+
+	// Main content: list | right column (preview + optional queue) | optional docked copilot
+	var content string
+	if copilotDockedPanel != "" {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn, copilotDockedPanel)
+	} else {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
+	}
 
 	// Minimap: docked at bottom in fullscreen (inserted into layout below),
 	// overlaid in normal mode
@@ -204,9 +284,17 @@ func (m Model) View() string {
 		content = ui.OverlayCentered(content, m.palette.View(innerWidth), innerWidth)
 	}
 
-	// Preferences editor overlay centered
+	// Settings overlay centered
 	if m.state == StatePrefsEditor {
-		content = ui.OverlayCentered(content, m.prefsEditor.View(innerWidth), innerWidth)
+		content = ui.OverlayCentered(content, m.renderSettingsOverlay(), innerWidth)
+	}
+
+	// Path input overlay for A (new session at typed path) — same pivot as new-session prompt
+	if m.state == StateNewSessionPathInput {
+		row := max(m.sidebar.SelectedProjectRow(), 0)
+		col := m.sidebarPanelWidth()
+		overlayWidth := min(innerWidth-col, 60)
+		content = ui.OverlayAt(content, m.renderPathInputOverlay(overlayWidth), row, col)
 	}
 
 	// Prompt editor overlays (new session / new backlog from session context)
@@ -225,24 +313,15 @@ func (m Model) View() string {
 	}
 
 	// Copilot floating overlay (highest z-order — renders on top of everything)
-	// Visible when copilotVisible=true, regardless of focus state.
-	// Input is only shown when focused (StateCopilot/StateCopilotConfirm).
-	if m.copilotVisible {
-		const (
-			copilotMaxW = 70 // max overlay width in columns
-			copilotMinH = 5  // min overlay height (title + 1 msg + input + border)
-			marginR     = 2  // right margin from content edge
-			marginB     = 1  // bottom margin from content edge
-		)
+	// Only rendered in float mode. Docked mode is rendered as a layout column above.
+	if m.copilotVisible && m.copilotMode == CopilotModeFloat {
 		adjustMode := m.state == StateAdjustCopilot
-		overlayW := min(copilotMaxW+m.copilotDW, innerWidth-4)
-		overlayW = max(overlayW, 20)
-		maxOverlayH := min(max(contentHeight-2*marginB+m.copilotDH, copilotMinH), contentHeight-2)
+		row, col, overlayW, maxOverlayH := m.copilotFloatGeometry(innerWidth, contentHeight)
 
 		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
 		inputView := ""
 		if !adjustMode {
-			inputView = m.copilotInput.View()
+			inputView = m.copilotInput.View() // always show (dimmed when unfocused)
 		}
 		overlay := ui.RenderCopilotOverlay(
 			m.copilot.Messages(), inputView,
@@ -254,14 +333,10 @@ func (m Model) View() string {
 			adjustMode,
 		)
 
+		// Refine row clamp using actual rendered height (may be shorter than maxOverlayH).
 		overlayH := lipgloss.Height(overlay)
-		// Default anchor: bottom-right. Offsets shift from that anchor; clamp to content area.
-		row := contentHeight - overlayH - marginB + m.copilotOffY
-		row = max(row, 1)
 		row = min(row, contentHeight-overlayH)
-		col := innerWidth - overlayW - marginR + m.copilotOffX
-		col = max(col, 0)
-		col = min(col, innerWidth-overlayW)
+		row = max(row, 0)
 
 		content = ui.OverlayAt(content, overlay, row, col)
 	}

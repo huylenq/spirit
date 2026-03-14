@@ -78,14 +78,22 @@ func buildCommands() []Command {
 			},
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
 		},
+		{
+			Name:    "New session at path", Hotkey: "A",
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSessionAtPath() },
+		},
 
 		// --- Copilot ---
 		{
-			Name: "Copilot", Hotkey: "'",
+			Name: "Copilot", Hotkey: "tab",
 			Execute: func(m *Model) (Model, tea.Cmd) {
-				m.state = StateCopilot
-				m.copilotInput.Activate()
-				return *m, nil
+				return execOpenCopilot(m)
+			},
+		},
+		{
+			Name: "Copilot mode (float/docked)", Hotkey: "⇧tab",
+			Execute: func(m *Model) (Model, tea.Cmd) {
+				return execSwitchCopilotMode(m)
 			},
 		},
 
@@ -130,8 +138,12 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execDebug() },
 		},
 		{
-			Name: "Preferences", Hotkey: "P",
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execPrefsEditor() },
+			Name: "Settings", Hotkey: "P",
+			Execute: func(m *Model) (Model, tea.Cmd) {
+				m.state = StatePrefsEditor
+				m.settingsCursor = 0
+				return *m, nil
+			},
 		},
 		{
 			Name: "Help", Hotkey: "?",

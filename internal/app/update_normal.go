@@ -121,9 +121,6 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
-	case msg.String() == "'":
-		return execOpenCopilot(&m)
-
 	case key.Matches(msg, Keys.Macro):
 		m.state = StateMacro
 		return m, nil
@@ -224,6 +221,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.NewSession):
 		return m.execNewSession()
+
+	case key.Matches(msg, Keys.NewSessionAtPath):
+		return m.execNewSessionAtPath()
 
 	case key.Matches(msg, Keys.NavLeft):
 		// h: enter project-level navigation
@@ -358,17 +358,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Later):
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			if s.LaterBookmarkID != "" {
-				// Toggle off (unlater): stay on current item
-				return m.execLater()
-			}
-			// Mark as later: execute + auto-jump to next session
-			model, cmd := m.execLater()
-			cmds := append([]tea.Cmd{cmd}, model.autoJump(s.PaneID)...)
-			return model, tea.Batch(cmds...)
-		}
-		return m, nil
+		return m.execLater()
 
 	case key.Matches(msg, Keys.LaterKill):
 		return m.execLaterKill()
@@ -408,6 +398,16 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
 
+	case key.Matches(msg, Keys.AutoJumpToggle):
+		newVal := !Flag("autoJump")
+		savePrefBool("autoJump", newVal)
+		m.sidebar.ShowAutoJump = newVal
+		flash := "autojump OFF"
+		if newVal {
+			flash = "autojump ON"
+		}
+		return m, m.setFlash(flash, false, 2*time.Second)
+
 	case key.Matches(msg, Keys.BacklogToggle):
 		newVal := !m.sidebar.BacklogExpanded()
 		m.sidebar.SetBacklogExpanded(newVal)
@@ -441,8 +441,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Prefs):
-		m, cmd := m.execPrefsEditor()
-		return m, cmd
+		m.state = StatePrefsEditor
+		m.settingsCursor = 0
+		return m, nil
 
 	case key.Matches(msg, Keys.MinimapMode):
 		m.state = StateMinimapSettings
@@ -517,7 +518,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit started")
 			}}
-			cmds = append(cmds, m.autoJump(s.PaneID)...)
+			if Flag("autoJump") {
+				cmds = append(cmds, m.autoJump(s.PaneID)...)
+			}
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -537,7 +540,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit+done started")
 			}}
-			cmds = append(cmds, m.autoJump(s.PaneID)...)
+			if Flag("autoJump") {
+				cmds = append(cmds, m.autoJump(s.PaneID)...)
+			}
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil

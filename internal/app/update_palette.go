@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -75,6 +77,41 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.palette.IsLuaMode() {
 			m.palette.Narrow()
 		}
+		return m, cmd
+	}
+}
+
+func (m Model) handleKeyNewSessionPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.pathInput.Deactivate()
+		return m, nil
+	case msg.Type == tea.KeyEnter:
+		rawPath := strings.TrimSpace(m.pathInput.ConfirmRaw())
+		if rawPath == "" {
+			m.state = StateNormal
+			return m, nil
+		}
+		// Expand ~ (cheap env read — done synchronously before goroutine)
+		if strings.HasPrefix(rawPath, "~/") {
+			home, _ := os.UserHomeDir()
+			rawPath = filepath.Join(home, rawPath[2:])
+		} else if rawPath == "~" {
+			rawPath, _ = os.UserHomeDir()
+		}
+		// Validate in a goroutine so os.Stat() doesn't block the event loop
+		return m, func() tea.Msg {
+			info, err := os.Stat(rawPath)
+			if err != nil || !info.IsDir() {
+				return flashErrorMsg("not a directory: " + rawPath)
+			}
+			return pathValidatedMsg{cwd: rawPath, project: filepath.Base(rawPath)}
+		}
+	default:
+		ti := m.pathInput.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
 		return m, cmd
 	}
 }

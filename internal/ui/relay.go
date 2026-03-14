@@ -39,6 +39,24 @@ func NewCopilotRelayModel() RelayModel {
 	return RelayModel{input: ti, origPrompt: "@ "}
 }
 
+func NewLaterRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = "empty = forever"
+	ti.Prompt = IconBookmark + " "
+	ti.PromptStyle = StatLaterStyle
+	ti.CharLimit = 16
+	return RelayModel{input: ti, origPrompt: IconBookmark + " "}
+}
+
+func NewPathRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = "~/path/to/project"
+	ti.Prompt = "  "
+	ti.PromptStyle = RelayPromptStyle
+	ti.CharLimit = 512
+	return RelayModel{input: ti, origPrompt: "  "}
+}
+
 func NewTagRelayModel() RelayModel {
 	ti := textinput.New()
 	ti.Placeholder = ""

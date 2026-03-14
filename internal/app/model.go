@@ -13,6 +13,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/daemon"
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/claude-mission-control/internal/ui/destroyer"
 )
 
 // MessageLogEntry is a recorded flash message for the message log.
@@ -40,6 +41,7 @@ const (
 	StateQueueRelay
 	StatePalette
 	StateNewSessionPrompt
+	StateNewSessionPathInput  // path text input before the new-session prompt
 	StateMinimapSettings
 	StatePrefsEditor
 	StateBacklogPrompt        // creating or editing a backlog item
@@ -51,9 +53,23 @@ const (
 	StateCopilot              // copilot chat panel active
 	StateCopilotConfirm       // copilot tool confirmation pending
 	StateAdjustCopilot        // copilot overlay resize/reposition mode
+	StateLaterWait            // waiting for optional duration input before marking as later
+	StateDestroyer            // session destroyer easter egg
 )
 
 const defaultMinimapMaxH = 14
+
+// Copilot display modes (persisted as pref).
+const (
+	CopilotModeFloat  = "float"
+	CopilotModeDocked = "docked"
+)
+
+const (
+	defaultCopilotDockedW = 70
+	minCopilotDockedW     = 40
+	doubleTabThreshold    = 300 * time.Millisecond
+)
 
 // Sidebar width percentage bounds (clamped during keyboard/mouse resize).
 const (
@@ -154,6 +170,8 @@ type Model struct {
 	relay                ui.RelayModel
 	queueRelay           ui.RelayModel
 	tagRelay             ui.RelayModel
+	laterRelay           ui.RelayModel
+	laterKillMode        bool // true when StateLaterWait was triggered by W (later+kill)
 	minimap              ui.MinimapModel
 	usageBar             ui.UsageBarModel
 	sessions             []claude.ClaudeSession
@@ -196,6 +214,7 @@ type Model struct {
 	rotateNext           bool              // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
 	pendingSelectPaneID  string            // pane to auto-select once it appears in the sidebar
 	promptEditor         ui.PromptEditorModel
+	pathInput            ui.RelayModel             // single-line path input for "A" new-session-at-path
 	newSessionProject    string                    // project name for the new session being created
 	newSessionCWD        string                    // working directory for the new session
 	newSessionTmuxSess   string                    // tmux session for the new window
@@ -218,7 +237,7 @@ type Model struct {
 	jumpCursor           int                       // position in jumpTrail; len(jumpTrail) = at head
 	nonClaudePane        *ui.MinimapPaneInfo       // focused non-Claude pane (minimap nav)
 	palette              ui.PaletteModel
-	prefsEditor          ui.PrefsEditorModel
+	settingsCursor       int // cursor position in settings overlay
 	commands             []Command
 	activeBacklogID      string         // backlog item being edited or submitted (empty = new item)
 	activeBacklogCWD     string         // CWD for the active backlog operation
@@ -229,11 +248,15 @@ type Model struct {
 	macroEditor          ui.MacroEditorModel
 	copilot              ui.CopilotModel
 	copilotInput         ui.RelayModel
-	copilotVisible       bool // overlay rendered but may not be focused (StateNormal + visible = read-only)
-	copilotOffX          int  // horizontal offset from default position (negative = left)
-	copilotOffY          int  // vertical offset from default position (negative = up)
-	copilotDW            int  // delta width from default (positive = wider)
-	copilotDH            int  // delta max-height from default (positive = taller)
+	copilotVisible       bool      // overlay rendered but may not be focused (StateNormal + visible = read-only)
+	copilotMode          string    // CopilotModeFloat or CopilotModeDocked (persisted)
+	copilotDockedW       int       // docked panel width in columns (persisted)
+	lastTabTime          time.Time // for double-tab detection
+	copilotOffX          int       // horizontal offset from default position (negative = left) [float only]
+	copilotOffY          int       // vertical offset from default position (negative = up) [float only]
+	copilotDW            int       // delta width from default (positive = wider) [float only]
+	copilotDH            int       // delta max-height from default (positive = taller) [float only]
+	destroyer *destroyer.Model // session destroyer easter egg (nil = inactive)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -244,6 +267,7 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetBacklogExpanded(loadPrefBool("backlogExpanded"))
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
+	sidebar.ShowAutoJump = Flag("autoJump")
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -255,14 +279,18 @@ func NewModel(client *daemon.Client) Model {
 		relay:             ui.NewRelayModel(),
 		queueRelay:        ui.NewQueueRelayModel(),
 		tagRelay:          ui.NewTagRelayModel(),
+		laterRelay:        ui.NewLaterRelayModel(),
 		palette:           ui.NewPaletteModel(),
-		prefsEditor:       ui.NewPrefsEditorModel(prefRegistryKeys(), prefRegistryLabels()),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),
 		promptEditor:      ui.NewPromptEditorModel(),
+		pathInput:         ui.NewPathRelayModel(),
 		macroEditor:       ui.NewMacroEditorModel(),
 		copilot:           ui.NewCopilotModel(),
 		copilotInput:      ui.NewCopilotRelayModel(),
+		copilotVisible:    loadPrefBool("copilotVisible"),
+		copilotMode:       loadPrefString("copilotMode", CopilotModeFloat),
+		copilotDockedW:    loadPrefInt("copilotDockedW", defaultCopilotDockedW),
 		copilotOffX:       loadPrefInt("copilotOffX", 0),
 		copilotOffY:       loadPrefInt("copilotOffY", 0),
 		copilotDW:         loadPrefInt("copilotDW", 0),
@@ -281,9 +309,18 @@ func NewModel(client *daemon.Client) Model {
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 	}
+	ensureSettingDefaults()
 	m.detail.SetChatOutlineMode(m.chatOutlineMode)
 	if w := loadPrefInt("chatOutlineWidth", 0); w > 0 {
 		m.detail.SetChatOutlineWidth(w)
+	}
+	// Restore copilot input active state when reopening with copilot visible.
+	// copilotInput.Activate() is normally called by execOpenCopilot/execToggleCopilot,
+	// but on TUI restart with copilotVisible=true from prefs, it never fires.
+	if m.copilotVisible {
+		m.copilotInput.Activate()
+		m.copilotInput.TextInput().Blur() // visible but unfocused until user tabs in
+		m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
 	}
 	return m
 }
@@ -291,10 +328,17 @@ func NewModel(client *daemon.Client) Model {
 // syncAllQuietAnim starts or stops the mobile animation based on sidebar state.
 func (m *Model) syncAllQuietAnim() tea.Cmd {
 	if m.sidebar.IsAllQuiet() && !m.detail.AllQuietAnimActive() {
-		return m.detail.StartAllQuietAnim()
+		animCmd := m.detail.StartAllQuietAnim()
+		// Schedule auto-destroyer after pendulums swing a while
+		return tea.Batch(animCmd, scheduleDestroyerAutoStart())
 	}
 	if !m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
 		m.detail.StopAllQuietAnim()
+		// Cancel destroyer if sessions became active again
+		if m.state == StateDestroyer {
+			m.destroyer = nil
+			m.state = StateNormal
+		}
 	}
 	return nil
 }
@@ -370,6 +414,39 @@ func (m Model) shouldDockMinimap() bool {
 	}
 }
 
+// Copilot float overlay geometry constants — shared between view.go and update_mouse.go.
+const (
+	copilotFloatMaxW = 70 // max overlay width in columns
+	copilotFloatMinH = 5  // min overlay height (title + 1 msg + input + border)
+	copilotFloatMargR = 2  // right margin from content edge
+	copilotFloatMargT = 1  // top margin from content edge
+)
+
+// copilotFloatGeometry computes the float overlay's position and size from raw layout dimensions.
+// Returns (row, col, overlayW, maxOverlayH) all in content-area-local coordinates.
+// Note: row uses maxOverlayH for clamping; view.go refines with actual rendered height.
+func (m Model) copilotFloatGeometry(innerWidth, contentHeight int) (row, col, overlayW, maxOverlayH int) {
+	overlayW = min(copilotFloatMaxW+m.copilotDW, innerWidth-4)
+	overlayW = max(overlayW, 20)
+	maxOverlayH = min(max(contentHeight-2*copilotFloatMargT+m.copilotDH, copilotFloatMinH), contentHeight-2)
+
+	row = copilotFloatMargT + m.copilotOffY
+	row = max(row, 0)
+	row = min(row, contentHeight-maxOverlayH)
+	col = innerWidth - overlayW - copilotFloatMargR + m.copilotOffX
+	col = max(col, 0)
+	col = min(col, innerWidth-overlayW)
+	return
+}
+
+// copilotDockedWidth returns the copilot panel width when docked and visible, or 0.
+func (m Model) copilotDockedWidth() int {
+	if !m.copilotVisible || m.copilotMode != CopilotModeDocked {
+		return 0
+	}
+	return min(m.copilotDockedW, m.innerWidth()/2)
+}
+
 // applyLayout recomputes and applies component sizes from m.width, m.height, m.sidebarWidthPct.
 func (m *Model) applyLayout() {
 	innerW := m.innerWidth()
@@ -384,8 +461,9 @@ func (m *Model) applyLayout() {
 	contentHeight = m.panelContentHeight(contentHeight)
 
 	sidebarWidth := m.sidebarPanelWidth()
+	copilotW := m.copilotDockedWidth()
 	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
-	m.detail.SetSize(innerW-sidebarWidth, contentHeight)
+	m.detail.SetSize(innerW-sidebarWidth-copilotW, contentHeight)
 }
 
 // applyLayoutFast recomputes component sizes like applyLayout but skips
@@ -394,8 +472,9 @@ func (m *Model) applyLayoutFast() {
 	innerW := m.innerWidth()
 	contentHeight := m.panelContentHeight(m.contentHeight())
 	sidebarWidth := m.sidebarPanelWidth()
+	copilotW := m.copilotDockedWidth()
 	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
-	m.detail.SetSizeFast(innerW-sidebarWidth, contentHeight)
+	m.detail.SetSizeFast(innerW-sidebarWidth-copilotW, contentHeight)
 }
 
 // contentHeight returns the raw content height before minimap/divider adjustments.

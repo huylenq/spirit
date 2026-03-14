@@ -720,7 +720,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// double-taps when tab is pressed in unrelated states (search, palette, etc.).
 	if msg.String() == "tab" {
 		switch m.state {
-		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
+		case StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
 			now := time.Now()
 			if now.Sub(m.lastTabTime) < doubleTabThreshold {
 				m.lastTabTime = time.Time{} // reset to avoid triple-tap

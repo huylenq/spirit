@@ -113,6 +113,12 @@ type NewSessionCreatedMsg struct {
 	PaneID string
 }
 
+// pathValidatedMsg is sent when the async path validation for "A" succeeds.
+type pathValidatedMsg struct {
+	cwd     string
+	project string
+}
+
 // backlogWrittenMsg signals a successful backlog write/delete.
 // Triggers re-discovery so the sidebar reflects the change.
 type backlogWrittenMsg struct {

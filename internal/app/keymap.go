@@ -11,7 +11,7 @@ import (
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
-		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro,
+		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
 		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
 		k.JumpBack, k.Note,
 	}
@@ -112,7 +112,8 @@ type KeyMap struct {
 	NavRight key.Binding
 
 	// New session (project level)
-	NewSession key.Binding
+	NewSession       key.Binding
+	NewSessionAtPath key.Binding // A: new session at a typed path
 
 	// Jump trail navigation (like Vim's jumplist)
 	JumpBack    key.Binding
@@ -121,7 +122,7 @@ type KeyMap struct {
 	// Message log overlay
 	MessageLog key.Binding
 
-	// Preferences editor
+	// Settings overlay
 	Prefs key.Binding
 
 	// Macro palette
@@ -132,6 +133,9 @@ type KeyMap struct {
 
 	// Session note editor
 	Note key.Binding
+
+	// Toggle auto-jump after send/commit
+	AutoJumpToggle key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -185,6 +189,7 @@ var Chords = []Chord{
 	{Keys: "gc", Help: "copilot"},
 	{Keys: "gg", Help: "top"},
 	{Keys: "gs", Help: "spirit animal"},
+	{Keys: "gx", Help: "destroyer"},
 }
 
 func init() {
@@ -197,6 +202,7 @@ func init() {
 		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
 		"gg": func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
 		"gs": func(m *Model) (Model, tea.Cmd) { return m.execShowSpiritAnimal() },
+		"gx": func(m *Model) (Model, tea.Cmd) { return m.execDestroyer() },
 	}
 	for i := range Chords {
 		Chords[i].Execute = executors[Chords[i].Keys]
@@ -404,12 +410,16 @@ var Keys = KeyMap{
 		key.WithKeys("a"),
 		key.WithHelp("a", "new session"),
 	),
+	NewSessionAtPath: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("A", "new session at path"),
+	),
 	JumpBack: key.NewBinding(
-		key.WithKeys("ctrl+o", "shift+tab"),
+		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o/i", "jump back/fwd"),
 	),
 	JumpForward: key.NewBinding(
-		key.WithKeys("tab"), // ctrl+i and tab are the same byte (0x09) in terminals
+		key.WithKeys("ctrl+i"), // ctrl+i and tab are the same byte (0x09) in terminals
 	),
 	MessageLog: key.NewBinding(
 		key.WithKeys("!"),
@@ -417,7 +427,7 @@ var Keys = KeyMap{
 	),
 	Prefs: key.NewBinding(
 		key.WithKeys("P"),
-		key.WithHelp("P", "preferences"),
+		key.WithHelp("P", "settings"),
 	),
 	Macro: key.NewBinding(
 		key.WithKeys("."),
@@ -430,5 +440,9 @@ var Keys = KeyMap{
 	Note: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "note"),
+	),
+	AutoJumpToggle: key.NewBinding(
+		key.WithKeys("alt+."),
+		key.WithHelp("alt+.", "toggle autojump"),
 	),
 }
