@@ -15,6 +15,8 @@ import (
 var (
 	worktreeIconStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
 	worktreeIconRendered = worktreeIconStyle.Render(IconWorktree) + " "
+	flagItemStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
+	slotItemStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#eab308"))
 )
 
 // SelectionLevel tracks whether the cursor is on a session or a project group.
@@ -85,6 +87,10 @@ type SidebarModel struct {
 	inlineTagSessionID  string           // session with active inline tag input (empty = none)
 	inlineTagInputView  string           // rendered textinput view for the active tag session
 	inlineTagBacklogID  string           // backlog item with active inline tag input (empty = none)
+	ShowAutoJump        bool             // when false, suppress auto-jump visual indicator
+	flaggedSessions     map[string]bool  // paneID → flagged
+	flaggedBacklogs     map[string]bool  // backlog ID → flagged
+	numberSlots         map[int]string   // slot (1-9) → PaneID
 }
 
 // SetLand marks paneID as the landing target for the jump-arrival animation.
@@ -216,8 +222,9 @@ func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.Fi
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
 const (
-	JumpAnimFrames   = 4  // visible frames for standard jump flash
+	JumpAnimFrames    = 4  // visible frames for standard jump flash
 	SearchFlashFrames = 12 // longer hold for search-confirm landing
+	ActivateAnimFrames = 8  // longer flash for ctrl+tab / ctrl+space activation
 )
 
 func (m *SidebarModel) SetSpinnerView(s string) {
@@ -258,6 +265,22 @@ func (m *SidebarModel) SetItems(items []claude.ClaudeSession) {
 			m.summaryLoadingPanes[s.PaneID] = true
 		}
 	}
+
+	// Clear number slots for terminated, phantom, or removed sessions.
+	if len(m.numberSlots) > 0 {
+		aliveIDs := make(map[string]bool, len(items))
+		for _, s := range items {
+			if sessionOrder(s) != OrderOther && !s.IsPhantom {
+				aliveIDs[s.PaneID] = true
+			}
+		}
+		for slot, paneID := range m.numberSlots {
+			if !aliveIDs[paneID] {
+				delete(m.numberSlots, slot)
+			}
+		}
+	}
+
 	m.applyNarrow()
 
 	// Restore selection: backlog first, then session, then clamp
@@ -343,6 +366,68 @@ func (m SidebarModel) SelectedItem() (claude.ClaudeSession, bool) {
 
 func (m SidebarModel) Items() []claude.ClaudeSession {
 	return m.filtered
+}
+
+// ToggleFlagSelected toggles the flag on the currently selected session or backlog item.
+func (m *SidebarModel) ToggleFlagSelected() {
+	if m.IsBacklogSelected() {
+		if backlog, ok := m.SelectedBacklog(); ok {
+			if m.flaggedBacklogs == nil {
+				m.flaggedBacklogs = make(map[string]bool)
+			}
+			m.flaggedBacklogs[backlog.ID] = !m.flaggedBacklogs[backlog.ID]
+		}
+		return
+	}
+	if s, ok := m.SelectedItem(); ok {
+		if m.flaggedSessions == nil {
+			m.flaggedSessions = make(map[string]bool)
+		}
+		m.flaggedSessions[s.PaneID] = !m.flaggedSessions[s.PaneID]
+	}
+}
+
+// BindSlot binds the currently selected session to slot n (1-9).
+// Toggling: if the session is already bound to slot n, it's unbound.
+// Rebinding: if the session was bound to a different slot, that old binding is cleared.
+// Overwriting: if slot n was held by another session, it's released.
+func (m *SidebarModel) BindSlot(n int) bool {
+	s, ok := m.SelectedItem()
+	if !ok {
+		return false
+	}
+	if m.numberSlots == nil {
+		m.numberSlots = make(map[int]string)
+	}
+	// Toggle: already bound to n → unbind
+	if m.numberSlots[n] == s.PaneID {
+		delete(m.numberSlots, n)
+		return true
+	}
+	// Clear any existing slot this session held
+	for slot, paneID := range m.numberSlots {
+		if paneID == s.PaneID {
+			delete(m.numberSlots, slot)
+			break
+		}
+	}
+	m.numberSlots[n] = s.PaneID
+	return true
+}
+
+// SlotForSession returns the slot number (1-9) for the given paneID, or 0 if unbound.
+func (m SidebarModel) SlotForSession(paneID string) int {
+	for slot, id := range m.numberSlots {
+		if id == paneID {
+			return slot
+		}
+	}
+	return 0
+}
+
+// PaneIDForSlot returns the paneID bound to slot n, or "" if unbound.
+func (m SidebarModel) PaneIDForSlot(n int) string {
+	return m.numberSlots[n]
 }
 
 // BacklogsInProject returns all backlog items matching a project name.

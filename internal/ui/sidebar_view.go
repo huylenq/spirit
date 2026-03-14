@@ -27,7 +27,10 @@ func (m *SidebarModel) View() string {
 	}
 
 	// Pre-calculate auto-jump target
-	autoJumpTargetID := m.AutoJumpTargetFromCursor()
+	autoJumpTargetID := ""
+	if m.ShowAutoJump {
+		autoJumpTargetID = m.AutoJumpTargetFromCursor()
+	}
 
 	// Project-level selection
 	selectedProject, atProjectLevel := m.SelectedProject()
@@ -217,7 +220,7 @@ func renderProjectSubHeader(project string) string {
 func renderStatusGroupHeader(order int) string {
 	switch order {
 	case OrderUserTurn:
-		return GroupHeaderDoneStyle.Render(IconFlag + " YOUR TURN")
+		return GroupHeaderDoneStyle.Render(IconPlay + " YOUR TURN")
 	case OrderAgentTurn:
 		return GroupHeaderWorkingStyle.Render(IconBolt + " CLAUDING")
 	case OrderLater:
@@ -273,13 +276,17 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		return s
 	}
 
-	// Build right-side (detail + overlap badge + diff stats) — styles include bg when selected
-	right := m.renderDetail(s, isSelected)
+	// Detail (spinner/age) stays on line 1; drift, overlap, diff stats move to stats line
+	detail := m.renderDetail(s, isSelected)
+	detailWidth := lipgloss.Width(detail)
+
+	// Build stats-right content (drift + overlap + diff stats) for the badges line
+	var statsRight string
 	if s.TitleDrift {
-		right += sp(" ") + withBg(DriftStyle).Render(IconSynthTitle)
+		statsRight += sp(" ") + withBg(DriftStyle).Render(IconSynthTitle)
 	}
 	if s.HasOverlap {
-		right += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
+		statsRight += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
 	}
 	if s.SessionID != "" {
 		if stats, ok := m.diffStats[s.SessionID]; ok && len(stats) > 0 {
@@ -288,22 +295,16 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 				totalAdded += ds.Added
 				totalRemoved += ds.Removed
 			}
-			right += sp("  ") +
+			statsRight += sp(" ") +
 				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
 				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
 				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
-		} else if dw.files > 0 {
-			// Pad so the spinner stays in the same column as items that have diff stats
-			diffPartWidth := 2 + lipgloss.Width(fmt.Sprintf("%s %*d", IconFile, dw.files, 0)) +
-				1 + len(fmt.Sprintf("+%-*d", dw.added, 0)) +
-				1 + len(fmt.Sprintf("-%-*d", dw.removed, 0))
-			right += sp(strings.Repeat(" ", diffPartWidth))
 		}
 	}
-	rightWidth := lipgloss.Width(right)
+	statsRightWidth := lipgloss.Width(statsRight)
 
-	// prefix is always 4 cells: "  ▌ " (selected) or "    " (unselected)
-	const prefixWidth = 4
+	// prefix is always 5 cells: "NF ▌ " (slot+flag+space+bar+space)
+	const prefixWidth = 5
 	var worktreeIcon string
 	if s.IsWorktree {
 		worktreeIcon = worktreeIconRendered
@@ -312,7 +313,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	iconWidth := lipgloss.Width(iconStr)
 
 	// 2 for outer padding, 2 for minimum gap
-	maxNameWidth := m.width - prefixWidth - iconWidth - rightWidth - 4
+	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4
 	if maxNameWidth < 4 {
 		maxNameWidth = 4
 	}
@@ -322,9 +323,19 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Geometric gap — computed once before styling branches to prevent ANSI width drift
 	displayNameWidth := lipgloss.Width(displayName)
-	gap := m.width - prefixWidth - iconWidth - displayNameWidth - rightWidth - 2
+	gap := m.width - prefixWidth - iconWidth - displayNameWidth - detailWidth - 2
 	if gap < 1 {
 		gap = 1
+	}
+
+	// Column 0: slot number (1 cell). Column 1: flag icon (1 cell). Independent.
+	slotGlyph := " "
+	flagGlyph := " "
+	if slot := m.SlotForSession(s.PaneID); slot != 0 {
+		slotGlyph = slotItemStyle.Render(fmt.Sprintf("%d", slot))
+	}
+	if m.flaggedSessions[s.PaneID] {
+		flagGlyph = flagItemStyle.Render(IconFlag)
 	}
 
 	var namePart, gapStr string
@@ -340,7 +351,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if s.IsWorktree {
 			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
 		}
-		namePart = "  " +
+		namePart = slotGlyph + flagGlyph + " " +
 			barSt.Render("▌") +
 			bg.Render(" ") +
 			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
@@ -355,28 +366,27 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 			styledName = displayName
 		}
 		if isAutoJump {
-			namePart = "  " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + " " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
 		} else if isTrail {
-			namePart = "  " + trailBarSt.Render("▯") + " " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + " " + trailBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
-			namePart = "    " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + "   " + iconStr + styledName
 		}
 		gapStr = strings.Repeat(" ", gap)
 	}
 
-	line := namePart + gapStr + right
+	line := namePart + gapStr + detail
 
-	// selSubtitle wraps a subtitle content string with the selection bar at col 2.
-	// bar(1) + sp("  ")(2) + content(m.width-5) = m.width-2 total, matching the main line.
+	// selSubtitle wraps a subtitle content string with the selection bar at col 3.
+	// slot+flag+space(3) + bar(1) + content(m.width-6) = m.width-2 total, matching the main line.
 	selSubtitle := func(style lipgloss.Style, content string) string {
-		return "  " + barSt.Render("▌") +
-			withBg(style).Width(m.width-5).Render(content)
+		return "   " + barSt.Render("▌") +
+			withBg(style).Width(m.width-6).Render(content)
 	}
 
-	// autoJumpSubtitle wraps an unselected subtitle with the auto-jump bar at col 2.
-	// Visually: "  │" + content — same width as "      " (6 spaces).
+	// autoJumpSubtitle wraps an unselected subtitle with the auto-jump bar at col 3.
 	autoJumpSubtitle := func(style lipgloss.Style, content string) string {
-		return "  " + autoJumpBarSt.Render("▯") + style.Render("   "+content)
+		return "   " + autoJumpBarSt.Render("▯") + style.Render("   "+content)
 	}
 
 	if m.summaryLoadingPanes[s.PaneID] {
@@ -385,7 +395,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		} else if isAutoJump {
 			line += "\n" + autoJumpSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
 		} else {
-			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" synthesizing…")
+			line += "\n" + SummaryStyle.Render("       "+m.spinnerView+" synthesizing…")
 		}
 	}
 
@@ -415,28 +425,57 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		}
 	}
 
-	// Badges line — outcome indicators (git commit, etc.) + optional inline tag input.
-	// Pass withBg so each badge's style gets the row background, avoiding transparent holes.
+	// Badges+stats line — badges left-aligned, detail/diff stats right-aligned.
 	badges := renderBadges(s, withBg, query)
 	showTagInput := isSelected && m.inlineTagSessionID == s.SessionID && m.inlineTagInputView != ""
-	if badges != "" || showTagInput {
+	if showTagInput {
+		// Tag input gets its own line; stats line follows below
+		sep := ""
+		if badges != "" {
+			sep = "  "
+		}
+		line += "\n" + "   " + barSt.Render("▌") +
+			withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
+	}
+	// Stats line (always rendered): badges left + right-aligned drift/overlap/diff stats
+	{
+		leftContent := badges
+		if showTagInput {
+			leftContent = "" // badges already on the tag-input line above
+		}
 		if isSelected {
-			if showTagInput {
-				// Tag input is active: render badges with background + append raw input view.
-				// Don't use fixed width so the cursor isn't clipped by lipgloss padding.
-				sep := ""
-				if badges != "" {
-					sep = "  "
-				}
-				line += "\n" + "  " + barSt.Render("▌") +
-					withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
-			} else {
-				line += "\n" + selSubtitle(ItemDetailStyle, "   "+badges)
+			leftStr := "   " + leftContent
+			leftWidth := lipgloss.Width(leftStr)
+			innerWidth := m.width - 6 // content area after "   ▌"
+			statsGap := innerWidth - leftWidth - statsRightWidth
+			if statsGap < 0 {
+				statsGap = 0
 			}
+			line += "\n" + "   " + barSt.Render("▌") +
+				withBg(ItemDetailStyle).Render(leftStr) +
+				sp(strings.Repeat(" ", statsGap)) +
+				statsRight
 		} else if isAutoJump {
-			line += "\n" + autoJumpSubtitle(ItemDetailStyle, badges)
+			leftStr := "   " + leftContent
+			leftWidth := lipgloss.Width(leftStr)
+			statsGap := m.width - 6 - leftWidth - statsRightWidth
+			if statsGap < 0 {
+				statsGap = 0
+			}
+			line += "\n" + "   " + autoJumpBarSt.Render("▯") +
+				ItemDetailStyle.Render(leftStr) +
+				strings.Repeat(" ", statsGap) +
+				statsRight
 		} else {
-			line += "\n" + ItemDetailStyle.Render("      "+badges)
+			leftStr := "       " + leftContent
+			leftWidth := lipgloss.Width(leftStr)
+			statsGap := m.width - 2 - leftWidth - statsRightWidth
+			if statsGap < 0 {
+				statsGap = 0
+			}
+			line += "\n" + ItemDetailStyle.Render(leftStr) +
+				strings.Repeat(" ", statsGap) +
+				statsRight
 		}
 	}
 
@@ -463,7 +502,7 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 
 	age := FormatAge(backlog.UpdatedAt)
 
-	const prefixWidth = 4
+	const prefixWidth = 5
 	iconStr := ItemDetailStyle.Render(IconBacklog + " ")
 	iconWidth := lipgloss.Width(iconStr)
 	ageStr := ItemDetailStyle.Render(age)
@@ -495,23 +534,29 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 		}
 	}
 
+	// Backlog items have no slot — use space for slot column, flag in its own column.
+	flagGlyph := " "
+	if m.flaggedBacklogs[backlog.ID] {
+		flagGlyph = flagItemStyle.Render(IconFlag)
+	}
+
 	var line string
 	if isSelected {
 		if isLanding {
-			line = "  " + barSt.Render("▌") + bg.Render(" ") +
+			line = " " + flagGlyph + " " + barSt.Render("▌") + bg.Render(" ") +
 				bg.Render(IconBacklog+" ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
 				bg.Render(age)
 		} else {
-			line = "  " + bg.Render("▌ ") +
+			line = " " + flagGlyph + " " + bg.Render("▌ ") +
 				bg.Render(IconBacklog+" ") +
 				bg.Render(title) +
 				bg.Render(strings.Repeat(" ", gap)) +
 				bg.Render(age)
 		}
 	} else {
-		line = "    " + iconStr + title + strings.Repeat(" ", gap) + ageStr
+		line = " " + flagGlyph + "   " + iconStr + title + strings.Repeat(" ", gap) + ageStr
 	}
 
 	showTagInput := isSelected && m.inlineTagBacklogID == backlog.ID && m.inlineTagInputView != ""
@@ -534,7 +579,7 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 				if tagsStr != "" {
 					sep = "  "
 				}
-				line += "\n" + "  " + bg.Render("▌ ") +
+				line += "\n" + "   " + bg.Render("▌ ") +
 					TagBadgeStyle.Background(ColorSelectionBg).Render(indent+tagsStr+sep) +
 					m.inlineTagInputView
 			} else {
@@ -544,17 +589,17 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 					padWidth = 0
 				}
 				if isLanding {
-					line += "\n" + "  " + barSt.Render("▌") + bg.Render(" ") +
+					line += "\n" + "   " + barSt.Render("▌") + bg.Render(" ") +
 						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
 						bg.Render(strings.Repeat(" ", padWidth))
 				} else {
-					line += "\n" + "  " + bg.Render("▌ ") +
+					line += "\n" + "   " + bg.Render("▌ ") +
 						TagBadgeStyle.Background(ColorSelectionBg).Render(tagsContent) +
 						bg.Render(strings.Repeat(" ", padWidth))
 				}
 			}
 		} else {
-			line += "\n" + "    " + indent + TagBadgeStyle.Render(tagsStr)
+			line += "\n" + "     " + indent + TagBadgeStyle.Render(tagsStr)
 		}
 	}
 
@@ -565,13 +610,13 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 func (m SidebarModel) subtitleMsgWidth(icon string, isSelected bool) int {
 	if isSelected {
 		prefix := "   " + icon + " "
-		w := m.width - 5 - lipgloss.Width(prefix)
+		w := m.width - 6 - lipgloss.Width(prefix)
 		if w < 1 {
 			return 1
 		}
 		return w
 	}
-	prefix := "      " + icon + " "
+	prefix := "       " + icon + " "
 	w := m.width - 2 - lipgloss.Width(prefix)
 	if w < 1 {
 		return 1
@@ -600,23 +645,23 @@ func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, i
 		}
 		// Manual padding to fill width (can't use .Width().Render() on pre-highlighted content)
 		contentPlainWidth := prefixWidth + lipgloss.Width(truncated)
-		padWidth := m.width - 5 - contentPlainWidth
+		padWidth := m.width - 6 - contentPlainWidth
 		if padWidth < 0 {
 			padWidth = 0
 		}
-		return "  " + barSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
+		return "   " + barSt.Render("▌") + content + bgStyle.Render(strings.Repeat(" ", padWidth))
 	}
 
-	// Unselected — with optional auto-jump bar at col 2
+	// Unselected — with optional auto-jump bar at col 3
 	if isAutoJump {
 		localAutoJumpSt := lipgloss.NewStyle().Foreground(AvatarColor(avatarColorIdx))
 		prefix := "   " + icon + " "
 		if doHighlight && query != "" {
-			return "  " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
+			return "   " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 		}
-		return "  " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
+		return "   " + localAutoJumpSt.Render("▯") + ItemDetailStyle.Render(prefix+truncated)
 	}
-	prefix := "      " + icon + " "
+	prefix := "       " + icon + " "
 	if doHighlight && query != "" {
 		return ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
 	}
@@ -643,12 +688,6 @@ func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelecte
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
 	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	return first + "\n" + second
-}
-
-// hasBadges returns true if the session has any outcome badges to display.
-// Delegates to renderBadges to avoid condition drift between the two.
-func hasBadges(s claude.ClaudeSession) bool {
-	return renderBadges(s, nil, "") != ""
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
@@ -758,12 +797,22 @@ func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string
 	switch s.Status {
 	case claude.StatusUserTurn:
 		age := FormatAge(s.LastChanged)
-		if s.LaterBookmarkID != "" && s.IsPhantom {
-			return bg(StatLaterStyle).Render(IconBookmark + " " + age)
+		if s.LaterBookmarkID != "" {
+			if s.LaterWakeAt != nil {
+				remaining := FormatCountdown(*s.LaterWakeAt)
+				return bg(StatLaterStyle).Render(IconClock + " " + remaining)
+			}
+			if s.IsPhantom {
+				return bg(StatLaterStyle).Render(IconBookmark + " " + age)
+			}
 		}
 		return bg(ItemDetailStyle).Render(age)
 	case claude.StatusAgentTurn:
 		if s.LaterBookmarkID != "" {
+			if s.LaterWakeAt != nil {
+				remaining := FormatCountdown(*s.LaterWakeAt)
+				return bg(StatLaterStyle).Render(IconClock + " " + remaining)
+			}
 			return bg(StatLaterStyle).Render(IconBookmark + " " + m.spinnerView)
 		}
 		if s.PermissionMode == "plan" {
@@ -775,22 +824,43 @@ func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string
 	}
 }
 
-// FormatAge returns a human-friendly age string like "<1m", "5m", "2h", "3d".
-func FormatAge(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	d := time.Since(t)
+// formatCompactDuration formats a positive duration compactly: "<1m", "5m", "2h", "3d".
+// showSubHourMins includes the minute component for sub-day durations (e.g. "1h30m").
+func formatCompactDuration(d time.Duration, showSubHourMins bool) string {
 	switch {
 	case d < time.Minute:
 		return "<1m"
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
+		h := int(d.Hours())
+		if showSubHourMins {
+			if m := int(d.Minutes()) % 60; m > 0 {
+				return fmt.Sprintf("%dh%dm", h, m)
+			}
+		}
+		return fmt.Sprintf("%dh", h)
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// FormatAge returns a human-friendly age string like "<1m", "5m", "2h", "3d".
+func FormatAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return formatCompactDuration(time.Since(t), false)
+}
+
+// FormatCountdown returns a compact countdown string like "4m", "1h30m", "2h".
+// Returns "<1m" if the target is within a minute, "expired" if past.
+func FormatCountdown(target time.Time) string {
+	d := time.Until(target)
+	if d <= 0 {
+		return "expired"
+	}
+	return formatCompactDuration(d, true)
 }
 
 // PaneIDAtLine maps a terminal line index (relative to list content start) to
@@ -1023,9 +1093,7 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		}
 	}
 
-	if hasBadges(s) {
-		count++
-	}
+	count++ // stats line (badges + detail/diff stats, always present)
 
 	return count
 }

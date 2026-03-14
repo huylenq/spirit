@@ -18,12 +18,13 @@ func (d *Daemon) handleLater(data json.RawMessage) *Response {
 	}
 	d.removeExistingBookmark(req.PaneID)
 	bm := d.buildBookmarkFromSession(req.PaneID)
+	applyWait(&bm, req.Wait)
 	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
 	d.nudge()
-	log.Printf("later: bookmarked pane %s", req.PaneID)
+	log.Printf("later: marked pane %s (wait=%s)", req.PaneID, req.Wait)
 	r := resultResponse("ok")
 	return &r
 }
@@ -36,6 +37,7 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 	}
 	d.removeExistingBookmark(req.PaneID)
 	bm := d.buildBookmarkFromSession(req.PaneID)
+	applyWait(&bm, req.Wait)
 	if err := claude.WriteLaterBookmark(bm); err != nil {
 		r := errResponse(err.Error())
 		return &r
@@ -49,9 +51,22 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 	}
 	claude.RemovePaneMapping(req.PaneID)
 	d.nudge()
-	log.Printf("later+kill: bookmarked and killed pane %s", req.PaneID)
+	log.Printf("later+kill: marked later and killed pane %s (wait=%s)", req.PaneID, req.Wait)
 	r := resultResponse("ok")
 	return &r
+}
+
+// applyWait parses a duration string and sets WakeAt on the bookmark.
+func applyWait(bm *claude.LaterBookmark, wait string) {
+	if wait == "" {
+		return
+	}
+	d, err := time.ParseDuration(wait)
+	if err != nil || d <= 0 {
+		return
+	}
+	t := time.Now().Add(d)
+	bm.WakeAt = &t
 }
 
 func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
@@ -120,6 +135,33 @@ func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
 		}
 	}
 	return bm
+}
+
+// resolveExpiredBookmarks removes bookmarks whose WakeAt has passed.
+// Skips disk I/O entirely when no cached session has a WakeAt set.
+func (d *Daemon) resolveExpiredBookmarks() {
+	hasWaked := false
+	for _, s := range d.sessions {
+		if s.LaterWakeAt != nil {
+			hasWaked = true
+			break
+		}
+	}
+	if !hasWaked {
+		return
+	}
+	bookmarks, err := claude.ReadAllLaterBookmarks()
+	if err != nil {
+		log.Printf("later: read bookmarks for expiry check: %v", err)
+		return
+	}
+	now := time.Now()
+	for _, bm := range bookmarks {
+		if bm.WakeAt != nil && now.After(*bm.WakeAt) {
+			claude.RemoveLaterBookmark(bm.ID)
+			log.Printf("later: auto-expired bookmark %s (pane %s)", bm.ID, bm.PaneID)
+		}
+	}
 }
 
 // removeExistingBookmark removes any existing Later bookmark for a pane,

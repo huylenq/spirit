@@ -3,6 +3,7 @@ package app
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/huylenq/claude-mission-control/internal/ui"
@@ -10,11 +11,35 @@ import (
 
 const debugMinimap = false
 
+var (
+	autoJumpOnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#60a5fa"))
+	autoJumpOffStyle = lipgloss.NewStyle().Foreground(ui.ColorMuted)
+)
+
+// autoJumpIndicator renders the autojump glyph for the header label line.
+// Shows "▯ ON"/"▯ OFF" text briefly after toggling, then just the glyph.
+func (m Model) autoJumpIndicator() string {
+	on := Flag("autoJump")
+	st := autoJumpOffStyle
+	if on {
+		st = autoJumpOnStyle
+	}
+	glyph := st.Render("▯")
+	if time.Now().Before(m.autoJumpTextUntil) {
+		label := "OFF"
+		if on {
+			label = "ON"
+		}
+		return glyph + " " + st.Render(label)
+	}
+	return glyph
+}
+
 // viewInner renders the content area (sidebar + detail panels) without borders, label, or footer.
 // Used by the destroyer to snapshot the current TUI state for decomposition into particles.
 func (m Model) viewInner() string {
 	innerWidth := m.innerWidth()
-	contentHeight := m.contentHeight()
+	contentHeight := m.contentHeight() - 1 // subtract divider line, matching normal View() path
 	sidebarWidth := m.sidebarPanelWidth()
 	detailWidth := innerWidth - sidebarWidth - m.copilotDockedWidth()
 
@@ -64,7 +89,15 @@ func (m Model) View() string {
 	if m.state == StateSearching {
 		labelLine = m.renderSearchBar(innerWidth)
 	} else {
-		labelLine = ui.BorderLabelStyle.Width(innerWidth).Render(m.usageBar.LabelView())
+		left := m.autoJumpIndicator()
+		right := m.usageBar.LabelView()
+		leftW := lipgloss.Width(left)
+		rightW := lipgloss.Width(right)
+		gap := innerWidth - leftW - rightW - 1 // -1 for right padding
+		if gap < 0 {
+			gap = 0
+		}
+		labelLine = " " + left + strings.Repeat(" ", gap) + right + " "
 	}
 
 	// Footer: always 1 line
