@@ -69,7 +69,7 @@ func savePrefBool(key string, val bool) {
 	if val {
 		prefs[key] = "true"
 	} else {
-		delete(prefs, key)
+		prefs[key] = "false"
 	}
 	savePrefs(prefs)
 }
