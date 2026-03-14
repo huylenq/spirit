@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/claude-mission-control/internal/claude"
@@ -450,9 +451,33 @@ func (m *DetailModel) renderOutlineReply(innerWidth int) string {
 	// border(2) + padding(1 each side = 2) = 4 overhead columns
 	contentWidth := max(5, innerWidth-4)
 
-	// Reuse WordWrapContent, then cap at outlineReplyMaxLines.
-	wrapped := WordWrapContent(raw, contentWidth)
-	lines := strings.SplitN(wrapped, "\n", outlineReplyMaxLines+1)
+	// Render markdown via glamour; glamour adds 2 spaces of left indent which
+	// dedentANSILine strips. Fall back to plain word-wrap if glamour fails.
+	var lines []string
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(max(20, contentWidth-2)),
+	)
+	if err == nil {
+		if rendered, rerr := r.Render(raw); rerr == nil {
+			for _, line := range strings.Split(rendered, "\n") {
+				// Skip leading blank lines before any content.
+				if len(lines) == 0 && strings.TrimSpace(ansi.Strip(line)) == "" {
+					continue
+				}
+				lines = append(lines, dedentANSILine(line))
+			}
+			// Trim trailing blank lines.
+			for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+				lines = lines[:len(lines)-1]
+			}
+		}
+	}
+	if len(lines) == 0 {
+		// Fallback: plain word wrap.
+		wrapped := WordWrapContent(raw, contentWidth)
+		lines = strings.Split(wrapped, "\n")
+	}
 	if len(lines) > outlineReplyMaxLines {
 		lines = lines[:outlineReplyMaxLines]
 		last := lines[outlineReplyMaxLines-1]
