@@ -314,12 +314,14 @@ func NewModel(client *daemon.Client) Model {
 	if w := loadPrefInt("chatOutlineWidth", 0); w > 0 {
 		m.detail.SetChatOutlineWidth(w)
 	}
-	// Restore copilot input active state when reopening with copilot visible.
-	// copilotInput.Activate() is normally called by execOpenCopilot/execToggleCopilot,
-	// but on TUI restart with copilotVisible=true from prefs, it never fires.
+	// Restore copilot input to visible-but-unfocused on TUI reopen.
+	// Normally Activate() fires inside execOpenCopilot/execToggleCopilot, but
+	// those never run on restart — the pref already has copilotVisible=true.
+	// We can't call unfocusCopilot() here because it also sets m.state=StateNormal,
+	// which is wrong during init (state hasn't been set yet).
 	if m.copilotVisible {
 		m.copilotInput.Activate()
-		m.copilotInput.TextInput().Blur() // visible but unfocused until user tabs in
+		m.copilotInput.TextInput().Blur()
 		m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
 	}
 	return m

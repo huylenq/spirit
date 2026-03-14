@@ -109,8 +109,49 @@ func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// hitTestCopilot reports whether terminal coordinate (x, y) falls inside the copilot panel.
+// For float mode it recomputes the same geometry as view.go; for docked mode it checks the
+// rightmost copilotDockedWidth columns of the content area.
+func (m Model) hitTestCopilot(x, y int) bool {
+	if !m.copilotVisible {
+		return false
+	}
+	colOffset := 0
+	if !m.inFullscreenPopup {
+		colOffset = 1
+	}
+	innerWidth := m.innerWidth()
+	contentHeight := m.contentHeight()
+
+	if m.copilotMode == CopilotModeDocked {
+		copilotW := m.copilotDockedWidth()
+		if copilotW == 0 {
+			return false
+		}
+		panelH := m.panelContentHeight(contentHeight)
+		copilotColStart := colOffset + innerWidth - copilotW
+		return x >= copilotColStart && y >= contentStartRow && y < contentStartRow+panelH
+	}
+
+	// Float mode: use shared geometry helper (maxOverlayH as conservative height bound).
+	row, col, overlayW, maxOverlayH := m.copilotFloatGeometry(innerWidth, contentHeight)
+	termRow := contentStartRow + row
+	termCol := colOffset + col
+	return x >= termCol && x < termCol+overlayW && y >= termRow && y < termRow+maxOverlayH
+}
+
 // handleMouseWheel scrolls the panel under the cursor.
 func (m Model) handleMouseWheel(msg tea.MouseMsg, dir int) (tea.Model, tea.Cmd) {
+	// Copilot scroll takes priority — works regardless of focus state.
+	if m.hitTestCopilot(msg.X, msg.Y) {
+		if dir < 0 {
+			m.copilot.ScrollUp(wheelScrollLines)
+		} else {
+			m.copilot.ScrollDown(wheelScrollLines)
+		}
+		return m, nil
+	}
+
 	// In backlog edit mode, scroll the textarea by forwarding cursor key messages.
 	if m.state == StateBacklogPrompt && m.hitTestPanel(msg.X, msg.Y) == panelDetail {
 		keyType := tea.KeyUp

@@ -217,6 +217,11 @@ func (c *CopilotModel) StreamingCursor() string {
 	return copilotStreamingFrames[c.spinnerFrame%len(copilotStreamingFrames)]
 }
 
+// ResetScroll resets the scroll offset to bottom (most recent messages).
+func (c *CopilotModel) ResetScroll() {
+	c.scrollOff = 0
+}
+
 // LoadHistory replaces the message list with historical messages (called on TUI reconnect).
 func (c *CopilotModel) LoadHistory(msgs []CopilotMessage) {
 	c.messages = msgs

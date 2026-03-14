@@ -1,7 +1,7 @@
 package app
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -104,50 +104,80 @@ func (m Model) handleKeyMinimapSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.flashMinimapSettings()
 }
 
-func (m Model) handleKeyPrefsEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.prefsEditor.CompletionVisible() {
-		switch {
-		case key.Matches(msg, Keys.Escape):
-			m.prefsEditor.DismissCompletion()
-			return m, nil
-		case msg.String() == "tab", key.Matches(msg, Keys.Enter):
-			m.prefsEditor.ApplyCompletion()
-			return m, nil
-		case key.Matches(msg, Keys.Up):
-			m.prefsEditor.CompletionUp()
-			return m, nil
-		case key.Matches(msg, Keys.Down):
-			m.prefsEditor.CompletionDown()
-			return m, nil
-		case msg.String() == "ctrl+s":
-			return m.savePrefsEditor()
-		default:
-			cmd := m.prefsEditor.UpdateTextarea(msg)
-			return m, cmd
+func (m Model) handleKeySettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		if m.settingsCursor < len(SettingsRegistry)-1 {
+			m.settingsCursor++
 		}
-	}
-
-	switch {
-	case key.Matches(msg, Keys.Escape):
-		m.state = StateNormal
-		m.prefsEditor.Deactivate()
 		return m, nil
-	case msg.String() == "ctrl+s":
-		return m.savePrefsEditor()
+	case "k", "up":
+		if m.settingsCursor > 0 {
+			m.settingsCursor--
+		}
+		return m, nil
+	case " ", "enter":
+		if m.settingsCursor >= len(SettingsRegistry) {
+			return m, nil
+		}
+		s := SettingsRegistry[m.settingsCursor]
+		prefs := loadPrefs()
+		if prefs == nil {
+			prefs = map[string]string{}
+		}
+		switch s.Kind {
+		case SettingBool:
+			if settingVal(s.Key, prefs) == "true" {
+				prefs[s.Key] = "false"
+			} else {
+				prefs[s.Key] = "true"
+			}
+		case SettingEnum:
+			prefs[s.Key] = cycleEnum(s.Options, settingVal(s.Key, prefs), true)
+		}
+		savePrefs(prefs)
+		m.applySettingToModel(s.Key, prefs)
+		return m, nil
+	case "l", "right", "+", "=":
+		return m.adjustSetting(true)
+	case "h", "left", "-":
+		return m.adjustSetting(false)
+	case "esc":
+		m.state = StateNormal
+		return m, nil
 	default:
-		cmd := m.prefsEditor.UpdateTextarea(msg)
-		return m, cmd
+		return m, nil
 	}
 }
 
-func (m Model) savePrefsEditor() (tea.Model, tea.Cmd) {
-	text := m.prefsEditor.Value()
-	unknowns := m.applyPrefsFromText(text)
-	msg := "saved"
-	if unknowns > 0 {
-		msg = fmt.Sprintf("saved (%d unknown keys)", unknowns)
+// adjustSetting increments/decrements an int or cycles an enum forward/backward.
+func (m Model) adjustSetting(forward bool) (tea.Model, tea.Cmd) {
+	if m.settingsCursor >= len(SettingsRegistry) {
+		return m, nil
 	}
-	return m, func() tea.Msg { return flashInfoMsg(msg) }
+	s := SettingsRegistry[m.settingsCursor]
+	prefs := loadPrefs()
+	if prefs == nil {
+		prefs = map[string]string{}
+	}
+	switch s.Kind {
+	case SettingInt:
+		cur, _ := strconv.Atoi(settingVal(s.Key, prefs))
+		if forward {
+			if s.Max == 0 || cur < s.Max {
+				prefs[s.Key] = strconv.Itoa(cur + 1)
+			}
+		} else {
+			if cur > s.Min {
+				prefs[s.Key] = strconv.Itoa(cur - 1)
+			}
+		}
+	case SettingEnum:
+		prefs[s.Key] = cycleEnum(s.Options, settingVal(s.Key, prefs), forward)
+	}
+	savePrefs(prefs)
+	m.applySettingToModel(s.Key, prefs)
+	return m, nil
 }
 
 // flashMinimapSettings shows the current minimap mode+scale in the flash bar with a 3s timeout.

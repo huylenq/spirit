@@ -1,49 +1,29 @@
 package app
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
-// execOpenCopilot opens or re-focuses the copilot. Never hides it.
-func execOpenCopilot(m *Model) (Model, tea.Cmd) {
-	if m.state == StateCopilot || m.state == StateCopilotConfirm {
-		return *m, nil // already focused, no-op
+// --- Copilot state helpers ---
+
+// setCopilotVisible sets visibility, persists the preference, and recalculates
+// layout when in docked mode (since the detail panel width changes).
+func (m *Model) setCopilotVisible(v bool) {
+	m.copilotVisible = v
+	savePrefBool("copilotVisible", v)
+	if m.copilotMode == CopilotModeDocked {
+		m.applyLayout()
 	}
-	if m.copilotVisible {
-		// Visible but unfocused → re-focus
-		m.state = StateCopilot
-		m.copilotInput.TextInput().Focus()
-		m.copilotInput.SetPromptStyle(ui.CopilotPromptStyle)
-	} else {
-		// Hidden → open focused
-		m.state = StateCopilot
-		m.copilotVisible = true
-		m.copilotInput.Activate()
-	}
-	return *m, nil
 }
 
-// execToggleCopilot cycles the copilot overlay through three states:
-//   - Hidden → focused (open with input active)
-//   - Focused → hidden (gc while focused closes it)
-//   - Unfocused (visible, StateNormal) → focused (gc re-focuses)
-func execToggleCopilot(m *Model) (Model, tea.Cmd) {
-	if m.state == StateCopilot || m.state == StateCopilotConfirm {
-		// Focused → hide
-		m.state = StateNormal
-		m.copilotVisible = false
-	} else if m.copilotVisible {
-		// Visible but unfocused → hide
-		m.copilotVisible = false
-	} else {
-		// Hidden → open focused
-		m.state = StateCopilot
-		m.copilotVisible = true
-		m.copilotInput.Activate()
-	}
-	return *m, nil
+// focusCopilot activates copilot input and sets focused styling.
+func (m *Model) focusCopilot() {
+	m.copilotInput.TextInput().Focus()
+	m.copilotInput.SetPromptStyle(ui.CopilotPromptStyle)
 }
 
 // unfocusCopilot transitions the copilot from focused to unfocused (visible but read-only).
@@ -53,9 +33,90 @@ func (m *Model) unfocusCopilot() {
 	m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
 }
 
+// hideCopilot hides the copilot and resets any active copilot state.
+func (m *Model) hideCopilot() {
+	m.setCopilotVisible(false)
+	if m.state == StateCopilot || m.state == StateCopilotConfirm || m.state == StateAdjustCopilot {
+		m.state = StateNormal
+		m.copilotInput.TextInput().Blur()
+	}
+}
+
+// showCopilotFocused shows and focuses the copilot from a hidden state.
+func (m *Model) showCopilotFocused() {
+	m.state = StateCopilot
+	m.setCopilotVisible(true)
+	m.copilotInput.Activate()
+}
+
+// --- Copilot exec functions ---
+
+// execOpenCopilot opens or re-focuses the copilot. Never hides it.
+// Tab (single) behavior:
+//   - Hidden → show + focus
+//   - Unfocused → focus
+//   - Focused → unfocus
+func execOpenCopilot(m *Model) (Model, tea.Cmd) {
+	if m.state == StateCopilot || m.state == StateCopilotConfirm {
+		// Focused → unfocus
+		m.unfocusCopilot()
+		return *m, nil
+	}
+	if m.copilotVisible {
+		// Visible but unfocused → re-focus (detect pending tool)
+		if m.copilot.PendingTool() != nil {
+			m.state = StateCopilotConfirm
+		} else {
+			m.state = StateCopilot
+		}
+		m.focusCopilot()
+	} else {
+		m.showCopilotFocused()
+	}
+	return *m, nil
+}
+
+// execToggleCopilot toggles copilot visibility (gc chord):
+//   - Hidden → show + focus
+//   - Visible (any focus) → hide
+func execToggleCopilot(m *Model) (Model, tea.Cmd) {
+	if m.copilotVisible {
+		m.hideCopilot()
+	} else {
+		m.showCopilotFocused()
+	}
+	return *m, nil
+}
+
+// execHideCopilot unconditionally hides the copilot (double-tab).
+func execHideCopilot(m *Model) (Model, tea.Cmd) {
+	m.hideCopilot()
+	return *m, nil
+}
+
+// execSwitchCopilotMode toggles between float and docked mode.
+func execSwitchCopilotMode(m *Model) (Model, tea.Cmd) {
+	if m.copilotMode == CopilotModeFloat {
+		m.copilotMode = CopilotModeDocked
+	} else {
+		m.copilotMode = CopilotModeFloat
+	}
+	savePrefString("copilotMode", m.copilotMode)
+	m.applyLayout()
+	cmd := m.setFlash("copilot: "+m.copilotMode, false, 2*time.Second)
+	return *m, cmd
+}
+
+// --- Key handlers ---
+
 // handleKeyCopilot handles key events when the copilot chat panel is active.
 func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
+	case msg.String() == "tab":
+		// Single tab while focused → unfocus (double-tab handled in handleKey)
+		m.unfocusCopilot()
+		return m, nil
+
 	case key.Matches(msg, Keys.Escape):
 		m.unfocusCopilot()
 		return m, nil
@@ -76,9 +137,15 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if text != "" {
 				m.copilot.AddUserMessage(text)
 				m.copilot.SetStreaming(true)
+				m.copilot.ResetScroll()
 				m.copilotInput.Deactivate()
 				m.copilotInput.Activate()
-				return m, m.sendCopilotChat(text)
+				cmd := m.sendCopilotChat(text)
+				// Float mode: auto-unfocus after submit
+				if m.copilotMode == CopilotModeFloat {
+					m.unfocusCopilot()
+				}
+				return m, cmd
 			}
 		}
 		return m, nil
@@ -98,10 +165,36 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.copilot.ScrollUp(5)
 		return m, nil
 
+	case msg.String() == "shift+left":
+		if m.copilotMode == CopilotModeDocked {
+			m.copilotDockedW = max(m.copilotDockedW-5, minCopilotDockedW)
+			savePrefInt("copilotDockedW", m.copilotDockedW)
+			m.applyLayout()
+			return m, nil
+		}
+		// Forward to input in float mode
+		var cmd tea.Cmd
+		*m.copilotInput.TextInput(), cmd = m.copilotInput.TextInput().Update(msg)
+		return m, cmd
+
+	case msg.String() == "shift+right":
+		if m.copilotMode == CopilotModeDocked {
+			m.copilotDockedW = min(m.copilotDockedW+5, m.innerWidth()/2)
+			savePrefInt("copilotDockedW", m.copilotDockedW)
+			m.applyLayout()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		*m.copilotInput.TextInput(), cmd = m.copilotInput.TextInput().Update(msg)
+		return m, cmd
+
 	case msg.String() == "alt+\"":
-		m.state = StateAdjustCopilot
-		m.copilotInput.TextInput().Blur()
-		m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
+		// Adjust mode: float only
+		if m.copilotMode == CopilotModeFloat {
+			m.state = StateAdjustCopilot
+			m.copilotInput.TextInput().Blur()
+			m.copilotInput.SetPromptStyle(ui.CopilotPromptDimStyle)
+		}
 		return m, nil
 
 	default:
@@ -128,6 +221,8 @@ func (m Model) handleKeyCopilotConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	return m, nil
 }
+
+// --- Copilot daemon RPCs ---
 
 // sendCopilotChat fires off the copilot prompt to the daemon.
 // Stream events arrive via the subscribe connection, not the RPC return.
@@ -166,23 +261,22 @@ func (m *Model) toggleCopilotPreamble() tea.Cmd {
 				Content: "toggle preamble: " + err.Error(),
 			}}
 		}
-		// Show as a copilot info message (not text_delta which appends to last message)
 		m.copilot.AddInfoMessage("preamble: " + state)
 		return nil
 	}
 }
 
 // cancelCopilotChat cancels the in-flight copilot prompt.
-// The daemon pushes "done" via the stream when the subprocess exits.
 func (m *Model) cancelCopilotChat() tea.Cmd {
 	return func() tea.Msg {
 		_ = m.client.CopilotCancel()
-		return nil // daemon pushes "done" via stream when subprocess exits
+		return nil
 	}
 }
 
+// --- Adjust mode (float only) ---
+
 // handleKeyAdjustCopilot handles key events in StateAdjustCopilot (resize/reposition mode).
-// Arrows move the overlay; shift+arrows resize it; r resets; esc/enter returns to chat.
 func (m Model) handleKeyAdjustCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up":
@@ -217,8 +311,7 @@ func (m Model) handleKeyAdjustCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefInt("copilotDH", 0)
 	case "esc", "enter":
 		m.state = StateCopilot
-		m.copilotInput.TextInput().Focus()
-		m.copilotInput.SetPromptStyle(ui.CopilotPromptStyle)
+		m.focusCopilot()
 	}
 	return m, nil
 }
