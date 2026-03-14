@@ -37,7 +37,7 @@ var (
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
 	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
-	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#9ca3af", Dark: "#6b7280"} // muted gray — file overlap
+	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#eab308"} // yellow — file overlap warning
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
