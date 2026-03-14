@@ -13,6 +13,17 @@ func promptEditorTitle(color lipgloss.TerminalColor) lipgloss.Style {
 	return lipgloss.NewStyle().Bold(true).Foreground(color)
 }
 
+func copilotDocked(color lipgloss.TerminalColor) lipgloss.Style {
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderLeft(true).
+		BorderRight(false).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderForeground(color).
+		Padding(0, 1)
+}
+
 var (
 	// Colors — adaptive for light/dark terminals
 	ColorWorking     = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"} // amber
@@ -320,6 +331,10 @@ var (
 
 	CopilotTitleDimStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted)
+
+	// Copilot docked panel (left border only)
+	CopilotDockedStyle    = copilotDocked(ColorCopilot)
+	CopilotDockedDimStyle = copilotDocked(ColorMuted)
 
 	// Footer chat bubble (powerline pill with neutral surface)
 	ColorBubbleBg = lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2d2d2d"}

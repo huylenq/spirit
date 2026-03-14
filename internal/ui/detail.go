@@ -68,8 +68,9 @@ type DetailModel struct {
 	diffHunkFiles            []diffHunkFile
 	diffScroll               int
 	diffSimThreshold         float64 // similarity threshold for ~ vs separate -/+ lines
-	insightIdx               int     // random insight index, picked on session switch
-	renderedInsight          string  // glamour-rendered insight (single line, ANSI-styled)
+	insightIdx               int    // random insight index, picked on session switch
+	renderedInsight          string // glamour-rendered insight (single line, ANSI-styled)
+	renderedInsightSrc       string // raw insight text that produced renderedInsight (change guard)
 	width                    int
 	height                   int
 	ready                    bool
@@ -126,14 +127,28 @@ func detailContentHeight(h int) int {
 }
 
 // updateRenderedInsight renders the current insight through glamour and caches
-// the first non-empty line as a single ANSI-styled string for the footer bubble.
+// the first non-empty line as a single ANSI-styled string for the footer.
+// Falls back to the raw insight text if glamour fails, so the insight path
+// in renderFooter is always used when insights exist.
 func (m *DetailModel) updateRenderedInsight(s *claude.ClaudeSession) {
 	if len(s.Insights) == 0 {
 		m.renderedInsight = ""
+		m.renderedInsightSrc = ""
 		return
 	}
 
 	insight := s.Insights[m.insightIdx%len(s.Insights)]
+
+	// Skip re-rendering if insight text hasn't changed (SetSession runs every ~1s)
+	if insight == m.renderedInsightSrc && m.renderedInsight != "" {
+		return
+	}
+	m.renderedInsightSrc = insight
+
+	// Raw first line as fallback — always non-empty if insight exists
+	fallback, _, _ := strings.Cut(insight, "\n")
+	fallback = strings.TrimSpace(fallback)
+
 	renderWidth := m.width - 4
 	if renderWidth < 20 {
 		renderWidth = 20
@@ -144,25 +159,57 @@ func (m *DetailModel) updateRenderedInsight(s *claude.ClaudeSession) {
 		glamour.WithWordWrap(renderWidth),
 	)
 	if err != nil {
-		m.renderedInsight = ""
+		m.renderedInsight = fallback
 		return
 	}
 
 	rendered, err := r.Render(insight)
 	if err != nil {
-		m.renderedInsight = ""
+		m.renderedInsight = fallback
 		return
 	}
 
-	// Pick the first non-empty line from glamour output, dedented
+	// Pick the first non-empty line from glamour output, dedented.
+	// glamour often emits ANSI reset codes before leading spaces (e.g.
+	// "\x1b[0m  \x1b[1mtext") so strings.TrimSpace won't strip the indent —
+	// we need to skip ANSI sequences and spaces together.
 	for _, line := range strings.Split(rendered, "\n") {
 		stripped := strings.TrimSpace(ansi.Strip(line))
 		if stripped != "" {
-			m.renderedInsight = strings.TrimSpace(line)
+			m.renderedInsight = dedentANSILine(line)
 			return
 		}
 	}
-	m.renderedInsight = ""
+	m.renderedInsight = fallback
+}
+
+// dedentANSILine removes leading whitespace from an ANSI-styled string while
+// preserving the escape sequences themselves. glamour emits CSI codes before
+// the indent spaces (e.g. "\x1b[0m  \x1b[1mtext"), so strings.TrimSpace is
+// not sufficient — we must walk past interleaved ANSI codes and spaces alike.
+func dedentANSILine(s string) string {
+	var prefix strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+1 < len(s) && s[i] == '\x1b' && s[i+1] == '[' {
+			// CSI sequence: ESC [ ... m — collect and keep, advance past it.
+			j := i + 2
+			for j < len(s) && s[j] != 'm' && s[j] != 'K' {
+				j++
+			}
+			if j < len(s) {
+				prefix.WriteString(s[i : j+1])
+				i = j + 1
+				continue
+			}
+		}
+		if s[i] == ' ' || s[i] == '\t' {
+			i++ // drop leading whitespace
+			continue
+		}
+		break
+	}
+	return strings.TrimRight(prefix.String()+s[i:], " \t\r\n")
 }
 
 // calcPanelWidth returns the default sidebar/overlay panel width for a given
@@ -318,6 +365,7 @@ func (m *DetailModel) ClearSession() {
 	m.diffFiles = nil
 	m.summary = nil
 	m.renderedInsight = ""
+	m.renderedInsightSrc = ""
 }
 
 // SetNonClaudePane shows a raw terminal capture for a non-Claude pane.
@@ -334,6 +382,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 		m.diffStats = nil
 		m.summary = nil
 		m.renderedInsight = ""
+		m.renderedInsightSrc = ""
 	}
 	if m.content == content {
 		return // skip re-render when content unchanged (daemon re-captures every ~1s)
