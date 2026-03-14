@@ -71,6 +71,10 @@ type DetailModel struct {
 	insightIdx               int    // random insight index, picked on session switch
 	renderedInsight          string // glamour-rendered insight (single line, ANSI-styled)
 	renderedInsightSrc       string // raw insight text that produced renderedInsight (change guard)
+	pulsePhase               int    // animation phase for pulsing last user-message bullet (incremented on spinner tick)
+	cachedReplyBlock         string // cached rendered reply block
+	cachedReplyMsg           string // LastAssistantMessage that produced cachedReplyBlock
+	cachedReplyWidth         int    // innerWidth that produced cachedReplyBlock
 	width                    int
 	height                   int
 	ready                    bool
@@ -545,6 +549,9 @@ func (m *DetailModel) TickAllQuiet() tea.Cmd { return m.allQuiet.Tick() }
 
 // AllQuietAnimActive reports whether the animation is running.
 func (m *DetailModel) AllQuietAnimActive() bool { return m.allQuiet.Active() }
+
+// TickPulse advances the pulse animation phase for the chat outline.
+func (m *DetailModel) TickPulse() { m.pulsePhase++ }
 
 // runeWidth returns the display width of a rune without allocating a string.
 // CJK wide characters are 2 cells; everything else is 1.

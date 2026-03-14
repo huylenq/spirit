@@ -278,16 +278,6 @@ var (
 	PromptEditorTitleStyle          = promptEditorTitle(ColorGreen)
 	BacklogPromptEditorTitleStyle   = promptEditorTitle(ColorBacklog)
 
-	// Preferences editor overlay
-	PrefsEditorOverlayStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(ColorAccent).
-				Padding(1, 2)
-
-	PrefsEditorTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(ColorAccent)
-
 	// Macro palette and editor overlays (amber/yellow — distinct from other overlays)
 	ColorMacro = lipgloss.AdaptiveColor{Light: "#d97706", Dark: "#f59e0b"}
 
@@ -311,6 +301,17 @@ var (
 	ColorNote     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#facc15"} // yellow
 	ColorBashCmd  = lipgloss.AdaptiveColor{Light: "#9B4523", Dark: "#CC785C"} // coral — Claude Code default pink
 	ColorSlashCmd = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple — slash commands
+
+	// PulseGradient is a 6-step color ramp from bullet gray → amber (working),
+	// used for the breathing pulse animation on the last outline bullet.
+	PulseGradient = [6]lipgloss.AdaptiveColor{
+		{Light: "#d1d5db", Dark: "#4b5563"}, // 0: bullet gray (rest)
+		{Light: "#d3c2b0", Dark: "#6d6451"}, // 1
+		{Light: "#d4af86", Dark: "#8f7240"}, // 2
+		{Light: "#d69d5b", Dark: "#b1812e"}, // 3
+		{Light: "#d78a31", Dark: "#d38f1d"}, // 4
+		{Light: "#d97706", Dark: "#f59e0b"}, // 5: amber (peak)
+	}
 
 	// Copilot floating overlay (indigo — distinct from blue accent and purple)
 	ColorCopilot = lipgloss.AdaptiveColor{Light: "#4f46e5", Dark: "#818cf8"}

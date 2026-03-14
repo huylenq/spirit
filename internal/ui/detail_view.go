@@ -316,7 +316,7 @@ func stripOutlinePrefix(flat string) string {
 }
 
 // renderChatOutline renders the user messages outline panel with a border.
-func (m DetailModel) renderChatOutline(width int) string {
+func (m *DetailModel) renderChatOutline(width int) string {
 	// Pick panel style: docked-left uses borderless style (separator drawn in View);
 	// others use full rounded border.
 	panelStyle := TranscriptOverlayStyle
@@ -347,8 +347,16 @@ func (m DetailModel) renderChatOutline(width int) string {
 	titleLine := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
 	lines = append(lines, titleLine)
 	lines = append(lines, "") // blank line after title
+	// Pulse the last bullet when the agent is working — regardless of whether
+	// LastAssistantMessage is set, because that field holds the previous exchange's
+	// response until the new one arrives.
+	isLastPulsing := m.session != nil &&
+		m.session.Status == claude.StatusAgentTurn &&
+		len(m.userMessages) > 0
+
 	for i, msg := range m.userMessages {
 		focused := i == m.msgCursor
+		isLast := i == len(m.userMessages)-1
 
 		// Flatten + detect/strip type prefix → promote prefix to bullet glyph.
 		raw := strings.ReplaceAll(msg, "\n", " ")
@@ -370,7 +378,15 @@ func (m DetailModel) renderChatOutline(width int) string {
 		msgStyle := TranscriptMsgStyle
 		contGlyph := bulletContGlyph
 		var styledGlyph string
-		if focused {
+		if isLast && isLastPulsing {
+			// Breathing gradient: ping-pong through PulseGradient (6 colors, 10 frames/cycle ≈ 800ms).
+			phase := m.pulsePhase % 10
+			idx := phase
+			if idx > 5 {
+				idx = 10 - idx // bounce back: 4,3,2,1
+			}
+			styledGlyph = TranscriptBulletStyle.Foreground(PulseGradient[idx]).Render(bulletGlyph)
+		} else if focused {
 			// Only the default quote glyph adopts cursor color; typed glyphs keep their own color.
 			if bulletGlyph == IconQuote {
 				styledGlyph = TranscriptCursorStyle.Render(bulletGlyph)
@@ -398,12 +414,62 @@ func (m DetailModel) renderChatOutline(width int) string {
 				indent+msgStyle.Render(line2),
 			)
 		}
+
+		// After the last user message, render the assistant's response — but only
+		// when the agent is not actively working (otherwise the response is stale).
+		if isLast && !isLastPulsing && m.session != nil && m.session.LastAssistantMessage != "" {
+			if reply := m.renderOutlineReply(innerWidth); reply != "" {
+				lines = append(lines, reply)
+			}
+		}
 	}
 
 	content := strings.Join(lines, "\n")
 	return panelStyle.
 		Width(width).
 		Render(content)
+}
+
+// outlineReplyMaxLines is the maximum number of word-wrapped lines shown for the
+// assistant response in the chat outline.
+const outlineReplyMaxLines = 5
+
+// renderOutlineReply renders the last assistant response as a bordered block.
+// Results are cached and invalidated when the message or width changes.
+func (m *DetailModel) renderOutlineReply(innerWidth int) string {
+	raw := strings.TrimSpace(m.session.LastAssistantMessage)
+	if raw == "" {
+		return ""
+	}
+
+	// Return cached block if inputs haven't changed.
+	if raw == m.cachedReplyMsg && innerWidth == m.cachedReplyWidth {
+		return m.cachedReplyBlock
+	}
+
+	// border(2) + padding(1 each side = 2) = 4 overhead columns
+	contentWidth := max(5, innerWidth-4)
+
+	// Reuse WordWrapContent, then cap at outlineReplyMaxLines.
+	wrapped := WordWrapContent(raw, contentWidth)
+	lines := strings.SplitN(wrapped, "\n", outlineReplyMaxLines+1)
+	if len(lines) > outlineReplyMaxLines {
+		lines = lines[:outlineReplyMaxLines]
+		last := lines[outlineReplyMaxLines-1]
+		lines[outlineReplyMaxLines-1] = ansi.Truncate(last, max(1, contentWidth-2), "…")
+	}
+
+	result := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBorder).
+		Padding(0, 1).
+		Width(contentWidth).
+		Render(strings.Join(lines, "\n"))
+
+	m.cachedReplyMsg = raw
+	m.cachedReplyWidth = innerWidth
+	m.cachedReplyBlock = result
+	return result
 }
 
 // renderNotePanel renders the session note panel with a border.

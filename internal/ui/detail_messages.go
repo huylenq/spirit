@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
 // User message navigation for DetailModel.
@@ -118,6 +119,15 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 				return i
 			}
 			row++
+		}
+		// After the last user message, the reply block occupies extra rows.
+		// Clicks on those rows should not select any message.
+		// Must mirror the render condition: reply is only shown when NOT agent-turn.
+		if i == len(m.userMessages)-1 &&
+			m.session != nil &&
+			m.session.Status != claude.StatusAgentTurn &&
+			m.session.LastAssistantMessage != "" {
+			break
 		}
 	}
 	return -1

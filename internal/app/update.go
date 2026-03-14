@@ -115,16 +115,6 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 	}
 }
 
-// selectDefaultPane picks the auto-jump target session (no exclusions).
-// Returns true if the cursor was moved.
-func (m *Model) selectDefaultPane() bool {
-	targetID := m.sidebar.AutoJumpTarget("")
-	if targetID == "" {
-		return false
-	}
-	return m.sidebar.SelectByPaneID(targetID)
-}
-
 // autoJump selects the user-turn session with the oldest LastChanged
 // (waiting longest), skipping Later and skipPaneID.
 // Returns cmds from fetchForSelection for the newly selected session.
@@ -195,13 +185,22 @@ func (m *Model) tryInitialSelection() bool {
 	m.recordJump() // record pre-selection position (cursor 0)
 
 	var moved bool
+	var targetPaneID string
 	if m.rotateNext {
-		moved = m.selectDefaultPane()
+		if tid := m.sidebar.AutoJumpTarget(""); tid != "" {
+			if m.sidebar.SelectByPaneID(tid) {
+				moved = true
+				targetPaneID = tid
+			}
+		}
 	} else {
 		// ctrl-space: exact match on originating pane (any status)
 		for _, s := range m.sessions {
 			if s.PaneID == m.origPane.PaneID {
-				moved = m.sidebar.SelectByPaneID(m.origPane.PaneID)
+				if m.sidebar.SelectByPaneID(m.origPane.PaneID) {
+					moved = true
+					targetPaneID = m.origPane.PaneID
+				}
 				break
 			}
 		}
@@ -210,7 +209,10 @@ func (m *Model) tryInitialSelection() bool {
 			items := m.sidebar.Items()
 			for _, s := range items {
 				if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
-					moved = m.sidebar.SelectByPaneID(s.PaneID)
+					if m.sidebar.SelectByPaneID(s.PaneID) {
+						moved = true
+						targetPaneID = s.PaneID
+					}
 					break
 				}
 			}
@@ -218,6 +220,12 @@ func (m *Model) tryInitialSelection() bool {
 	}
 	if moved {
 		m.recordJump() // register destination so ctrl+i can reach it
+		// Activation flash animations
+		m.sidebar.SetLand(targetPaneID, ui.JumpAnimFrames)
+		if m.rotateNext && m.origPane.PaneID != targetPaneID {
+			// Ctrl+Tab: fading ghost trail on the origin pane
+			m.sidebar.SetTrail(m.origPane.PaneID)
+		}
 	}
 	return moved
 }
@@ -291,8 +299,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case CopilotStreamChunkMsg:
 		m.copilot.HandleStreamMsg(msg.Msg)
+		// Auto-pop copilot on stream completion if hidden
+		if (msg.Msg.Type == "done" || msg.Msg.Type == "error") && !m.copilotVisible {
+			m.setCopilotVisible(true) // handles applyLayout for docked mode
+		}
+		// Tool confirmation handling
 		if msg.Msg.Type == "confirm" {
-			m.state = StateCopilotConfirm
+			if m.state == StateCopilot {
+				// Already focused: transition to confirm state
+				m.state = StateCopilotConfirm
+			}
+			// Unfocused (float or docked): don't steal focus, pending tool renders inline.
+			// User must tab to focus, which will detect the pending tool.
 		}
 		// Re-invoke subscribe loop to receive the next event
 		return m, m.waitForDaemonUpdate()
@@ -304,6 +322,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.AllQuietTickMsg:
 		cmd := m.detail.TickAllQuiet()
 		return m, cmd
+
+	case DestroyerAutoStartMsg:
+		// Auto-start destroyer if still in AllQuiet state (pendulums visible)
+		if m.sidebar.IsAllQuiet() && m.state == StateNormal && m.destroyer == nil {
+			nm, cmd := m.execDestroyer()
+			return nm, cmd
+		}
+		return m, nil
+
+	case DestroyerTickMsg:
+		if m.state == StateDestroyer && m.destroyer != nil {
+			m.destroyer.Tick()
+			if m.destroyer.IsRebuilt() {
+				m.destroyer = nil
+				m.state = StateNormal
+				return m, nil
+			}
+			return m, tickDestroyer()
+		}
+		return m, nil
 
 	case SessionsRefreshedMsg:
 		if msg.Err != nil {
@@ -532,6 +570,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.setFlash("renamed → "+msg.Name, false, 3*time.Second)
 
+	case pathValidatedMsg:
+		m.newSessionCWD = msg.cwd
+		m.newSessionProject = msg.project
+		m.state = StateNewSessionPrompt
+		m.promptEditor.Activate()
+		return m, nil
+
 	case NewSessionCreatedMsg:
 		if m.newSessionWasSession {
 			// Invoked from session level — stay on the original session
@@ -607,9 +652,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sidebar.SetSpinnerView(frame)
 		m.minimap.SetSpinnerView(frame)
 		m.copilot.TickSpinner()
+		m.detail.TickPulse()
 		return m, cmd
 
 	case tea.MouseMsg:
+		// Destroyer intercepts all mouse events
+		if m.state == StateDestroyer && m.destroyer != nil {
+			return m.handleMouseDestroyer(msg)
+		}
 		if m.showHelp || m.showSpiritAnimal {
 			return m, nil
 		}
@@ -657,6 +707,32 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return execToggleCopilot(&m)
 	}
 
+	// Shift+tab: switch copilot mode (float ↔ docked) from relevant states.
+	if msg.String() == "shift+tab" {
+		switch m.state {
+		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
+			return execSwitchCopilotMode(&m)
+		}
+	}
+
+	// Double-tab detection: hide copilot if two tabs within threshold.
+	// Only track lastTabTime within copilot-relevant states to avoid false
+	// double-taps when tab is pressed in unrelated states (search, palette, etc.).
+	if msg.String() == "tab" {
+		switch m.state {
+		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
+			now := time.Now()
+			if now.Sub(m.lastTabTime) < doubleTabThreshold {
+				m.lastTabTime = time.Time{} // reset to avoid triple-tap
+				if m.copilotVisible {
+					return execHideCopilot(&m)
+				}
+				return execOpenCopilot(&m)
+			}
+			m.lastTabTime = now
+		}
+	}
+
 	switch m.state {
 	case StateSearching:
 		return m.handleKeySearching(msg)
@@ -665,13 +741,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateMinimapSettings:
 		return m.handleKeyMinimapSettings(msg)
 	case StatePrefsEditor:
-		return m.handleKeyPrefsEditor(msg)
+		return m.handleKeySettings(msg)
 	case StatePromptRelay:
 		return m.handleKeyPromptRelay(msg)
 	case StateQueueRelay:
 		return m.handleKeyQueueRelay(msg)
 	case StateTagRelay:
 		return m.handleKeyTagRelay(msg)
+	case StateLaterWait:
+		return m.handleKeyLaterWait(msg)
+	case StateNewSessionPathInput:
+		return m.handleKeyNewSessionPath(msg)
 	case StateNewSessionPrompt:
 		return m.handleKeyNewSession(msg)
 	case StateBacklogPrompt:
@@ -692,6 +772,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyCopilotConfirm(msg)
 	case StateAdjustCopilot:
 		return m.handleKeyAdjustCopilot(msg)
+	case StateDestroyer:
+		return m.handleKeyDestroyer(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}
