@@ -303,7 +303,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 	statsRightWidth := lipgloss.Width(statsRight)
 
-	// prefix is always 4 cells: "X ▌ " (slot-or-flag + space + bar + space)
+	// prefix is always 4 cells: slot(1) + flag(1) + bar(1) + space(1)
 	const prefixWidth = 4
 	var worktreeIcon string
 	if s.IsWorktree {
@@ -328,17 +328,20 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		gap = 1
 	}
 
-	// Single column for slot/flag: number (yellow), flag (red), both (number in red).
-	isFlagged := m.flaggedSessions[s.PaneID]
-	slot := m.SlotForSession(s.PaneID)
-	flagGlyph := " "
-	if slot != 0 && isFlagged {
-		flagGlyph = flagItemStyle.Render(fmt.Sprintf("%d", slot)) // number in flag-red = both
-	} else if slot != 0 {
-		flagGlyph = slotItemStyle.Render(fmt.Sprintf("%d", slot))
-	} else if isFlagged {
-		flagGlyph = flagItemStyle.Render(IconFlag)
+	// Pack active indicators left: slot and flag float to col 0/1 based on presence.
+	var indicators [2]string
+	indicators[0] = " "
+	indicators[1] = " "
+	idx := 0
+	if slot := m.SlotForSession(s.PaneID); slot != 0 {
+		indicators[idx] = slotItemStyle.Render(fmt.Sprintf("%d", slot))
+		idx++
 	}
+	if m.flaggedSessions[s.PaneID] {
+		indicators[idx] = flagItemStyle.Render(IconFlag)
+	}
+	slotGlyph := indicators[0]
+	flagGlyph := indicators[1]
 
 	var namePart, gapStr string
 	if isSelected {
@@ -353,7 +356,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if s.IsWorktree {
 			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
 		}
-		namePart = flagGlyph + " " +
+		namePart = slotGlyph + flagGlyph +
 			barSt.Render("▌") +
 			bg.Render(" ") +
 			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
@@ -368,11 +371,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 			styledName = displayName
 		}
 		if isAutoJump {
-			namePart = flagGlyph + " " + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
 		} else if isTrail {
-			namePart = flagGlyph + " " + trailBarSt.Render("▯") + " " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + trailBarSt.Render("▯") + " " + iconStr + styledName
 		} else {
-			namePart = flagGlyph + "   " + iconStr + styledName
+			namePart = slotGlyph + flagGlyph + "  " + iconStr + styledName
 		}
 		gapStr = strings.Repeat(" ", gap)
 	}
