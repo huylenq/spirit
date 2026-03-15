@@ -19,8 +19,8 @@ const (
 	rippleInterval = 60 * time.Millisecond
 	rippleWidth    = 5 // characters wide for the bright wave
 
-	colorWeeklyBg      = "#1e1608" // dark amber background for weekly fill
-	colorWeeklyTail    = "#3d2b00" // muted amber tail for weekly gradient
+	colorWeeklyBg   = "#1e1608" // dark amber background for weekly fill
+	colorWeeklyTail = "#3d2b00" // muted amber tail for weekly gradient
 )
 
 // weekdayPrefixes maps 3-letter lowercase abbreviation → time.Weekday.
@@ -47,15 +47,15 @@ var (
 var (
 	labelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 	// Pre-built fixed styles for the usage bar inner loop (avoids per-char allocations)
-	pillCapStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(colorWeeklyBg))
+	pillCapStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(colorWeeklyBg))
 	weeklyFillStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color(colorWeeklyBg)).
-				Foreground(ColorBorder)
+			Background(lipgloss.Color(colorWeeklyBg)).
+			Foreground(ColorBorder)
 )
 
 // UsageBarModel renders a thin progress bar showing account-level session usage.
 type UsageBarModel struct {
-	sessionPct int              // cached separately for ripple delta detection
+	sessionPct int                // cached separately for ripple delta detection
 	stats      *claude.UsageStats // full stats for display
 	hasData    bool
 
@@ -297,7 +297,7 @@ func formatUntil(resetStr string) string {
 			if !reset.After(now) {
 				reset = reset.AddDate(1, 0, 0)
 			}
-			return IconClock + " " + formatDuration(reset.Sub(now))
+			return IconClock + " " + formatCompactDuration(reset.Sub(now), true)
 		}
 	}
 
@@ -331,7 +331,7 @@ func formatUntil(resetStr string) string {
 			daysAhead = 7
 		}
 		reset = reset.Add(time.Duration(daysAhead) * 24 * time.Hour)
-		return IconClock + " " + formatDuration(reset.Sub(now))
+		return IconClock + " " + formatCompactDuration(reset.Sub(now), true)
 	}
 
 	// Try time-only: "6pm", "6:30pm", "18:00"
@@ -341,35 +341,11 @@ func formatUntil(resetStr string) string {
 			if !reset.After(now) {
 				reset = reset.Add(24 * time.Hour)
 			}
-			return IconClock + " " + formatDuration(reset.Sub(now))
+			return IconClock + " " + formatCompactDuration(reset.Sub(now), true)
 		}
 	}
 
 	return IconClock + " " + timeStr
-}
-
-// formatDuration renders a duration as a compact human string: "3d 2h", "2h 30m", "45m", "<1m".
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return "<1m"
-	}
-	totalMin := int(d.Minutes())
-	days := totalMin / (60 * 24)
-	hours := (totalMin / 60) % 24
-	mins := totalMin % 60
-	if days > 0 && hours > 0 {
-		return fmt.Sprintf("%dd %dh", days, hours)
-	}
-	if days > 0 {
-		return fmt.Sprintf("%dd", days)
-	}
-	if hours > 0 && mins > 0 {
-		return fmt.Sprintf("%dh %dm", hours, mins)
-	}
-	if hours > 0 {
-		return fmt.Sprintf("%dh", hours)
-	}
-	return fmt.Sprintf("%dm", mins)
 }
 
 // blendHex linearly interpolates between two hex colors.
