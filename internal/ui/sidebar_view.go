@@ -417,6 +417,8 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 			line += "\n" + selSubtitle(selBgSt.Foreground(ColorMuted).Italic(true), "   "+m.spinnerView+" synthesizing…")
 		} else if isAutoJump {
 			line += "\n" + autoJumpSubtitle(SummaryStyle, m.spinnerView+" synthesizing…")
+		} else if m.cardMode {
+			line += "\n" + SummaryStyle.Render(" "+m.spinnerView+" synthesizing…")
 		} else {
 			line += "\n" + SummaryStyle.Render("      "+m.spinnerView+" synthesizing…")
 		}
@@ -460,8 +462,12 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if badges != "" {
 			sep = "  "
 		}
-		line += "\n" + "  " + barSt.Render("▌") +
-			withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
+		if m.cardMode {
+			line += "\n" + withBg(ItemDetailStyle).Render(" "+badges+sep) + m.inlineTagInputView
+		} else {
+			line += "\n" + "  " + barSt.Render("▌") +
+				withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
+		}
 	}
 
 	if hasBadgesLine {
@@ -496,6 +502,24 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 // renderStatsLine appends a new line with leftContent left-aligned and statsRight right-aligned.
 func (m SidebarModel) renderStatsLine(line *string, leftContent, statsRight string, statsRightWidth int, isSelected, isAutoJump bool, sp func(string) string, barSt, autoJumpBarSt lipgloss.Style, withBg func(lipgloss.Style) lipgloss.Style) {
+	if m.cardMode {
+		leftStr := " " + leftContent
+		leftWidth := lipgloss.Width(leftStr)
+		statsGap := m.width - 1 - leftWidth - statsRightWidth
+		if statsGap < 0 {
+			statsGap = 0
+		}
+		if isSelected {
+			*line += "\n" + withBg(ItemDetailStyle).Render(leftStr) +
+				sp(strings.Repeat(" ", statsGap)) +
+				statsRight
+		} else {
+			*line += "\n" + ItemDetailStyle.Render(leftStr) +
+				strings.Repeat(" ", statsGap) +
+				statsRight
+		}
+		return
+	}
 	if isSelected {
 		leftStr := "   " + leftContent
 		leftWidth := lipgloss.Width(leftStr)
@@ -1201,7 +1225,9 @@ func (m SidebarModel) ComputeDiffColWidths() DiffColWidths {
 func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJump bool, s claude.ClaudeSession, dw DiffColWidths) string {
 	origWidth := m.width
 	m.width = cardWidth
+	m.cardMode = true
 	result := m.renderItem(isSelected, isAutoJump, s, dw, "")
+	m.cardMode = false
 	m.width = origWidth
 
 	// Pad or truncate to exactly maxLines

@@ -475,19 +475,15 @@ func (m *Model) applyLayout() {
 	// When docked, subtract minimap height so panels shrink to make room
 	contentHeight = m.panelContentHeight(contentHeight)
 
+	sidebarWidth := m.sidebarPanelWidth()
+	copilotW := m.copilotDockedWidth()
+	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
 	if m.viewMode == ViewWorkQueue {
 		// Work queue: 5-line strip on top, full-width detail below
 		m.workQueue.SetSize(innerW)
 		detailH := contentHeight - ui.WorkQueueHeight
-		copilotW := m.copilotDockedWidth()
 		m.detail.SetSize(innerW-copilotW, detailH)
-		// Still size the sidebar for when we switch back
-		sidebarWidth := m.sidebarPanelWidth()
-		m.sidebar.SetSize(sidebarWidth-1, contentHeight)
 	} else {
-		sidebarWidth := m.sidebarPanelWidth()
-		copilotW := m.copilotDockedWidth()
-		m.sidebar.SetSize(sidebarWidth-1, contentHeight)
 		m.detail.SetSize(innerW-sidebarWidth-copilotW, contentHeight)
 	}
 }

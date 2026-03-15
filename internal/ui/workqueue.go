@@ -227,17 +227,20 @@ func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, ar
 		isAutoJump := !isSelected && s.PaneID == m.autoJumpID
 		content := sidebar.RenderCard(innerW, workQueueCardInnerH, isSelected, isAutoJump, s, dw)
 
-		// Wrap in border — avatar-colored for selected, dim for others
+		// Wrap in border — use ▌ as left border for selected/autojump (the selection bar)
+		border := lipgloss.RoundedBorder()
+		borderColor := ColorBorder
+		if isSelected || isAutoJump {
+			border.Left = "▌"
+			border.TopLeft = "╭"
+			border.BottomLeft = "╰"
+			borderColor = AvatarColor(s.AvatarColorIdx)
+		}
 		borderStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder).
+			Border(border).
+			BorderForeground(borderColor).
 			Width(innerW).
 			Height(workQueueCardInnerH)
-		if isSelected {
-			borderStyle = borderStyle.BorderForeground(AvatarColor(s.AvatarColorIdx))
-		} else if isAutoJump {
-			borderStyle = borderStyle.BorderForeground(AvatarColor(s.AvatarColorIdx))
-		}
 		card := borderStyle.Render(content)
 		cards = append(cards, card)
 	}
