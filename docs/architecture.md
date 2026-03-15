@@ -166,7 +166,7 @@ flowchart TD
     D --> F["buildSession()<br/>read status file cluster"]
     E --> F
     F --> G["Git branch lookup<br/>(10s cache)"]
-    G --> H["Merge phantom sessions<br/>(Later bookmarks, no live pane)"]
+    G --> H["Merge phantom sessions<br/>(Later records, no live pane)"]
     H --> I{"sessionsEqual()?"}
     I -->|"changed"| J["version++<br/>notifySubscribers()"]
     I -->|"same"| K["Skip notification"]
@@ -179,7 +179,7 @@ flowchart TD
    - `findClaudeInTree()` walks the process tree under the pane's shell PID looking for a `claude` process
 4. **State assembly**: `buildSession()` reads the cluster of per-session status files (`ReadStatus`, `ReadLastUserMessage`, `ReadCachedSummary`, `ReadCustomTitle`, `ReadStopReason`, `ReadSkillName`, etc.)
 5. **Git branch**: Looked up with a 10-second in-process cache
-6. **Phantom sessions**: "Later" bookmarked sessions with no live pane are merged in at the end (`IsPhantom: true`)
+6. **Phantom sessions**: "Later" later-marked sessions with no live pane are merged in at the end (`IsPhantom: true`)
 7. **Change detection**: `sessionsEqual()` compares 20+ fields; if different, daemon bumps `version` and calls `notifySubscribers()`
 
 ### ClaudeSession

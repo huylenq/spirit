@@ -274,24 +274,26 @@ func (c *Client) PaneGeometry(sessionName string) ([]tmux.PaneGeometry, error) {
 	return data.Panes, err
 }
 
-// Later bookmarks a session for later (keeps pane alive).
-func (c *Client) Later(paneID, sessionID string) error {
-	return c.rpcInto(Request{Type: ReqLater, Data: marshalData(LaterData{PaneID: paneID, SessionID: sessionID})}, nil)
+// Later marks a session for later (keeps pane alive).
+// wait is an optional duration string (e.g. "5m", "1h"); empty means indefinite.
+func (c *Client) Later(paneID, sessionID, wait string) error {
+	return c.rpcInto(Request{Type: ReqLater, Data: marshalData(LaterData{PaneID: paneID, SessionID: sessionID, Wait: wait})}, nil)
 }
 
-// LaterKill bookmarks a session and kills the pane.
-func (c *Client) LaterKill(paneID string, pid int, sessionID string) error {
-	return c.rpcInto(Request{Type: ReqLaterKill, Data: marshalData(LaterKillData{PaneID: paneID, PID: pid, SessionID: sessionID})}, nil)
+// LaterKill marks a session for later and kills the pane.
+// wait is an optional duration string (e.g. "5m", "1h"); empty means indefinite.
+func (c *Client) LaterKill(paneID string, pid int, sessionID, wait string) error {
+	return c.rpcInto(Request{Type: ReqLaterKill, Data: marshalData(LaterKillData{PaneID: paneID, PID: pid, SessionID: sessionID, Wait: wait})}, nil)
 }
 
-// Unlater removes a Later bookmark.
-func (c *Client) Unlater(bookmarkID string) error {
-	return c.rpcInto(Request{Type: ReqUnlater, Data: marshalData(UnlaterData{BookmarkID: bookmarkID})}, nil)
+// Unlater removes a Later record.
+func (c *Client) Unlater(laterID string) error {
+	return c.rpcInto(Request{Type: ReqUnlater, Data: marshalData(UnlaterData{LaterID: laterID})}, nil)
 }
 
-// OpenLater creates a new tmux window from a dead Later bookmark.
-func (c *Client) OpenLater(bookmarkID, cwd, tmuxSession string) error {
-	return c.rpcInto(Request{Type: ReqOpenLater, Data: marshalData(OpenLaterData{BookmarkID: bookmarkID, CWD: cwd, TmuxSession: tmuxSession})}, nil)
+// OpenLater creates a new tmux window from a dead Later record.
+func (c *Client) OpenLater(laterID, cwd, tmuxSession string) error {
+	return c.rpcInto(Request{Type: ReqOpenLater, Data: marshalData(OpenLaterData{LaterID: laterID, CWD: cwd, TmuxSession: tmuxSession})}, nil)
 }
 
 // RenameWindow asks the daemon to generate and apply a window name.
@@ -309,6 +311,11 @@ func (c *Client) CommitOnly(paneID, sessionID string, pid int) error {
 // CommitAndDone sends /commit-commands:commit to the pane and registers it for auto-kill on commit.
 func (c *Client) CommitAndDone(paneID, sessionID string, pid int) error {
 	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
+}
+
+// CommitSimplifyAndDone sends /commit, then /simplify, then kills the pane when both finish.
+func (c *Client) CommitSimplifyAndDone(paneID, sessionID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqCommitSimplifyDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
 }
 
 // CancelCommitDone removes the pending commit-and-done registration for a session.

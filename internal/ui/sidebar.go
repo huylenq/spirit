@@ -222,8 +222,8 @@ func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.Fi
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
 const (
-	JumpAnimFrames    = 4  // visible frames for standard jump flash
-	SearchFlashFrames = 12 // longer hold for search-confirm landing
+	JumpAnimFrames     = 4  // visible frames for standard jump flash
+	SearchFlashFrames  = 12 // longer hold for search-confirm landing
 	ActivateAnimFrames = 8  // longer flash for ctrl+tab / ctrl+space activation
 )
 
@@ -463,13 +463,13 @@ func (m SidebarModel) AutoJumpTargetFromCursor() string {
 
 // AutoJumpTarget finds the best auto-jump target, skipping skipPaneID.
 // Returns the user-turn session with the oldest LastChanged (waiting longest).
-// Excludes Later-bookmarked sessions. Returns "" if no user-turn target exists.
+// Excludes Later-marked sessions. Returns "" if no user-turn target exists.
 func (m SidebarModel) AutoJumpTarget(skipPaneID string) string {
 	var bestUser string
 	var bestUserTime time.Time
 
 	for _, s := range m.filtered {
-		if s.PaneID == skipPaneID || s.LaterBookmarkID != "" || s.LastChanged.IsZero() {
+		if s.PaneID == skipPaneID || s.LaterID != "" || s.LastChanged.IsZero() {
 			continue
 		}
 		if s.Status == claude.StatusUserTurn {
@@ -672,7 +672,7 @@ const (
 )
 
 func sessionOrder(s claude.ClaudeSession) int {
-	if s.LaterBookmarkID != "" {
+	if s.LaterID != "" {
 		return OrderLater
 	}
 	switch s.Status {

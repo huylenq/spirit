@@ -172,7 +172,7 @@ func (m *SidebarModel) View() string {
 			parts = append(parts, GroupHeaderWorkingStyle.Render(fmt.Sprintf("%s CLAUDING (%d)", IconWand, claudingCount)))
 		}
 		if laterCount > 0 {
-			parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconBookmark, laterCount)))
+			parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconLater, laterCount)))
 		}
 		if backlogCount > 0 {
 			parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
@@ -216,7 +216,6 @@ func renderProjectSubHeader(project string) string {
 	return ProjectSubHeaderStyle.Render(IconFolder + " " + project)
 }
 
-
 func renderStatusGroupHeader(order int) string {
 	switch order {
 	case OrderUserTurn:
@@ -224,7 +223,7 @@ func renderStatusGroupHeader(order int) string {
 	case OrderAgentTurn:
 		return GroupHeaderWorkingStyle.Render(IconWand + " CLAUDING")
 	case OrderLater:
-		return GroupHeaderLaterStyle.Render(IconBookmark + " LATER")
+		return GroupHeaderLaterStyle.Render(IconLater + " LATER")
 	case OrderBacklog:
 		return GroupHeaderBacklogStyle.Render(IconBacklog + " BACKLOG")
 	default:
@@ -828,23 +827,23 @@ func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string
 	switch s.Status {
 	case claude.StatusUserTurn:
 		age := FormatAge(s.LastChanged)
-		if s.LaterBookmarkID != "" {
+		if s.LaterID != "" {
 			if s.LaterWakeAt != nil {
 				remaining := FormatCountdown(*s.LaterWakeAt)
 				return bg(StatLaterStyle).Render(IconClock + " " + remaining)
 			}
 			if s.IsPhantom {
-				return bg(StatLaterStyle).Render(IconBookmark + " " + age)
+				return bg(StatLaterStyle).Render(IconLater + " " + age)
 			}
 		}
 		return bg(ItemDetailStyle).Render(age)
 	case claude.StatusAgentTurn:
-		if s.LaterBookmarkID != "" {
+		if s.LaterID != "" {
 			if s.LaterWakeAt != nil {
 				remaining := FormatCountdown(*s.LaterWakeAt)
 				return bg(StatLaterStyle).Render(IconClock + " " + remaining)
 			}
-			return bg(StatLaterStyle).Render(IconBookmark + " " + m.spinnerView)
+			return bg(StatLaterStyle).Render(IconLater + " " + m.spinnerView)
 		}
 		if s.PermissionMode == "plan" {
 			return bg(StatPlanStyle).Render(m.spinnerView)

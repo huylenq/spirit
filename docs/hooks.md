@@ -65,10 +65,10 @@ stateDiagram-v2
     Waiting --> Working : UserPromptSubmit / PreToolUse
 
     Done --> Working : UserPromptSubmit / SessionStart
-    Done --> Later : user bookmarks (TUI)
+    Done --> Later : user marks later (TUI)
     Done --> [*] : process exits + cleanup
 
-    Later --> Working : user un-bookmarks
+    Later --> Working : user un-laters
 
     state Working {
         [*] --> Active
@@ -106,7 +106,7 @@ Two runtime statuses based on **whose turn it is**:
 
 A session is **gone** (no status file / cleaned up) when the process exits. `SessionEnd` does not set a status — it triggers cleanup.
 
-`Later` is a **tag** (bookmark), not a status. A session can be bookmarked regardless of runtime state. It only affects TUI grouping (bookmarked sessions appear in a separate "Later" group).
+`Later` is a **tag** (record), not a status. A session can be marked later regardless of runtime state. It only affects TUI grouping (Later-marked sessions appear in a separate "Later" group).
 
 ```mermaid
 stateDiagram-v2
@@ -148,7 +148,7 @@ stateDiagram-v2
 | SessionEnd | → `stopped` (user-turn) | → cleanup/removal (no status) |
 | Stop | → `stopped` | → `user-turn` |
 | Notification (waiting) | overlay on `working` | → `user-turn` with `IsWaiting=true` |
-| Later/bookmark | `StatusLater` (a 3rd status) | Tag on session, orthogonal to status |
+| Later | `StatusLater` (a 3rd status) | Tag on session, orthogonal to status |
 | Status file values | `working` / `stopped` / `later` | `agent-turn` / `user-turn` (no `later`) |
 | UserPromptSubmit | → `working` | → `agent-turn` |
 
@@ -424,7 +424,7 @@ graph LR
         lock["daemon.sock.lock"]
     end
 
-    subgraph "Bookmarks"
+    subgraph "Later Records"
         later["later/*.json"]
     end
 ```
@@ -451,12 +451,12 @@ graph LR
         lock["daemon.sock.lock"]
     end
 
-    subgraph "Bookmarks (tag, not status)"
+    subgraph "Later Records (tag, not status)"
         later["later/*.json<br/>orthogonal to runtime status"]
     end
 ```
 
-**Key change:** `.status` no longer contains `"later"`. Bookmarks are tracked independently in `later/*.json`. A session can be bookmarked while in any runtime state.
+**Key change:** `.status` no longer contains `"later"`. Later records are tracked independently in `later/*.json`. A session can be marked later while in any runtime state.
 
 ### File Lifecycle
 
@@ -517,7 +517,7 @@ flowchart TD
     Plan -- "no" --> WorkSpin["spinner (amber)"]
 ```
 
-**Note:** `Later` no longer appears here — bookmarked sessions render with their actual runtime status plus a bookmark indicator (🔖) in the list grouping, not as a separate status branch.
+**Note:** `Later` no longer appears here — Later-marked sessions render with their actual runtime status plus a Later record indicator (🔖) in the list grouping, not as a separate status branch.
 
 ### Badges Line (below session name)
 
@@ -530,7 +530,7 @@ flowchart LR
     S -- "yes" --> SB["reason text<br/>(blue)"]
     B --> K{"CompactCount > 0?"}
     K -- "yes" --> KB["↻N<br/>(gray)"]
-    B --> BM{"Bookmarked?"}
+    B --> BM{"Marked later?"}
     BM -- "yes" --> BMB["🔖 later<br/>(purple)"]
 ```
 

@@ -16,10 +16,10 @@ func (d *Daemon) handleLater(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	d.removeExistingBookmark(req.PaneID)
-	bm := d.buildBookmarkFromSession(req.PaneID)
+	d.removeExistingLater(req.PaneID)
+	bm := d.buildLaterRecordFromSession(req.PaneID)
 	applyWait(&bm, req.Wait)
-	if err := claude.WriteLaterBookmark(bm); err != nil {
+	if err := claude.WriteLaterRecord(bm); err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
@@ -35,10 +35,10 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	d.removeExistingBookmark(req.PaneID)
-	bm := d.buildBookmarkFromSession(req.PaneID)
+	d.removeExistingLater(req.PaneID)
+	bm := d.buildLaterRecordFromSession(req.PaneID)
 	applyWait(&bm, req.Wait)
-	if err := claude.WriteLaterBookmark(bm); err != nil {
+	if err := claude.WriteLaterRecord(bm); err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
@@ -56,8 +56,8 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 	return &r
 }
 
-// applyWait parses a duration string and sets WakeAt on the bookmark.
-func applyWait(bm *claude.LaterBookmark, wait string) {
+// applyWait parses a duration string and sets WakeAt on the Later record.
+func applyWait(bm *claude.LaterRecord, wait string) {
 	if wait == "" {
 		return
 	}
@@ -75,9 +75,9 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	// Find the bookmark to get its paneID for status cleanup
-	bm, _ := claude.ReadLaterBookmark(req.BookmarkID)
-	claude.RemoveLaterBookmark(req.BookmarkID)
+	// Find the Later record to get its paneID for status cleanup
+	bm, _ := claude.ReadLaterRecord(req.LaterID)
+	claude.RemoveLaterRecord(req.LaterID)
 	if bm != nil {
 		// Restore status from the in-memory session (hook-derived truth).
 		// Don't infer from PID — Claude's process stays alive in user-turn too.
@@ -89,7 +89,7 @@ func (d *Daemon) handleUnlater(data json.RawMessage) *Response {
 		}
 	}
 	d.nudge()
-	log.Printf("unlater: removed bookmark %s", req.BookmarkID)
+	log.Printf("unlater: removed later %s", req.LaterID)
 	r := resultResponse("ok")
 	return &r
 }
@@ -106,18 +106,18 @@ func (d *Daemon) handleOpenLater(data json.RawMessage) *Response {
 		return &r
 	}
 	tmux.SendKeysLiteral(paneID, "claude") //nolint:errcheck
-	claude.RemoveLaterBookmark(req.BookmarkID)
+	claude.RemoveLaterRecord(req.LaterID)
 	d.nudge()
 	log.Printf("open-later: created window in %s at %s, pane %s", req.TmuxSession, req.CWD, paneID)
 	r := resultResponse("ok")
 	return &r
 }
 
-// buildBookmarkFromSession extracts session metadata from current sessions to create a bookmark.
-func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
+// buildLaterRecordFromSession extracts session metadata from current sessions to create a Later record.
+func (d *Daemon) buildLaterRecordFromSession(paneID string) claude.LaterRecord {
 	sessions := d.currentSessions()
-	bm := claude.LaterBookmark{
-		ID:        claude.GenerateBookmarkID(),
+	bm := claude.LaterRecord{
+		ID:        claude.GenerateLaterID(),
 		PaneID:    paneID,
 		CreatedAt: time.Now(),
 	}
@@ -137,9 +137,9 @@ func (d *Daemon) buildBookmarkFromSession(paneID string) claude.LaterBookmark {
 	return bm
 }
 
-// resolveExpiredBookmarks removes bookmarks whose WakeAt has passed.
+// resolveExpiredLaters removes Later records whose WakeAt has passed.
 // Skips disk I/O entirely when no cached session has a WakeAt set.
-func (d *Daemon) resolveExpiredBookmarks() {
+func (d *Daemon) resolveExpiredLaters() {
 	hasWaked := false
 	for _, s := range d.sessions {
 		if s.LaterWakeAt != nil {
@@ -150,26 +150,26 @@ func (d *Daemon) resolveExpiredBookmarks() {
 	if !hasWaked {
 		return
 	}
-	bookmarks, err := claude.ReadAllLaterBookmarks()
+	records, err := claude.ReadAllLaterRecords()
 	if err != nil {
-		log.Printf("later: read bookmarks for expiry check: %v", err)
+		log.Printf("later: read records for expiry check: %v", err)
 		return
 	}
 	now := time.Now()
-	for _, bm := range bookmarks {
+	for _, bm := range records {
 		if bm.WakeAt != nil && now.After(*bm.WakeAt) {
-			claude.RemoveLaterBookmark(bm.ID)
-			log.Printf("later: auto-expired bookmark %s (pane %s)", bm.ID, bm.PaneID)
+			claude.RemoveLaterRecord(bm.ID)
+			log.Printf("later: auto-expired %s (pane %s)", bm.ID, bm.PaneID)
 		}
 	}
 }
 
-// removeExistingBookmark removes any existing Later bookmark for a pane,
+// removeExistingLater removes any existing Later record for a pane,
 // using the in-memory session data to avoid a disk scan.
-func (d *Daemon) removeExistingBookmark(paneID string) {
+func (d *Daemon) removeExistingLater(paneID string) {
 	for _, s := range d.currentSessions() {
-		if s.PaneID == paneID && s.LaterBookmarkID != "" {
-			claude.RemoveLaterBookmark(s.LaterBookmarkID)
+		if s.PaneID == paneID && s.LaterID != "" {
+			claude.RemoveLaterRecord(s.LaterID)
 			return
 		}
 	}

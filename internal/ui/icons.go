@@ -4,21 +4,21 @@ package ui
 const (
 	IconBolt        = "\U000f0242" // nf-md-flash_auto — autojump ON
 	IconBoltOutline = "\U000f06d5" // nf-md-flash_outline — autojump OFF
-	IconWand      = "\uf0d0" // nf-fa-magic — agent-turn (clauding)
-	IconFlag      = "\uf024" // flag — item flag marker
-	IconHandRaise = "\uf256" // nf-fa-hand_o_up — user-turn / needs attention
-	IconBookmark  = "\uf02e" // bookmark — later
-	IconHourglass = "\uf251" // hourglass (legacy)
-	IconGitBranch = "\uf418" // git branch
-	IconClock     = "\uf252" // clock
-	IconFolder    = "\uf07b" // folder
-	IconFile      = "\uf15b" // file — diff file count
-	IconQuote     = "\uf10d" // quote-left — user message subtitle
-	IconGitCommit = "\ue729" // nf-dev-git_commit
+	IconWand        = "\uf0d0"     // nf-fa-magic — agent-turn (clauding)
+	IconFlag        = "\uf024"     // flag — item flag marker
+	IconHandRaise   = "\uf256"     // nf-fa-hand_o_up — user-turn / needs attention
+	IconLater       = "\uf02e"     // nf-fa-bookmark — later
+	IconHourglass   = "\uf251"     // hourglass (legacy)
+	IconGitBranch   = "\uf418"     // git branch
+	IconClock       = "\uf252"     // clock
+	IconFolder      = "\uf07b"     // folder
+	IconFile        = "\uf15b"     // file — diff file count
+	IconQuote       = "\uf10d"     // quote-left — user message subtitle
+	IconGitCommit   = "\ue729"     // nf-dev-git_commit
 	// Subtitle icons
-	IconInput    = "\uf11c" // keyboard — last user message subtitle
+	IconInput      = "\uf11c" // keyboard — last user message subtitle
 	IconSynthTitle = "\uf0eb" // lightbulb — synthesized title match context
-	IconQueue    = "\uf017" // clock — queued message pending delivery
+	IconQueue      = "\uf017" // clock — queued message pending delivery
 	// Transcript
 	IconBullet = "\uf444" // nf-oct-dot_fill — bullet point for message list
 	// Footer metadata

@@ -121,10 +121,10 @@ cmc orchestrator unregister <session-id>
 ### Mission Control Features
 
 ```lua
--- Later bookmarks
-later(id)                  -- bookmark session
-later_kill(id)             -- bookmark + kill pane
-unlater(bookmark_id)       -- remove bookmark
+-- Later
+later(id)                  -- mark session for later
+later_kill(id)             -- mark later + kill pane
+unlater(later_id)       -- remove Later record
 
 -- Synthesis (LLM-generated summaries)
 synthesize(id)             -- returns {headline = "...", from_cache = bool}

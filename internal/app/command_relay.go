@@ -38,18 +38,18 @@ func (m Model) execQueue() (Model, tea.Cmd) {
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok {
-		if s.LaterBookmarkID != "" {
+		if s.LaterID != "" {
 			// Toggle: unlater to restore real status
-			paneID, bookmarkID := s.PaneID, s.LaterBookmarkID
+			paneID, laterID := s.PaneID, s.LaterID
 			return m, func() tea.Msg {
-				// Bookmark ID may not be populated yet; look it up
-				if bookmarkID == "" {
-					bookmarkID = claude.FindBookmarkIDByPane(paneID)
+				// Later ID may not be populated yet; look it up
+				if laterID == "" {
+					laterID = claude.FindLaterIDByPane(paneID)
 				}
-				if bookmarkID == "" {
-					return flashErrorMsg("no bookmark found")
+				if laterID == "" {
+					return flashErrorMsg("no Later record found")
 				}
-				if err := m.client.Unlater(bookmarkID); err != nil {
+				if err := m.client.Unlater(laterID); err != nil {
 					return flashErrorMsg("unlater failed: " + err.Error())
 				}
 				return flashInfoMsg("restored from later")

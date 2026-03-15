@@ -87,11 +87,17 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		return nil, err
 	}
 
-	// Load bookmarks once for the entire discover cycle
-	bookmarks, _ := ReadAllLaterBookmarks()
-	bookmarkByPane := make(map[string]string, len(bookmarks)) // paneID → bookmarkID
-	for _, bm := range bookmarks {
-		bookmarkByPane[bm.PaneID] = bm.ID
+	// Load laters once for the entire discover cycle.
+	// Auto-expire timed laters inline to avoid a second disk scan.
+	laters, _ := ReadAllLaterRecords()
+	now := time.Now()
+	laterByPane := make(map[string]LaterRecord, len(laters)) // paneID → Later record
+	for _, bm := range laters {
+		if bm.WakeAt != nil && now.After(*bm.WakeAt) {
+			RemoveLaterRecord(bm.ID)
+			continue
+		}
+		laterByPane[bm.PaneID] = bm
 	}
 
 	// Build active sets for CleanStale
@@ -103,7 +109,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			activeSessionIDs[sid] = true
 		}
 	}
-	for _, bm := range bookmarks {
+	for _, bm := range laters {
 		if bm.SessionID != "" {
 			activeSessionIDs[bm.SessionID] = true
 		}
@@ -132,12 +138,12 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 				WriteStatus(sessionID, StatusUserTurn)
 				status = StatusUserTurn
 			}
-			if bookmarkByPane[p.PaneID] != "" {
-				// Bookmarked: keep session visible regardless of status
-				s := buildSession(p, 0, status, bookmarkByPane)
+			if _, hasLater := laterByPane[p.PaneID]; hasLater {
+				// Marked later: keep session visible regardless of status
+				s := buildSession(p, 0, status, laterByPane)
 				sessions = append(sessions, s)
 			} else {
-				// No bookmark, no process: clean up
+				// No Later record, no process: clean up
 				RemoveSessionFiles(sessionID)
 				RemovePaneMapping(p.PaneID)
 			}
@@ -152,32 +158,33 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			status = StatusUserTurn
 		}
 
-		s := buildSession(p, pid, status, bookmarkByPane)
+		s := buildSession(p, pid, status, laterByPane)
 		sessions = append(sessions, s)
 	}
 
-	// Merge phantom Later sessions from bookmarks (one per pane, newest wins)
+	// Merge phantom Later sessions from laters (one per pane, newest wins)
 	seenPaneIDs := make(map[string]bool)
 	for _, s := range sessions {
 		seenPaneIDs[s.PaneID] = true
 	}
-	for _, bm := range bookmarks {
+	for _, bm := range laters {
 		if seenPaneIDs[bm.PaneID] {
-			continue // pane already represented (live session or earlier bookmark)
+			continue // pane already represented (live session or earlier Later record)
 		}
 		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
-			PaneID:            bm.PaneID,
-			Status:            StatusUserTurn,
-			Project:           bm.Project,
-			CWD:               bm.CWD,
+			PaneID:           bm.PaneID,
+			Status:           StatusUserTurn,
+			Project:          bm.Project,
+			CWD:              bm.CWD,
 			SynthesizedTitle: bm.SynthesizedTitle,
-			CustomTitle:       bm.CustomTitle,
-			FirstMessage:      bm.FirstMessage,
-			SessionID:         bm.SessionID,
-			IsPhantom:         true,
-			LaterBookmarkID:   bm.ID,
-			LastChanged:       bm.CreatedAt,
+			CustomTitle:      bm.CustomTitle,
+			FirstMessage:     bm.FirstMessage,
+			SessionID:        bm.SessionID,
+			IsPhantom:        true,
+			LaterID:          bm.ID,
+			LaterWakeAt:      bm.WakeAt,
+			LastChanged:      bm.CreatedAt,
 		})
 	}
 
@@ -207,7 +214,7 @@ func parseWorktreeCWD(cwd string) (rootPath, name string, ok bool) {
 	return rootPath, name, true
 }
 
-func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[string]string) ClaudeSession {
+func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[string]LaterRecord) ClaudeSession {
 	sessionID := ReadSessionID(p.PaneID)
 	s := ClaudeSession{
 		PaneID:      p.PaneID,
@@ -275,7 +282,10 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, bookmarkByPane map[st
 		s.Note = ReadNote(sessionID)
 	}
 
-	s.LaterBookmarkID = bookmarkByPane[p.PaneID]
+	if bm, ok := laterByPane[p.PaneID]; ok {
+		s.LaterID = bm.ID
+		s.LaterWakeAt = bm.WakeAt
+	}
 
 	return s
 }

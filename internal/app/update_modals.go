@@ -51,7 +51,7 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleKeyKillConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y":
-		return m, killPaneCmd(m.killTargetPaneID, m.killTargetSessionID, m.killTargetPID, m.killTargetBookmarkID)
+		return m, killPaneCmd(m.killTargetPaneID, m.killTargetSessionID, m.killTargetPID, m.killTargetLaterID)
 	case "n", "esc":
 		m.state = StateNormal
 		m.killTargetPaneID = ""
@@ -60,7 +60,7 @@ func (m Model) handleKeyKillConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.killTargetTitle = ""
 		m.killTargetAnimalIdx = 0
 		m.killTargetColorIdx = 0
-		m.killTargetBookmarkID = ""
+		m.killTargetLaterID = ""
 		return m, nil
 	default:
 		return m, nil

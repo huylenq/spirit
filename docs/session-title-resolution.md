@@ -95,9 +95,9 @@ synthesis completes (fromCache=false)
 
 This only works when the Claude Code session is idle at the prompt. Auto-synthesis intentionally skips this to avoid polluting the user's input buffer.
 
-## Bookmarks
+## Later Records
 
-`LaterBookmark` snapshots `SynthesizedTitle`, `CustomTitle`, and `FirstMessage` at bookmark time. Phantom sessions (dead pane, live bookmark) display correctly using these stored values.
+`LaterRecord` snapshots `SynthesizedTitle`, `CustomTitle`, and `FirstMessage` at later-mark time. Phantom sessions (dead pane, live Later record) display correctly using these stored values.
 
 ## Lua API
 

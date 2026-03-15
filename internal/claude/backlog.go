@@ -109,7 +109,7 @@ func BacklogDir(cwd string) string {
 
 // GenerateBacklogID creates a random hex ID for a backlog file.
 func GenerateBacklogID() string {
-	return GenerateBookmarkID()
+	return GenerateLaterID()
 }
 
 // WriteBacklog persists a backlog item to disk as a .md file.

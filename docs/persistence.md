@@ -122,8 +122,8 @@ Subscriber channels are non-blocking with drop-stale-update semantics: if the su
 | `cancel_queue_item` | `{sessionID, index}` | — |
 | `later` | `{paneID, sessionID}` | — |
 | `later_kill` | `{paneID, pid, sessionID}` | — |
-| `unlater` | `{bookmarkID}` | — |
-| `open_later` | `{bookmarkID, cwd, tmuxSession}` | — |
+| `unlater` | `{laterID}` | — |
+| `open_later` | `{laterID, cwd, tmuxSession}` | — |
 | `commit_only` | `{paneID, sessionID, pid}` | — |
 | `commit_done` | `{paneID, sessionID, pid}` | — |
 | `cancel_commit_done` | `{sessionID}` | — |
@@ -206,7 +206,7 @@ All state files live under `~/.cache/cmc/` unless noted otherwise.
 ├── <paneID>.session         # Plain text mapping: paneID → sessionID
 │
 └── later/
-    └── <bookmarkID>.json    # JSON LaterBookmark struct
+    └── <laterID>.json    # JSON LaterRecord struct
 ```
 
 ### Per-Session State Files
@@ -232,27 +232,27 @@ All keyed by Claude Code's session UUID.
 
 `<paneID>.session` — plain text file containing the sessionID. Written by the first hook event for a pane. Used by `ReadSessionID()` during session discovery.
 
-### Later Bookmarks
+### Later Records
 
-`later/<bookmarkID>.json` — JSON `LaterBookmark` struct preserving session metadata:
+`later/<laterID>.json` — JSON `LaterRecord` struct preserving session metadata:
 
 ```go
-type LaterBookmark struct {
-    ID           string    // UUID bookmark ID
+type LaterRecord struct {
+    ID           string    // UUID Later record ID
     PaneID       string    // original pane (may be dead)
     Project      string    // project name
     CWD          string    // working directory
-    GitBranch    string    // git branch at time of bookmark
+    GitBranch    string    // git branch at time of marking later
     Headline     string    // synthesized headline
     ProblemType  string    // bug, feature, etc.
     CustomTitle  string    // user-set name
     FirstMessage string    // first user message
     SessionID    string    // Claude Code session ID (for --resume)
-    CreatedAt    time.Time // bookmark creation time
+    CreatedAt    time.Time // Later record creation time
 }
 ```
 
-Bookmarked sessions with no live pane become **phantom sessions** (`IsPhantom=true`) in the sidebar.
+Later-marked sessions with no live pane become **phantom sessions** (`IsPhantom=true`) in the sidebar.
 
 ### Application-Level Persistence
 
@@ -294,7 +294,7 @@ Preferences are read on startup in `NewModel()` and written immediately on each 
 |-------|-------------------|
 | `queuePanes` | `recoverQueue()` scans `*.queue` files at startup |
 | Per-session status files | Read by `DiscoverSessions()` on every poll |
-| Later bookmarks | Read by `DiscoverSessions()` as phantom sessions |
+| Later records | Read by `DiscoverSessions()` as phantom sessions |
 | Summary cache | Read by `ReadCachedSummary()` during session building |
 | TUI preferences | Read by `NewModel()` at client startup |
 

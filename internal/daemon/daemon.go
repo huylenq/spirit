@@ -25,11 +25,13 @@ type subscriber struct {
 
 // commitDoneEntry tracks a pending commit operation (commit-only or commit-and-done).
 type commitDoneEntry struct {
-	PaneID     string
-	PID        int
-	SawWorking bool      // true once the session has transitioned to agent-turn
-	KillOnDone bool      // true for C (commit+done), false for c (commit only)
-	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
+	PaneID        string
+	PID           int
+	SawWorking    bool      // true once the session has transitioned to agent-turn
+	KillOnDone    bool      // true for C/D (commit+done), false for c (commit only)
+	RunSimplify   bool      // true for D: run /simplify after commit, before killing
+	SimplifyPhase bool      // true once /simplify has been sent and we're waiting for it
+	CreatedAt     time.Time // when the entry was registered; used to expire stuck entries
 }
 
 // pendingPromptEntry tracks a prompt to deliver to a newly spawned session.
@@ -79,11 +81,11 @@ type Daemon struct {
 	usageStats    *claude.UsageStats
 	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
 
-	copilotJournal  *copilot.Journal
-	copilotCancel   context.CancelFunc // non-nil while a copilot prompt is in-flight
-	copilotMu       sync.Mutex         // protects copilotCancel
-	copilotPreamble atomic.Bool        // inject live sessions into copilot prompts
-	acpClient       *acpClient         // long-lived ACP subprocess for copilot
+	copilotJournal   *copilot.Journal
+	copilotCancel    context.CancelFunc  // non-nil while a copilot prompt is in-flight
+	copilotMu        sync.Mutex          // protects copilotCancel
+	copilotPreamble  atomic.Bool         // inject live sessions into copilot prompts
+	acpClient        *acpClient          // long-lived ACP subprocess for copilot
 	copilotHistory   []CopilotHistoryMsg // in-memory only (TUI display within daemon session)
 	copilotHistoryMu sync.RWMutex
 
@@ -107,11 +109,11 @@ func Run(info DaemonInfo) error {
 		pendingPromptPanes: make(map[string]pendingPromptEntry),
 		orchestratorIDs:    make(map[string]bool),
 		lastAutoSynthTime:  make(map[string]time.Time),
-		overlapPanes:      make(map[string]bool),
-		nudgeCh:         make(chan struct{}, 1),
-		socketPath:  info.SocketPath,
-		pidPath:     info.PIDPath,
-		lockPath:    info.SocketPath + ".lock",
+		overlapPanes:       make(map[string]bool),
+		nudgeCh:            make(chan struct{}, 1),
+		socketPath:         info.SocketPath,
+		pidPath:            info.PIDPath,
+		lockPath:           info.SocketPath + ".lock",
 	}
 
 	os.MkdirAll(claude.StatusDir(), 0o755)

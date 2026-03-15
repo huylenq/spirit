@@ -274,7 +274,8 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 			a[i].Status != b[i].Status ||
 			a[i].SessionID != b[i].SessionID ||
 			a[i].LastChanged != b[i].LastChanged ||
-			a[i].LaterBookmarkID != b[i].LaterBookmarkID ||
+			a[i].LaterID != b[i].LaterID ||
+			!timePointerEqual(a[i].LaterWakeAt, b[i].LaterWakeAt) ||
 			a[i].IsPhantom != b[i].IsPhantom ||
 			a[i].SynthesizedTitle != b[i].SynthesizedTitle ||
 			a[i].TitleDrift != b[i].TitleDrift ||
@@ -312,4 +313,15 @@ func (d *Daemon) refreshOverlaps(sessions []claude.ClaudeSession) {
 	d.overlaps = overlaps
 	d.overlapPanes = panes
 	d.overlapMu.Unlock()
+}
+
+// timePointerEqual compares two *time.Time pointers for equality.
+func timePointerEqual(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(*b)
 }

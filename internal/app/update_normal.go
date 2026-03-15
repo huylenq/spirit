@@ -338,19 +338,19 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.IsPhantom {
-				// Dead Later → create new window + remove bookmark
-				bookmarkID, cwd := s.LaterBookmarkID, s.CWD
+				// Dead Later → create new window + remove Later record
+				laterID, cwd := s.LaterID, s.CWD
 				tmuxSession := m.origPane.Session
 				return m, func() tea.Msg {
-					if err := m.client.OpenLater(bookmarkID, cwd, tmuxSession); err != nil {
+					if err := m.client.OpenLater(laterID, cwd, tmuxSession); err != nil {
 						return flashErrorMsg("open failed: " + err.Error())
 					}
 					return tea.QuitMsg{}
 				}
 			}
-			// Live Later → auto-remove bookmark before switching
-			if s.LaterBookmarkID != "" {
-				m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
+			// Live Later → auto-remove Later record before switching
+			if s.LaterID != "" {
+				m.client.Unlater(s.LaterID) //nolint:errcheck
 			}
 			tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
 			return m, tea.Quit
@@ -508,11 +508,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.Kill):
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			if s.IsPhantom && s.LaterBookmarkID != "" {
-				// Phantom Later — no pane to kill, just remove bookmark
-				bookmarkID := s.LaterBookmarkID
+			if s.IsPhantom && s.LaterID != "" {
+				// Phantom Later — no pane to kill, just remove Later record
+				laterID := s.LaterID
 				return m, func() tea.Msg {
-					claude.RemoveLaterBookmark(bookmarkID)
+					claude.RemoveLaterRecord(laterID)
 					return PaneKilledMsg{}
 				}
 			}
@@ -523,7 +523,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.killTargetTitle = sessionDisplayTitle(s)
 			m.killTargetAnimalIdx = s.AvatarAnimalIdx
 			m.killTargetColorIdx = s.AvatarColorIdx
-			m.killTargetBookmarkID = s.LaterBookmarkID
+			m.killTargetLaterID = s.LaterID
 		}
 		return m, nil
 
@@ -561,6 +561,26 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return flashErrorMsg("commit+done failed: " + err.Error())
 				}
 				return flashInfoMsg("commit+done started")
+			}}
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.CommitSimplifyAndDone):
+		if s, ok := m.sidebar.SelectedItem(); ok {
+			if s.Status != claude.StatusUserTurn {
+				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+			}
+			if s.CommitDonePending {
+				return m, func() tea.Msg { return flashInfoMsg("commit+simplify+done already pending") }
+			}
+			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
+			cmds := []tea.Cmd{func() tea.Msg {
+				if err := m.client.CommitSimplifyAndDone(paneID, sessionID, pid); err != nil {
+					return flashErrorMsg("commit+simplify+done failed: " + err.Error())
+				}
+				return flashInfoMsg("commit+simplify+done started")
 			}}
 			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)

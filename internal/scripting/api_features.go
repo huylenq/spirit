@@ -8,12 +8,12 @@ import (
 
 // later(id)
 // Category: Features
-// Bookmark session for later review.
+// Mark session for later review.
 func luaLater(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		paneID := resolvePane(L, deps.Client, id)
-		if err := deps.Client.Later(paneID, id); err != nil {
+		if err := deps.Client.Later(paneID, id, ""); err != nil {
 			L.RaiseError("later: %v", err)
 		}
 		return 0
@@ -22,25 +22,25 @@ func luaLater(deps Deps) lua.LGFunction {
 
 // later_kill(id)
 // Category: Features
-// Bookmark session and kill its pane.
+// Mark session for later and kill its pane.
 func luaLaterKill(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
 		s := resolveSession(L, deps.Client, id)
-		if err := deps.Client.LaterKill(s.PaneID, s.PID, id); err != nil {
+		if err := deps.Client.LaterKill(s.PaneID, s.PID, id, ""); err != nil {
 			L.RaiseError("later_kill: %v", err)
 		}
 		return 0
 	}
 }
 
-// unlater(bookmark_id)
+// unlater(later_id)
 // Category: Features
-// Remove a bookmark by its bookmark ID.
+// Remove a Later record by its ID.
 func luaUnlater(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
-		bookmarkID := L.CheckString(1)
-		if err := deps.Client.Unlater(bookmarkID); err != nil {
+		laterID := L.CheckString(1)
+		if err := deps.Client.Unlater(laterID); err != nil {
 			L.RaiseError("unlater: %v", err)
 		}
 		return 0

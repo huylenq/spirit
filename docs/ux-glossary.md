@@ -164,8 +164,8 @@ Source: `internal/app/keymap.go`
 |-----|--------|
 | `>` | Open prompt relay (send message to Claude session) |
 | `<` | Open queue relay (queue message for when session finishes) |
-| `w` | Bookmark session as "Later" |
-| `W` | Bookmark + kill pane |
+| `w` | Mark session as Later |
+| `W` | Mark later + kill pane |
 | `d` | Kill session + close pane (with confirmation) |
 | `c` | Send `/commit` to session |
 | `C` | Commit + done (commit, verify, then kill) |
@@ -232,8 +232,8 @@ Sessions are grouped by status, rendered in this order:
 | Section | Color | Description |
 |---------|-------|-------------|
 | **WORKING** | Amber | Sessions where Claude is actively working (agent-turn) |
-| **YOUR TURN** | Blue | Sessions waiting for user (user-turn, not bookmarked) |
-| **LATER** | Purple | Bookmarked sessions (collapsible with `alt+w`) |
+| **YOUR TURN** | Blue | Sessions waiting for user (user-turn, not marked later) |
+| **LATER** | Purple | Later-marked sessions (collapsible with `alt+w`) |
 | **BACKLOG** | Cyan | Idea/task items from `.cmc/backlog/` dirs (collapsible with `alt+b`) |
 
 ### Group-by-Project Layout
@@ -268,7 +268,7 @@ All colors use `lipgloss.AdaptiveColor` for light/dark terminal support. Source:
 |----------------|-----------|---------------|-------|
 | Working / agent-turn | `ColorWorking` | `#f59e0b` (amber) | Spinner, working items, macro palette |
 | Done / user-turn | `ColorDone` | `#60a5fa` (blue) | Done items, commit done |
-| Later / deferred | `ColorLater` | `#a78bfa` (purple) | Later bookmarks |
+| Later / deferred | `ColorLater` | `#a78bfa` (purple) | Later records |
 | Plan mode | `ColorPlan` | `#48968c` (teal) | Plan permission mode spinner |
 | Waiting for user | `ColorWaiting` | `#f472b6` (rose) | Bell icon, permission/elicitation |
 | Post-tool | `ColorPostTool` | `#22d3ee` (cyan) | PostToolUse hook state |
@@ -299,7 +299,7 @@ All icons use Nerd Font codepoints. No emoji anywhere. Source: `internal/ui/icon
 |------|-------|---------|
 | `IconBolt` | `` (U+F0E7) | Agent-turn (working) |
 | `IconFlag` | `` (U+F024) | User-turn / needs attention |
-| `IconBookmark` | `` (U+F02E) | Later/deferred bookmark |
+| `IconLater` | `` (U+F02E) | Later/deferred Later record |
 | `IconGitBranch` | `` (U+F418) | Git branch |
 | `IconClock` | `` (U+F252) | Clock / age |
 | `IconFolder` | `` (U+F07B) | Folder / project |
@@ -376,7 +376,7 @@ Below the session name, contextual badges appear:
 | `LastActionCommit && UserTurn` | `✓ committed` | Green |
 | `StopReason != "" && UserTurn` | Reason text | Blue |
 | `CompactCount > 0` | `↻N` | Gray |
-| Bookmarked | `🔖 later` | Purple |
+| Marked later | `🔖 later` | Purple |
 | `HasOverlap` | `⚠ overlap` | Gray |
 | `SkillName != ""` | Skill name badge | Wrench icon |
 
@@ -410,8 +410,8 @@ Cycled with `M` key:
 |------|------------|
 | **agent-turn** | Session status: Claude is actively working |
 | **user-turn** | Session status: Claude stopped, waiting for user |
-| **later** | Verb/noun: bookmark a session for revisiting |
-| **phantom session** | Session from a bookmark with no live tmux pane (`IsPhantom=true`) |
+| **later** | Verb/noun: Later record a session for revisiting |
+| **phantom session** | Session from a Later record with no live tmux pane (`IsPhantom=true`) |
 | **worktree session** | Session running in a Claude Code git worktree |
 | **synthesize / synthesis** | AI-generated summary producing `Headline` + `ProblemType` |
 | **relay** | Sending text from cmc to a Claude session via tmux keystrokes |

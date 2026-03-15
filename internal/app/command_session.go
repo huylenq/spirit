@@ -14,17 +14,17 @@ func (m Model) execSwitchPane() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if s.IsPhantom {
-		bookmarkID, cwd := s.LaterBookmarkID, s.CWD
+		laterID, cwd := s.LaterID, s.CWD
 		tmuxSession := m.origPane.Session
 		return m, func() tea.Msg {
-			if err := m.client.OpenLater(bookmarkID, cwd, tmuxSession); err != nil {
+			if err := m.client.OpenLater(laterID, cwd, tmuxSession); err != nil {
 				return flashErrorMsg("open failed: " + err.Error())
 			}
 			return tea.QuitMsg{}
 		}
 	}
-	if s.LaterBookmarkID != "" {
-		m.client.Unlater(s.LaterBookmarkID) //nolint:errcheck
+	if s.LaterID != "" {
+		m.client.Unlater(s.LaterID) //nolint:errcheck
 	}
 	tmux.SwitchToPane(s.TmuxSession, s.TmuxWindow, s.TmuxPane, s.PaneID)
 	return m, tea.Quit
@@ -32,10 +32,10 @@ func (m Model) execSwitchPane() (Model, tea.Cmd) {
 
 func (m Model) execKill() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok {
-		if s.IsPhantom && s.LaterBookmarkID != "" {
-			bookmarkID := s.LaterBookmarkID
+		if s.IsPhantom && s.LaterID != "" {
+			laterID := s.LaterID
 			return m, func() tea.Msg {
-				claude.RemoveLaterBookmark(bookmarkID)
+				claude.RemoveLaterRecord(laterID)
 				return PaneKilledMsg{}
 			}
 		}
@@ -46,7 +46,7 @@ func (m Model) execKill() (Model, tea.Cmd) {
 		m.killTargetTitle = sessionDisplayTitle(s)
 		m.killTargetAnimalIdx = s.AvatarAnimalIdx
 		m.killTargetColorIdx = s.AvatarColorIdx
-		m.killTargetBookmarkID = s.LaterBookmarkID
+		m.killTargetLaterID = s.LaterID
 	}
 	return m, nil
 }

@@ -51,7 +51,7 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 				paneStatuses := make(map[string]int)
 				paneAvatars := make(map[string]ui.PaneAvatarInfo)
 				for _, sess := range sessions {
-					if sess.LaterBookmarkID != "" {
+					if sess.LaterID != "" {
 						paneStatuses[sess.PaneID] = ui.PaneStatusLater
 					} else {
 						paneStatuses[sess.PaneID] = claudeStatusToPane(sess.Status)

@@ -25,29 +25,30 @@ type Response struct {
 
 // Request type constants.
 const (
-	ReqPing         = "ping"
-	ReqNudge        = "nudge"
-	ReqSubscribe    = "subscribe"
-	ReqTranscript   = "transcript"
-	ReqDiffStats    = "diffstats"
-	ReqSummary      = "summary"
-	ReqSynthesize    = "synthesize"
-	ReqSynthesizeAll = "synthesize_all"
-	ReqHookEvents   = "hookevents"
-	ReqPaneGeometry = "panegeometry"
-	ReqLater     = "later"
-	ReqLaterKill = "later_kill"
-	ReqUnlater   = "unlater"
-	ReqOpenLater = "open_later"
-	ReqRenameWindow    = "rename_window"
-	ReqCommitOnly       = "commit_only"
-	ReqCommitDone       = "commit_done"
-	ReqCancelCommitDone = "cancel_commit_done"
-	ReqQueue            = "queue"
-	ReqCancelQueueItem  = "cancel_queue_item"
-	ReqRawTranscript    = "raw_transcript"
-	ReqDiffHunks        = "diffhunks"
-	ReqAllHookEffects   = "allhookeffects"
+	ReqPing               = "ping"
+	ReqNudge              = "nudge"
+	ReqSubscribe          = "subscribe"
+	ReqTranscript         = "transcript"
+	ReqDiffStats          = "diffstats"
+	ReqSummary            = "summary"
+	ReqSynthesize         = "synthesize"
+	ReqSynthesizeAll      = "synthesize_all"
+	ReqHookEvents         = "hookevents"
+	ReqPaneGeometry       = "panegeometry"
+	ReqLater              = "later"
+	ReqLaterKill          = "later_kill"
+	ReqUnlater            = "unlater"
+	ReqOpenLater          = "open_later"
+	ReqRenameWindow       = "rename_window"
+	ReqCommitOnly         = "commit_only"
+	ReqCommitDone         = "commit_done"
+	ReqCommitSimplifyDone = "commit_simplify_done"
+	ReqCancelCommitDone   = "cancel_commit_done"
+	ReqQueue              = "queue"
+	ReqCancelQueueItem    = "cancel_queue_item"
+	ReqRawTranscript      = "raw_transcript"
+	ReqDiffHunks          = "diffhunks"
+	ReqAllHookEffects     = "allhookeffects"
 
 	ReqPendingPrompt          = "pending_prompt"
 	ReqRegisterOrchestrator   = "register_orchestrator"
@@ -65,11 +66,11 @@ const (
 	ReqBacklogUpdate = "backlog_update"
 	ReqBacklogDelete = "backlog_delete"
 
-	ReqCopilotChat         = "copilot_chat"
-	ReqCopilotCancel       = "copilot_cancel"
-	ReqCopilotStatus       = "copilot_status"
-	ReqCopilotHistory      = "copilot_history"
-	ReqCopilotClearHistory    = "copilot_clear_history"
+	ReqCopilotChat           = "copilot_chat"
+	ReqCopilotCancel         = "copilot_cancel"
+	ReqCopilotStatus         = "copilot_status"
+	ReqCopilotHistory        = "copilot_history"
+	ReqCopilotClearHistory   = "copilot_clear_history"
 	ReqCopilotTogglePreamble = "copilot_toggle_preamble"
 )
 
@@ -108,20 +109,22 @@ type SessionNameData struct {
 type LaterData struct {
 	PaneID    string `json:"paneID"`
 	SessionID string `json:"sessionID"`
+	Wait      string `json:"wait,omitempty"` // optional duration (e.g. "5m", "1h"); empty = indefinite
 }
 
 type LaterKillData struct {
 	PaneID    string `json:"paneID"`
 	PID       int    `json:"pid"`
 	SessionID string `json:"sessionID"`
+	Wait      string `json:"wait,omitempty"` // optional duration (e.g. "5m", "1h"); empty = indefinite
 }
 
 type UnlaterData struct {
-	BookmarkID string `json:"bookmarkID"`
+	LaterID string `json:"laterID"`
 }
 
 type OpenLaterData struct {
-	BookmarkID  string `json:"bookmarkID"`
+	LaterID     string `json:"laterID"`
 	CWD         string `json:"cwd"`
 	TmuxSession string `json:"tmuxSession"`
 }
@@ -308,7 +311,7 @@ type CopilotHistoryData struct {
 
 // CopilotStreamData wraps a stream message for the subscribe connection.
 type CopilotStreamData struct {
-	Type    string `json:"type"`              // "text_delta", "tool_call", "tool_update", "done", "error"
+	Type    string `json:"type"` // "text_delta", "tool_call", "tool_update", "done", "error"
 	Content string `json:"content"`
 	ToolID  string `json:"tool_id,omitempty"`
 	Status  string `json:"status,omitempty"`

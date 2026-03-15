@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/harmonica"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -79,15 +79,15 @@ func (a *AllQuietAnim) Init() tea.Cmd {
 	cfgs := [numPendulums]pcfg{
 		{3.0, 2.0, 0.15, -2.0, "★", ColorWorking}, // amber star: slow, very bouncy
 		{2.0, 3.0, 0.25, 0.0, "☽", ColorDone},     // blue moon: medium speed
-		{3.0, 2.5, 0.18, 1.5, "◆", ColorLater},     // purple diamond: mid, bouncy
+		{3.0, 2.5, 0.18, 1.5, "◆", ColorLater},    // purple diamond: mid, bouncy
 	}
 	for i, c := range cfgs {
 		a.pends[i] = quietPendulum{
-			spring:  harmonica.NewSpring(td, c.angVel, c.damp),
-			x:       c.init,
-			xVel:    0,
-			targetX: c.amp,
-			bob:     c.bob,
+			spring:   harmonica.NewSpring(td, c.angVel, c.damp),
+			x:        c.init,
+			xVel:     0,
+			targetX:  c.amp,
+			bob:      c.bob,
 			bobStyle: lipgloss.NewStyle().Foreground(c.color),
 		}
 	}
@@ -118,8 +118,8 @@ func (a *AllQuietAnim) Init() tea.Cmd {
 		}
 		a.particles[i] = quietParticle{
 			rowFrac: pc.rF, colFrac: pc.cF,
-			spring:  harmonica.NewSpring(td, pc.aV, pc.d),
-			x:       0, xVel: 0,
+			spring: harmonica.NewSpring(td, pc.aV, pc.d),
+			x:      0, xVel: 0,
 			targetX: pc.amp,
 			char:    pc.ch, style: st,
 		}
@@ -326,7 +326,7 @@ func renderQuietDashboard(counts AllQuietCounts) string {
 		count            int
 	}{
 		{IconWand, "clauding", "alt+c", counts.Clauding},
-		{IconBookmark, "bookmarked", "alt+w", counts.Later},
+		{IconLater, "marked later", "alt+w", counts.Later},
 		{IconBacklog, "in backlog", "alt+b", counts.Backlog},
 	}
 	for _, s := range sections {

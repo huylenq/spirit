@@ -41,7 +41,7 @@ const (
 	StateQueueRelay
 	StatePalette
 	StateNewSessionPrompt
-	StateNewSessionPathInput  // path text input before the new-session prompt
+	StateNewSessionPathInput // path text input before the new-session prompt
 	StateMinimapSettings
 	StatePrefsEditor
 	StateBacklogPrompt        // creating or editing a backlog item
@@ -179,7 +179,7 @@ type Model struct {
 	showHooks            bool
 	showRawTranscript    bool
 	showDiffs            bool
-	chatOutlineMode          string // ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineHidden
+	chatOutlineMode      string // ChatOutlineOverlay, ChatOutlineDocked, ChatOutlineHidden
 	showMinimap          bool
 	minimapMode          string       // MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart
 	minimapMaxH          int          // max minimap height (persisted pref, default 14)
@@ -211,7 +211,7 @@ type Model struct {
 	killTargetTitle      string            // display title for kill confirmation
 	killTargetAnimalIdx  int               // avatar animal index for kill confirmation
 	killTargetColorIdx   int               // avatar color index for kill confirmation
-	killTargetBookmarkID string            // bookmark ID to remove when killing a Later session
+	killTargetLaterID    string            // Later ID to remove when killing a Later session
 	selectActive         bool              // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
 	rotateNext           bool              // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
 	pendingSelectPaneID  string            // pane to auto-select once it appears in the sidebar
@@ -250,15 +250,15 @@ type Model struct {
 	macroEditor          ui.MacroEditorModel
 	copilot              ui.CopilotModel
 	copilotInput         ui.RelayModel
-	copilotVisible       bool      // overlay rendered but may not be focused (StateNormal + visible = read-only)
-	copilotMode          string    // CopilotModeFloat or CopilotModeDocked (persisted)
-	copilotDockedW       int       // docked panel width in columns (persisted)
-	lastTabTime          time.Time // for double-tab detection
-	copilotOffX          int       // horizontal offset from default position (negative = left) [float only]
-	copilotOffY          int       // vertical offset from default position (negative = up) [float only]
-	copilotDW            int       // delta width from default (positive = wider) [float only]
-	copilotDH            int       // delta max-height from default (positive = taller) [float only]
-	destroyer *destroyer.Model // session destroyer easter egg (nil = inactive)
+	copilotVisible       bool             // overlay rendered but may not be focused (StateNormal + visible = read-only)
+	copilotMode          string           // CopilotModeFloat or CopilotModeDocked (persisted)
+	copilotDockedW       int              // docked panel width in columns (persisted)
+	lastTabTime          time.Time        // for double-tab detection
+	copilotOffX          int              // horizontal offset from default position (negative = left) [float only]
+	copilotOffY          int              // vertical offset from default position (negative = up) [float only]
+	copilotDW            int              // delta width from default (positive = wider) [float only]
+	copilotDH            int              // delta max-height from default (positive = taller) [float only]
+	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -299,7 +299,7 @@ func NewModel(client *daemon.Client) Model {
 		copilotDW:         loadPrefInt("copilotDW", 0),
 		copilotDH:         loadPrefInt("copilotDH", 0),
 		macros:            claude.LoadMacros(nil),
-		chatOutlineMode:       loadPrefString("chatOutlineMode", ChatOutlineOverlay),
+		chatOutlineMode:   loadPrefString("chatOutlineMode", ChatOutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),
 		minimapMode:       loadPrefString("minimapMode", MinimapAuto),
 		minimapMaxH:       loadPrefInt("minimapMaxH", defaultMinimapMaxH),
@@ -422,8 +422,8 @@ func (m Model) shouldDockMinimap() bool {
 
 // Copilot float overlay geometry constants — shared between view.go and update_mouse.go.
 const (
-	copilotFloatMaxW = 70 // max overlay width in columns
-	copilotFloatMinH = 5  // min overlay height (title + 1 msg + input + border)
+	copilotFloatMaxW  = 70 // max overlay width in columns
+	copilotFloatMinH  = 5  // min overlay height (title + 1 msg + input + border)
 	copilotFloatMargR = 2  // right margin from content edge
 	copilotFloatMargT = 1  // top margin from content edge
 )

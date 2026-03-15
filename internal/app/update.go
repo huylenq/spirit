@@ -15,7 +15,6 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/ui"
 )
 
-
 // executeChord dispatches a completed chord sequence to its action.
 func (m Model) executeChord(chord Chord) (tea.Model, tea.Cmd) {
 	return chord.Execute(&m)
@@ -72,7 +71,7 @@ func sessionDisplayTitle(s claude.ClaudeSession) string {
 }
 
 // killPaneCmd sends SIGTERM to the claude process, kills the tmux pane, and cleans up status files.
-func killPaneCmd(paneID, sessionID string, pid int, bookmarkID string) tea.Cmd {
+func killPaneCmd(paneID, sessionID string, pid int, laterID string) tea.Cmd {
 	return func() tea.Msg {
 		if pid > 0 {
 			syscall.Kill(pid, syscall.SIGTERM) //nolint:errcheck
@@ -82,8 +81,8 @@ func killPaneCmd(paneID, sessionID string, pid int, bookmarkID string) tea.Cmd {
 			claude.RemoveSessionFiles(sessionID)
 		}
 		claude.RemovePaneMapping(paneID)
-		if bookmarkID != "" {
-			claude.RemoveLaterBookmark(bookmarkID)
+		if laterID != "" {
+			claude.RemoveLaterRecord(laterID)
 		}
 		return PaneKilledMsg{}
 	}
@@ -212,7 +211,7 @@ func (m *Model) tryInitialSelection() bool {
 		if !moved {
 			items := m.sidebar.Items()
 			for _, s := range items {
-				if s.TmuxSession == m.origPane.Session && s.LaterBookmarkID == "" {
+				if s.TmuxSession == m.origPane.Session && s.LaterID == "" {
 					if m.sidebar.SelectByPaneID(s.PaneID) {
 						moved = true
 						targetPaneID = s.PaneID
@@ -395,7 +394,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showMinimap {
 			paneStatuses := make(map[string]int)
 			for _, s := range msg.Sessions {
-				if s.LaterBookmarkID != "" {
+				if s.LaterID != "" {
 					paneStatuses[s.PaneID] = ui.PaneStatusLater
 				} else {
 					paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)
@@ -602,7 +601,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.killTargetTitle = ""
 		m.killTargetAnimalIdx = 0
 		m.killTargetColorIdx = 0
-		m.killTargetBookmarkID = ""
+		m.killTargetLaterID = ""
 		if msg.Err != nil {
 			return m, m.setFlash("kill failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
@@ -630,7 +629,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		paneStatuses := make(map[string]int)
 		paneAvatars := make(map[string]ui.PaneAvatarInfo)
 		for _, s := range m.sessions {
-			if s.LaterBookmarkID != "" {
+			if s.LaterID != "" {
 				paneStatuses[s.PaneID] = ui.PaneStatusLater
 			} else {
 				paneStatuses[s.PaneID] = claudeStatusToPane(s.Status)

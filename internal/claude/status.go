@@ -463,19 +463,19 @@ func CleanStale(activeSessionIDs map[string]bool, activePaneIDs map[string]bool)
 	return nil
 }
 
-// --- Later bookmark CRUD ---
+// --- Later record CRUD ---
 
 func laterDir() string {
 	return filepath.Join(StatusDir(), "later")
 }
 
-func GenerateBookmarkID() string {
+func GenerateLaterID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-func WriteLaterBookmark(bm LaterBookmark) error {
+func WriteLaterRecord(bm LaterRecord) error {
 	dir := laterDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -487,19 +487,19 @@ func WriteLaterBookmark(bm LaterBookmark) error {
 	return os.WriteFile(filepath.Join(dir, bm.ID+".json"), data, 0o644)
 }
 
-func ReadLaterBookmark(id string) (*LaterBookmark, error) {
+func ReadLaterRecord(id string) (*LaterRecord, error) {
 	data, err := os.ReadFile(filepath.Join(laterDir(), id+".json"))
 	if err != nil {
 		return nil, err
 	}
-	var bm LaterBookmark
+	var bm LaterRecord
 	if err := json.Unmarshal(data, &bm); err != nil {
 		return nil, err
 	}
 	return &bm, nil
 }
 
-func ReadAllLaterBookmarks() ([]LaterBookmark, error) {
+func ReadAllLaterRecords() ([]LaterRecord, error) {
 	dir := laterDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -508,7 +508,7 @@ func ReadAllLaterBookmarks() ([]LaterBookmark, error) {
 		}
 		return nil, err
 	}
-	var bookmarks []LaterBookmark
+	var records []LaterRecord
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -517,23 +517,23 @@ func ReadAllLaterBookmarks() ([]LaterBookmark, error) {
 		if err != nil {
 			continue
 		}
-		var bm LaterBookmark
+		var bm LaterRecord
 		if err := json.Unmarshal(data, &bm); err != nil {
 			continue
 		}
-		bookmarks = append(bookmarks, bm)
+		records = append(records, bm)
 	}
-	return bookmarks, nil
+	return records, nil
 }
 
-func RemoveLaterBookmark(id string) {
+func RemoveLaterRecord(id string) {
 	os.Remove(filepath.Join(laterDir(), id+".json"))
 }
 
-// FindBookmarkIDByPane scans bookmarks to find one matching the given pane ID.
-func FindBookmarkIDByPane(paneID string) string {
-	bookmarks, _ := ReadAllLaterBookmarks()
-	for _, bm := range bookmarks {
+// FindLaterIDByPane scans Later records to find one matching the given pane ID.
+func FindLaterIDByPane(paneID string) string {
+	records, _ := ReadAllLaterRecords()
+	for _, bm := range records {
 		if bm.PaneID == paneID {
 			return bm.ID
 		}

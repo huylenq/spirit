@@ -68,10 +68,10 @@ hook_events(id) -> [{time, hook_type, effect}]
   Get hook events for session.
 
 later(id)
-  Bookmark session for later review.
+  Mark session for later review.
 
 later_kill(id)
-  Bookmark session and kill its pane.
+  Mark session for later and kill its pane.
 
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
@@ -88,8 +88,8 @@ synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
 transcript(id) -> []string
   Get user messages from session transcript.
 
-unlater(bookmark_id)
-  Remove a bookmark by its bookmark ID.
+unlater(later_id)
+  Remove a Later record by its ID.
 
 ### Backlog
 
