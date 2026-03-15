@@ -89,6 +89,7 @@ type SidebarModel struct {
 	inlineTagBacklogID  string           // backlog item with active inline tag input (empty = none)
 	ShowAutoJump        bool             // when false, suppress auto-jump visual indicator
 	cardMode            bool             // when true, renderItem skips the selection bar prefix (used by RenderCard)
+	cardStatsRight      string           // in card mode, renderItem stores statsRight here for RenderCard to pin
 	flaggedSessions     map[string]bool  // paneID → flagged
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
 	numberSlots         map[int]string   // slot (1-9) → PaneID
@@ -267,8 +268,8 @@ func (m *SidebarModel) SetItems(items []claude.ClaudeSession) {
 		}
 	}
 
-	// Clear number slots for terminated, phantom, or removed sessions.
-	if len(m.numberSlots) > 0 {
+	// Clear slots and flags for terminated, phantom, or removed sessions.
+	if len(m.numberSlots) > 0 || len(m.flaggedSessions) > 0 {
 		aliveIDs := make(map[string]bool, len(items))
 		for _, s := range items {
 			if sessionOrder(s) != OrderOther && !s.IsPhantom {
@@ -278,6 +279,11 @@ func (m *SidebarModel) SetItems(items []claude.ClaudeSession) {
 		for slot, paneID := range m.numberSlots {
 			if !aliveIDs[paneID] {
 				delete(m.numberSlots, slot)
+			}
+		}
+		for paneID := range m.flaggedSessions {
+			if !aliveIDs[paneID] {
+				delete(m.flaggedSessions, paneID)
 			}
 		}
 	}
@@ -376,7 +382,11 @@ func (m *SidebarModel) ToggleFlagSelected() {
 			if m.flaggedBacklogs == nil {
 				m.flaggedBacklogs = make(map[string]bool)
 			}
-			m.flaggedBacklogs[backlog.ID] = !m.flaggedBacklogs[backlog.ID]
+			if m.flaggedBacklogs[backlog.ID] {
+				delete(m.flaggedBacklogs, backlog.ID)
+			} else {
+				m.flaggedBacklogs[backlog.ID] = true
+			}
 		}
 		return
 	}
@@ -384,7 +394,11 @@ func (m *SidebarModel) ToggleFlagSelected() {
 		if m.flaggedSessions == nil {
 			m.flaggedSessions = make(map[string]bool)
 		}
-		m.flaggedSessions[s.PaneID] = !m.flaggedSessions[s.PaneID]
+		if m.flaggedSessions[s.PaneID] {
+			delete(m.flaggedSessions, s.PaneID)
+		} else {
+			m.flaggedSessions[s.PaneID] = true
+		}
 	}
 }
 
@@ -429,6 +443,29 @@ func (m SidebarModel) SlotForSession(paneID string) int {
 // PaneIDForSlot returns the paneID bound to slot n, or "" if unbound.
 func (m SidebarModel) PaneIDForSlot(n int) string {
 	return m.numberSlots[n]
+}
+
+// SidebarState holds the persistable parts of sidebar UI state.
+type SidebarState struct {
+	FlaggedSessions map[string]bool `json:"flagged_sessions,omitempty"`
+	FlaggedBacklogs map[string]bool `json:"flagged_backlogs,omitempty"`
+	NumberSlots     map[int]string  `json:"number_slots,omitempty"`
+}
+
+// ExportState returns a snapshot of the sidebar's persistable state.
+func (m SidebarModel) ExportState() SidebarState {
+	return SidebarState{
+		FlaggedSessions: m.flaggedSessions,
+		FlaggedBacklogs: m.flaggedBacklogs,
+		NumberSlots:     m.numberSlots,
+	}
+}
+
+// ImportState restores persisted sidebar state.
+func (m *SidebarModel) ImportState(st SidebarState) {
+	m.flaggedSessions = st.FlaggedSessions
+	m.flaggedBacklogs = st.FlaggedBacklogs
+	m.numberSlots = st.NumberSlots
 }
 
 // BacklogsInProject returns all backlog items matching a project name.

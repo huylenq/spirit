@@ -162,6 +162,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.String() == "f":
 		m.sidebar.ToggleFlagSelected()
+		saveSidebarState(m.sidebar.ExportState())
 		return m, nil
 
 	case isSlotKey(msg.String()):
@@ -175,6 +176,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case isAltSlotKey(msg.String()):
 		n := altSlotKeyNum(msg.String())
 		if m.sidebar.BindSlot(n) {
+			saveSidebarState(m.sidebar.ExportState())
 			if m.sidebar.PaneIDForSlot(n) != "" {
 				return m, m.setFlash(fmt.Sprintf("Bound to slot %d", n), false, 3*time.Second)
 			}
@@ -237,6 +239,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.recordJump()
 		if isClaude && m.sidebar.SelectByPaneID(paneID) {
+			m.workQueue.SelectByPaneID(paneID)
 			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, false)...)
 			}
@@ -283,6 +286,11 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.Up):
 		m.backlogScroll = 0
+		if m.viewMode == ViewWorkQueue {
+			// In work queue: j/k navigate the horizontal queue (up=left, down=right)
+			m.workQueue.MoveLeft()
+			return m, m.syncWorkQueueSelection()
+		}
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.sidebar.MoveUpProject()
 			if s, ok := m.sidebar.SelectedProjectSession(); ok {
@@ -298,6 +306,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.Down):
 		m.backlogScroll = 0
+		if m.viewMode == ViewWorkQueue {
+			m.workQueue.MoveRight()
+			return m, m.syncWorkQueueSelection()
+		}
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.sidebar.MoveDownProject()
 			if s, ok := m.sidebar.SelectedProjectSession(); ok {
@@ -313,6 +325,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.GoBottom):
 		m.backlogScroll = 0
+		if m.viewMode == ViewWorkQueue {
+			m.workQueue.MoveToEnd()
+			return m, m.syncWorkQueueSelection()
+		}
 		m.recordJump()
 		m.sidebar.MoveToBottom()
 		if s, ok := m.sidebar.SelectedItem(); ok {

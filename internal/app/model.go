@@ -271,6 +271,7 @@ type Model struct {
 
 func NewModel(client *daemon.Client) Model {
 	sidebar := ui.NewSidebarModel()
+	sidebar.ImportState(loadSidebarState())
 	sidebar.SetGroupByProject(loadPrefBool("groupByProject"))
 	migratePref("showIdeas", "showBacklog")
 	migratePref("showBacklog", "backlogExpanded")
