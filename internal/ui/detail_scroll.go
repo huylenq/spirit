@@ -33,6 +33,7 @@ func (m *DetailModel) scrollDown(n int) {
 		return
 	}
 	m.viewport.LineDown(n)
+	m.stickyBottom = m.viewport.AtBottom()
 }
 
 func (m *DetailModel) scrollUp(n int) {
@@ -64,6 +65,7 @@ func (m *DetailModel) scrollUp(n int) {
 		return
 	}
 	m.viewport.LineUp(n)
+	m.stickyBottom = false
 }
 
 // ensureTranscriptCursorVisible adjusts transcriptScroll so the cursor is in view,

@@ -68,16 +68,17 @@ type DetailModel struct {
 	diffHunkFiles            []diffHunkFile
 	diffScroll               int
 	diffSimThreshold         float64 // similarity threshold for ~ vs separate -/+ lines
-	insightIdx               int    // random insight index, picked on session switch
-	renderedInsight          string // glamour-rendered insight (single line, ANSI-styled)
-	renderedInsightSrc       string // raw insight text that produced renderedInsight (change guard)
-	pulsePhase               int    // animation phase for pulsing last user-message bullet (incremented on spinner tick)
-	cachedReplyBlock         string // cached rendered reply block
-	cachedReplyMsg           string // LastAssistantMessage that produced cachedReplyBlock
-	cachedReplyWidth         int    // innerWidth that produced cachedReplyBlock
+	insightIdx               int     // random insight index, picked on session switch
+	renderedInsight          string  // glamour-rendered insight (single line, ANSI-styled)
+	renderedInsightSrc       string  // raw insight text that produced renderedInsight (change guard)
+	pulsePhase               int     // animation phase for pulsing last user-message bullet (incremented on spinner tick)
+	cachedReplyBlock         string  // cached rendered reply block
+	cachedReplyMsg           string  // LastAssistantMessage that produced cachedReplyBlock
+	cachedReplyWidth         int     // innerWidth that produced cachedReplyBlock
 	width                    int
 	height                   int
 	ready                    bool
+	stickyBottom             bool // auto-scroll to bottom on content change
 	allQuiet                 AllQuietAnim
 }
 
@@ -96,6 +97,7 @@ func (m *DetailModel) SetSize(w, h int) {
 	if !m.ready {
 		m.viewport = viewport.New(vpWidth, contentHeight)
 		m.ready = true
+		m.stickyBottom = true
 		if m.content != "" {
 			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
 			m.viewport.GotoBottom() // content arrived before size was known
@@ -388,13 +390,16 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 		m.renderedInsight = ""
 		m.renderedInsightSrc = ""
 	}
+	if isNew {
+		m.stickyBottom = true
+	}
 	if m.content == content {
 		return // skip re-render when content unchanged (daemon re-captures every ~1s)
 	}
 	m.content = content
 	if m.ready {
 		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
-		if isNew {
+		if isNew || m.stickyBottom {
 			m.viewport.GotoBottom()
 		}
 	}
@@ -405,6 +410,7 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	if isNewSession {
 		m.hookScroll = 0
 		m.pendingMsgReset = true
+		m.stickyBottom = true
 		if len(s.Insights) > 0 {
 			m.insightIdx = rand.Intn(len(s.Insights))
 		}
@@ -418,7 +424,7 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	m.recomputeOffsets()
 	if m.ready {
 		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
-		if isNewSession {
+		if isNewSession || m.stickyBottom {
 			m.viewport.GotoBottom()
 		}
 	}
