@@ -125,7 +125,7 @@ var agentCommands = []agentCommand{
 	},
 	{
 		Name: "later", Args: "<id> [--kill]",
-		Desc: "Bookmark (--kill to also kill)",
+		Desc: "Mark later (--kill to also kill)",
 		Examples: []string{
 			"later SESSION_ID",
 			"later SESSION_ID --kill",
@@ -610,9 +610,9 @@ func runLater() {
 	s := resolveSessionOrDie(client, id)
 	var err error
 	if kill {
-		err = client.LaterKill(s.PaneID, s.PID, id)
+		err = client.LaterKill(s.PaneID, s.PID, id, "")
 	} else {
-		err = client.Later(s.PaneID, id)
+		err = client.Later(s.PaneID, id, "")
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "later: %v\n", err)
