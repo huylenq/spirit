@@ -52,6 +52,26 @@ func (m Model) execCommitAndDone() (Model, tea.Cmd) {
 	}
 }
 
+func (m Model) execCommitSimplifyAndDone() (Model, tea.Cmd) {
+	s, ok := m.sidebar.SelectedItem()
+	if !ok {
+		return m, nil
+	}
+	if s.Status != claude.StatusUserTurn {
+		return m, func() tea.Msg { return flashErrorMsg("session is busy") }
+	}
+	if s.CommitDonePending {
+		return m, func() tea.Msg { return flashInfoMsg("commit+simplify+done already pending") }
+	}
+	paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
+	return m, func() tea.Msg {
+		if err := m.client.CommitSimplifyAndDone(paneID, sessionID, pid); err != nil {
+			return flashErrorMsg("commit+simplify+done failed: " + err.Error())
+		}
+		return flashInfoMsg("commit+simplify+done started")
+	}
+}
+
 func (m Model) execToggleDiffs() (Model, tea.Cmd) {
 	m.showDiffs = !m.showDiffs
 	m.showHooks = false

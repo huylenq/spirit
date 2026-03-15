@@ -12,7 +12,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
-		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone,
+		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
 		k.JumpBack, k.Note, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -31,20 +31,20 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 }
 
 type KeyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Enter      key.Binding
-	CtrlEnter  key.Binding
-	Search     key.Binding
-	Later       key.Binding
-	LaterKill   key.Binding
+	Up             key.Binding
+	Down           key.Binding
+	Enter          key.Binding
+	CtrlEnter      key.Binding
+	Search         key.Binding
+	Later          key.Binding
+	LaterKill      key.Binding
 	LaterToggle    key.Binding
 	BacklogToggle  key.Binding
 	ClaudingToggle key.Binding
-	ApplyTitle key.Binding
-	ChatOutline key.Binding
-	Quit       key.Binding
-	Escape     key.Binding
+	ApplyTitle     key.Binding
+	ChatOutline    key.Binding
+	Quit           key.Binding
+	Escape         key.Binding
 
 	Minimap       key.Binding
 	MinimapMode   key.Binding
@@ -97,6 +97,9 @@ type KeyMap struct {
 
 	// Commit and done (send /commit, wait, verify, kill)
 	CommitAndDone key.Binding
+
+	// Commit, simplify, and done (send /commit, then /simplify, then kill)
+	CommitSimplifyAndDone key.Binding
 
 	// Debug overlay toggle
 	Debug key.Binding
@@ -392,8 +395,12 @@ var Keys = KeyMap{
 		key.WithKeys("C"),
 		key.WithHelp("C", "commit+done"),
 	),
-	Debug: key.NewBinding(
+	CommitSimplifyAndDone: key.NewBinding(
 		key.WithKeys("D"),
+		key.WithHelp("D", "commit+simplify+done"),
+	),
+	Debug: key.NewBinding(
+		key.WithKeys("ctrl+shift+d"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),

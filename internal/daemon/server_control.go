@@ -11,7 +11,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
 
-func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
+func (d *Daemon) handleCommit(data json.RawMessage, killOnDone, runSimplify bool) *Response {
 	var req CommitDoneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
@@ -24,11 +24,13 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	}
 	// Register the pending commit keyed by sessionID
 	d.commitDoneMu.Lock()
-	d.commitDonePanes[req.SessionID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, CreatedAt: time.Now()}
+	d.commitDonePanes[req.SessionID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, RunSimplify: runSimplify, CreatedAt: time.Now()}
 	d.commitDoneMu.Unlock()
 	d.nudge()
 	tag := "commit"
-	if killOnDone {
+	if runSimplify {
+		tag = "commit-simplify-done"
+	} else if killOnDone {
 		tag = "commit-done"
 	}
 	log.Printf("%s: registered session %s (pane %s)", tag, req.SessionID, req.PaneID)

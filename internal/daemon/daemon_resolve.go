@@ -58,18 +58,39 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			}
 			continue
 		}
-		if s.LastActionCommit && entry.KillOnDone {
+		if s.LastActionCommit && entry.RunSimplify && !entry.SimplifyPhase {
+			// Commit done — send /simplify and wait for it to finish before killing
+			log.Printf("commit-simplify-done: session %s committed, sending /simplify", sessionID)
+			if err := tmux.SendKeysLiteral(s.PaneID, "/simplify"); err != nil {
+				log.Printf("commit-simplify-done: /simplify send failed: %v, killing anyway", err)
+				// fall through to kill below
+			} else {
+				entry.SimplifyPhase = true
+				entry.SawWorking = false
+				entry.CreatedAt = time.Now()
+				d.commitDonePanes[sessionID] = entry
+				continue
+			}
+		}
+		shouldKill := false
+		if entry.SimplifyPhase {
+			log.Printf("commit-simplify-done: session %s simplify complete, killing pane %s", sessionID, s.PaneID)
+			shouldKill = true
+		} else if s.LastActionCommit && entry.KillOnDone {
 			log.Printf("commit-done: session %s committed, killing pane %s", sessionID, s.PaneID)
+			shouldKill = true
+		} else if s.LastActionCommit {
+			log.Printf("commit: session %s committed", sessionID)
+		} else {
+			log.Printf("commit: session %s done but no commit detected", sessionID)
+		}
+		if shouldKill {
 			if entry.PID > 0 {
 				syscall.Kill(entry.PID, syscall.SIGTERM) //nolint:errcheck
 			}
 			tmux.KillPane(s.PaneID) //nolint:errcheck
 			claude.RemoveSessionFiles(sessionID)
 			claude.RemovePaneMapping(s.PaneID)
-		} else if s.LastActionCommit {
-			log.Printf("commit: session %s committed", sessionID)
-		} else {
-			log.Printf("commit: session %s done but no commit detected", sessionID)
 		}
 		delete(d.commitDonePanes, sessionID)
 	}

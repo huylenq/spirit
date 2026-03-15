@@ -69,6 +69,11 @@ func buildCommands() []Command {
 			Enabled: canCommit,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitAndDone() },
 		},
+		{
+			Name: "Commit + simplify + done", Hotkey: "D",
+			Enabled: canCommit,
+			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitSimplifyAndDone() },
+		},
 
 		{
 			Name: "New session", Hotkey: "a",
@@ -79,7 +84,7 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
 		},
 		{
-			Name:    "New session at path", Hotkey: "A",
+			Name: "New session at path", Hotkey: "A",
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSessionAtPath() },
 		},
 
