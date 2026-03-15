@@ -192,11 +192,8 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 				sb.WriteString(pillCapStyle.Render(cap))
 			} else {
 				cap = IconPillRight
-				// Right cap fg must match the gradient at the last filled position
-				capT := float64(weeklyFilledChars-1-thickStart) / float64(max(weeklyFilledChars-thickStart, 1))
-				capT = cubicEaseIn(capT)
-				capColor := blendHex(colorWeeklyBg, colorWeeklyTail, capT)
-				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(capColor)).Render(cap))
+				// Right cap = gradient endpoint (t=1 after ease-in → colorWeeklyTail)
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(colorWeeklyTail)).Render(cap))
 			}
 			continue
 		}
@@ -222,7 +219,7 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 			}
 			sb.WriteString(style.Render(glyph))
 		} else if inWeekly {
-			t := float64(i-thickStart) / float64(max(weeklyFilledChars-thickStart, 1))
+			t := float64(i-thickStart) / float64(max(weeklyFilledChars-1-thickStart, 1))
 			t = cubicEaseIn(t) // stays near bg, accelerates sharply at tail
 			bg := blendHex(colorWeeklyBg, colorWeeklyTail, t)
 			style := lipgloss.NewStyle().
