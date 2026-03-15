@@ -113,7 +113,7 @@ func main() {
 	p := tea.NewProgram(
 		app.NewModel(client),
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+		tea.WithMouseAllMotion(),
 	)
 
 	if _, err := p.Run(); err != nil {
