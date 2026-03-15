@@ -89,7 +89,6 @@ type SidebarModel struct {
 	inlineTagBacklogID  string           // backlog item with active inline tag input (empty = none)
 	ShowAutoJump        bool             // when false, suppress auto-jump visual indicator
 	cardMode            bool             // when true, renderItem skips the selection bar prefix (used by RenderCard)
-	cardStatsRight      string           // in card mode, renderItem stores statsRight here for RenderCard to pin
 	flaggedSessions     map[string]bool  // paneID → flagged
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
 	numberSlots         map[int]string   // slot (1-9) → PaneID

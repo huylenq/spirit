@@ -238,8 +238,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.recordJump()
-		if isClaude && m.sidebar.SelectByPaneID(paneID) {
-			m.workQueue.SelectByPaneID(paneID)
+		if isClaude && m.selectByPaneID(paneID) {
 			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, tea.Batch(m.fetchForSelection(s, false)...)
 			}

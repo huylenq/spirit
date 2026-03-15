@@ -15,6 +15,13 @@ func (m *Model) refreshSessions() {
 	m.syncWorkQueue()
 }
 
+// selectByPaneID selects a session in both the sidebar and work queue.
+// Returns true if the sidebar found the pane.
+func (m *Model) selectByPaneID(paneID string) bool {
+	m.workQueue.SelectByPaneID(paneID)
+	return m.sidebar.SelectByPaneID(paneID)
+}
+
 // syncWorkQueue updates the work queue model with the current session list
 // and autojump target.
 func (m *Model) syncWorkQueue() {

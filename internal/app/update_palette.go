@@ -126,7 +126,7 @@ func (m Model) handleKeyNewSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Restore previous session-level selection if we came from there
 		if m.newSessionWasSession {
 			m.sidebar.EnterSessionLevel()
-			m.sidebar.SelectByPaneID(m.newSessionPrevPaneID)
+			m.selectByPaneID(m.newSessionPrevPaneID)
 			m.newSessionWasSession = false
 		}
 		return m, nil

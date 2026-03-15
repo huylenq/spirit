@@ -14,8 +14,8 @@ const (
 	workQueueCardW       = 62 // card width per session (including border)
 	workQueueCardInnerW  = 60 // card content width (cardW - 2 for border sides)
 	workQueueCardInnerH  = 3  // card content height (height - 2 for border top/bottom)
-	workQueueOthersW     = 12 // minimum width for the compacted "others" section
-	workQueueCardGap     = 0  // gap between cards (borders serve as visual separation)
+	workQueueOthersW     = 28 // width for the compacted "others" section (avatar + status + title)
+	workQueueCardGap     = 1  // margin between cards
 )
 
 // WorkQueueModel manages the horizontal work queue strip that shows user-turn
@@ -114,6 +114,14 @@ func (m *WorkQueueModel) MoveLeft() {
 func (m *WorkQueueModel) MoveRight() {
 	if m.cursor < len(m.queue)-1 {
 		m.cursor++
+		m.clampScroll()
+	}
+}
+
+// MoveToEnd moves the cursor to the last (rightmost/newest) queue item.
+func (m *WorkQueueModel) MoveToEnd() {
+	if len(m.queue) > 0 {
+		m.cursor = len(m.queue) - 1
 		m.clampScroll()
 	}
 }
@@ -227,10 +235,10 @@ func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, ar
 		isAutoJump := !isSelected && s.PaneID == m.autoJumpID
 		content := sidebar.RenderCard(innerW, workQueueCardInnerH, isSelected, isAutoJump, s, dw)
 
-		// Wrap in border — use ▌ as left border for selected/autojump (the selection bar)
+		// Wrap in border — only selected gets the solid ▌ bar
 		border := lipgloss.RoundedBorder()
 		borderColor := ColorBorder
-		if isSelected || isAutoJump {
+		if isSelected {
 			border.Left = "▌"
 			border.TopLeft = "╭"
 			border.BottomLeft = "╰"

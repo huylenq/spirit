@@ -126,7 +126,7 @@ func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
 		return nil
 	}
 	m.recordJump()
-	if !m.sidebar.SelectByPaneID(targetID) {
+	if !m.selectByPaneID(targetID) {
 		return nil
 	}
 	m.recordJump() // register destination so ] can reach it
@@ -149,7 +149,7 @@ func (m Model) doJump(target string) (tea.Model, tea.Cmd) {
 	if cur, ok := m.sidebar.SelectedItem(); ok {
 		prevPaneID = cur.PaneID
 	}
-	if !m.sidebar.SelectByPaneID(target) {
+	if !m.selectByPaneID(target) {
 		return m, nil
 	}
 	m.sidebar.SetTrail(prevPaneID)
@@ -191,7 +191,7 @@ func (m *Model) tryInitialSelection() bool {
 	if m.rotateNext {
 		// Skip originating pane so ctrl+tab always rotates to a different session
 		if tid := m.sidebar.AutoJumpTarget(m.origPane.PaneID); tid != "" {
-			if m.sidebar.SelectByPaneID(tid) {
+			if m.selectByPaneID(tid) {
 				moved = true
 				targetPaneID = tid
 			}
@@ -200,7 +200,7 @@ func (m *Model) tryInitialSelection() bool {
 		// ctrl-space: exact match on originating pane (any status)
 		for _, s := range m.sessions {
 			if s.PaneID == m.origPane.PaneID {
-				if m.sidebar.SelectByPaneID(m.origPane.PaneID) {
+				if m.selectByPaneID(m.origPane.PaneID) {
 					moved = true
 					targetPaneID = m.origPane.PaneID
 				}
@@ -212,7 +212,7 @@ func (m *Model) tryInitialSelection() bool {
 			items := m.sidebar.Items()
 			for _, s := range items {
 				if s.TmuxSession == m.origPane.Session && s.LaterID == "" {
-					if m.sidebar.SelectByPaneID(s.PaneID) {
+					if m.selectByPaneID(s.PaneID) {
 						moved = true
 						targetPaneID = s.PaneID
 					}
@@ -379,7 +379,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Auto-select newly created session once it appears
 		if m.pendingSelectPaneID != "" {
 			m.sidebar.EnterSessionLevel() // switch from project → session level
-			if m.sidebar.SelectByPaneID(m.pendingSelectPaneID) {
+			if m.selectByPaneID(m.pendingSelectPaneID) {
 				m.pendingSelectPaneID = ""
 			}
 		}
@@ -584,7 +584,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.newSessionWasSession {
 			// Invoked from session level — stay on the original session
 			m.sidebar.EnterSessionLevel()
-			m.sidebar.SelectByPaneID(m.newSessionPrevPaneID)
+			m.selectByPaneID(m.newSessionPrevPaneID)
 		} else {
 			// Invoked from project level — auto-jump to the new session
 			m.pendingSelectPaneID = msg.PaneID

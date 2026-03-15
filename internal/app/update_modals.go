@@ -19,6 +19,10 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ref := m.sidebar.CursorRef()
 		m.sidebar.ClearNarrow()
 		m.sidebar.SelectByRef(ref)
+		// Sync work queue cursor to match sidebar selection
+		if s, ok := m.sidebar.SelectedItem(); ok {
+			m.workQueue.SelectByPaneID(s.PaneID)
+		}
 		// Trigger landing flash so the jumped-to item is visually highlighted
 		m.sidebar.SetLandByRef(ref, ui.SearchFlashFrames)
 		return m, nil
