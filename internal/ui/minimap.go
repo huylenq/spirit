@@ -15,8 +15,8 @@ type MinimapModel struct {
 	selectedPaneID string
 	height         int
 	windowCols     int    // columns per window in the grid (default 40)
-	collapse    bool   // collapse single-pane windows to narrower columns
-	spinnerView string // current spinner animation frame (set externally)
+	collapse       bool   // collapse single-pane windows to narrower columns
+	spinnerView    string // current spinner animation frame (set externally)
 	LastNavDebug   string // debug: last navigation attempt result
 }
 
@@ -25,7 +25,7 @@ const (
 	PaneStatusNone      = 0 // not a Claude pane
 	PaneStatusAgentTurn = 1
 	PaneStatusUserTurn  = 2 // "user-turn"
-	PaneStatusLater     = 3 // bookmarked pane
+	PaneStatusLater     = 3 // later pane
 )
 
 type minimapPane struct {
@@ -36,7 +36,7 @@ type minimapPane struct {
 	PaneTitle   string
 	PaneIndex   int
 	// Absolute pixel coords within the window
-	Left, Top, Width, Height int
+	Left, Top, Width, Height  int
 	WindowWidth, WindowHeight int
 	Status                    int // PaneStatus* constant
 	IsSelected                bool
@@ -101,7 +101,7 @@ var (
 
 const DefaultMinimapWindowCols = 40
 const collapsedWindowCols = 8 // narrower column for single-pane windows
-const collapsedGridH = 3       // minimal vertical rows for collapsed single-pane windows
+const collapsedGridH = 3      // minimal vertical rows for collapsed single-pane windows
 
 func NewMinimapModel() MinimapModel {
 	return MinimapModel{windowCols: DefaultMinimapWindowCols}
