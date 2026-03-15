@@ -194,6 +194,7 @@ type Model struct {
 	sidebarWidthPct      int // percentage of total width for the sidebar
 	ready                bool
 	err                  error
+	autoJumpOn           bool              // cached Flag("autoJump") — avoids disk read per frame
 	autoJumpTextUntil    time.Time         // show "ON"/"OFF" text next to autojump glyph until this time
 	flashMsg             string            // transient message overlay
 	flashIsError         bool              // true = error style, false = info style
@@ -268,7 +269,8 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetBacklogExpanded(loadPrefBool("backlogExpanded"))
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
-	sidebar.ShowAutoJump = Flag("autoJump")
+	autoJump := Flag("autoJump")
+	sidebar.ShowAutoJump = autoJump
 	s := spinner.New()
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
@@ -309,6 +311,7 @@ func NewModel(client *daemon.Client) Model {
 		rotateNext:        os.Getenv("CMC_ROTATE_NEXT") == "1",
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
+		autoJumpOn:        autoJump,
 	}
 	ensureSettingDefaults()
 	m.detail.SetChatOutlineMode(m.chatOutlineMode)

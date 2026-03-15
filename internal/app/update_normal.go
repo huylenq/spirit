@@ -425,8 +425,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
 
 	case key.Matches(msg, Keys.AutoJumpToggle):
-		newVal := !Flag("autoJump")
+		newVal := !m.autoJumpOn
 		savePrefBool("autoJump", newVal)
+		m.autoJumpOn = newVal
 		m.sidebar.ShowAutoJump = newVal
 		m.autoJumpTextUntil = time.Now().Add(2 * time.Second)
 		return m, nil
@@ -541,9 +542,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit started")
 			}}
-			if Flag("autoJump") {
-				cmds = append(cmds, m.autoJump(s.PaneID)...)
-			}
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -563,9 +562,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return flashInfoMsg("commit+done started")
 			}}
-			if Flag("autoJump") {
-				cmds = append(cmds, m.autoJump(s.PaneID)...)
-			}
+			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
@@ -654,22 +651,16 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// isSlotKey returns true for digit keys "1" through "9".
-func isSlotKey(s string) bool {
-	return len(s) == 1 && s[0] >= '1' && s[0] <= '9'
+// parseSlotDigit extracts the digit 1-9 from a key string at the given offset.
+// Returns the digit and true, or 0 and false if not a valid slot key.
+func parseSlotDigit(s string, expectedLen, digitOffset int) (int, bool) {
+	if len(s) != expectedLen || s[digitOffset] < '1' || s[digitOffset] > '9' {
+		return 0, false
+	}
+	return int(s[digitOffset] - '0'), true
 }
 
-// slotKeyNum converts a slot digit key string to its int value (1-9).
-func slotKeyNum(s string) int {
-	return int(s[0] - '0')
-}
-
-// isAltSlotKey returns true for alt+digit keys "alt+1" through "alt+9".
-func isAltSlotKey(s string) bool {
-	return len(s) == 5 && s[:4] == "alt+" && s[4] >= '1' && s[4] <= '9'
-}
-
-// altSlotKeyNum converts an alt+digit key string to its int value (1-9).
-func altSlotKeyNum(s string) int {
-	return int(s[4] - '0')
-}
+func isSlotKey(s string) bool    { _, ok := parseSlotDigit(s, 1, 0); return ok }
+func slotKeyNum(s string) int    { n, _ := parseSlotDigit(s, 1, 0); return n }
+func isAltSlotKey(s string) bool { _, ok := parseSlotDigit(s, 5, 4); return ok && s[:4] == "alt+" }
+func altSlotKeyNum(s string) int { n, _ := parseSlotDigit(s, 5, 4); return n }

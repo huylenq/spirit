@@ -325,7 +325,7 @@ func renderQuietDashboard(counts AllQuietCounts) string {
 		icon, label, key string
 		count            int
 	}{
-		{IconBolt, "clauding", "alt+c", counts.Clauding},
+		{IconWand, "clauding", "alt+c", counts.Clauding},
 		{IconBookmark, "bookmarked", "alt+w", counts.Later},
 		{IconBacklog, "in backlog", "alt+b", counts.Backlog},
 	}

@@ -446,8 +446,8 @@ var Keys = KeyMap{
 		key.WithHelp("n", "note"),
 	),
 	AutoJumpToggle: key.NewBinding(
-		key.WithKeys("alt+."),
-		key.WithHelp("alt+.", "toggle autojump"),
+		key.WithKeys("alt+j"),
+		key.WithHelp("alt+j", "toggle autojump"),
 	),
 	SlotJump: key.NewBinding(
 		key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"),

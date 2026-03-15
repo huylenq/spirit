@@ -48,6 +48,30 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) handleKeyLaterWait(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.laterRelay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		wait := m.laterRelay.Confirm()
+		m.state = StateNormal
+		// Validate duration if non-empty
+		if wait != "" {
+			if _, err := time.ParseDuration(wait); err != nil {
+				return m, m.setFlash("invalid duration: "+wait, true, 3*time.Second)
+			}
+		}
+		return m.execLaterConfirm(wait)
+	default:
+		ti := m.laterRelay.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		return m, cmd
+	}
+}
+
 func (m Model) handleKeyQueueRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s, ok := m.sidebar.SelectedItem()
 	if !ok {

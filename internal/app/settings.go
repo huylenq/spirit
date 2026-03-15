@@ -135,6 +135,10 @@ func (m *Model) applySettingToModel(key string, prefs map[string]string) {
 		if n, err := strconv.Atoi(prefs[key]); err == nil {
 			m.sidebarWidthPct = n
 		}
+	case "autoJump":
+		v := prefs[key] == "true"
+		m.autoJumpOn = v
+		m.sidebar.ShowAutoJump = v
 	// autoSynthesize: daemon-only (read via readPref on each synthesis attempt), no model state to update
 	}
 	m.applyLayout()

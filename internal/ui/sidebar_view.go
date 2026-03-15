@@ -459,25 +459,14 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 			// Subtitle lines exist — piggyback on the last one
 			lastLine := line[idx+1:]
 			rest := line[:idx+1]
-			lastLineW := lipgloss.Width(lastLine)
 			targetW := m.width - 2
-			if lastLineW >= targetW {
-				// Selected line padded to full width — trim trailing padding to make room
-				trimmed := ansi.Truncate(lastLine, targetW-statsRightWidth, "")
-				trimmedW := lipgloss.Width(trimmed)
-				statsGap := targetW - trimmedW - statsRightWidth
-				if statsGap < 0 {
-					statsGap = 0
-				}
-				line = rest + trimmed + sp(strings.Repeat(" ", statsGap)) + statsRight
-			} else {
-				// Unselected line — append with gap
-				statsGap := targetW - lastLineW - statsRightWidth
-				if statsGap < 1 {
-					statsGap = 1
-				}
-				line = rest + lastLine + strings.Repeat(" ", statsGap) + statsRight
+			trimmed := ansi.Truncate(lastLine, targetW-statsRightWidth, "")
+			trimmedW := lipgloss.Width(trimmed)
+			statsGap := targetW - trimmedW - statsRightWidth
+			if statsGap < 0 {
+				statsGap = 0
 			}
+			line = rest + trimmed + sp(strings.Repeat(" ", statsGap)) + statsRight
 		} else {
 			// No subtitle lines — render stats-only line
 			m.renderStatsLine(&line, "", statsRight, statsRightWidth, isSelected, isAutoJump, sp, barSt, autoJumpBarSt, withBg)

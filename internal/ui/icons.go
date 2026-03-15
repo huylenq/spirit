@@ -2,8 +2,11 @@ package ui
 
 // Nerd Font icon constants — no emoji anywhere
 const (
-	IconBolt      = "\uf0e7" // lightning bolt — agent-turn
-	IconFlag      = "\uf024" // flag — user-turn / needs attention
+	IconBolt        = "\U000f0242" // nf-md-flash_auto — autojump ON
+	IconBoltOutline = "\U000f06d5" // nf-md-flash_outline — autojump OFF
+	IconWand      = "\uf0d0" // nf-fa-magic — agent-turn (clauding)
+	IconFlag      = "\uf024" // flag — item flag marker
+	IconHandRaise = "\uf256" // nf-fa-hand_o_up — user-turn / needs attention
 	IconBookmark  = "\uf02e" // bookmark — later
 	IconHourglass = "\uf251" // hourglass (legacy)
 	IconGitBranch = "\uf418" // git branch

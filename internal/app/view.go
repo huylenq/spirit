@@ -16,7 +16,7 @@ var autoJumpDimStyle = lipgloss.NewStyle().Foreground(ui.ColorMuted)
 // autoJumpIndicator renders the autojump glyph for the header label line.
 // Solid flash when ON, hollow outline when OFF. Shows text briefly after toggling.
 func (m Model) autoJumpIndicator() string {
-	on := Flag("autoJump")
+	on := m.autoJumpOn
 	if on {
 		glyph := ui.IconBolt
 		if time.Now().Before(m.autoJumpTextUntil) {

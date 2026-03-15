@@ -117,8 +117,11 @@ func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
 
 // autoJump selects the user-turn session with the oldest LastChanged
 // (waiting longest), skipping Later and skipPaneID.
-// Returns cmds from fetchForSelection for the newly selected session.
+// Returns nil if autoJump is disabled. Returns cmds from fetchForSelection otherwise.
 func (m *Model) autoJump(skipPaneID string) []tea.Cmd {
+	if !m.autoJumpOn {
+		return nil
+	}
 	targetID := m.sidebar.AutoJumpTarget(skipPaneID)
 	if targetID == "" {
 		return nil

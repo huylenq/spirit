@@ -102,8 +102,6 @@ func (m Model) execLaterConfirm(wait string) (Model, tea.Cmd) {
 		}
 		return flashInfoMsg(withWaitSuffix("saved for later", wait))
 	}}
-	if Flag("autoJump") {
-		cmds = append(cmds, m.autoJump(s.PaneID)...)
-	}
+	cmds = append(cmds, m.autoJump(s.PaneID)...)
 	return m, tea.Batch(cmds...)
 }
