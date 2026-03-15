@@ -37,7 +37,7 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	m.height = rows
 	m.ready = true
 	m.sessions = sessions
-	m.sidebar.SetItems(sessions)
+	m.refreshSessions()
 	m.applyLayout()
 
 	// Discover backlog items from session CWDs

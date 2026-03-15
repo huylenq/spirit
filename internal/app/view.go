@@ -48,11 +48,7 @@ func (m Model) viewInner() string {
 
 	var detailContent string
 	if m.sidebar.IsAllQuiet() {
-		detailContent = m.detail.ViewAllQuiet(ui.AllQuietCounts{
-			Clauding: m.sidebar.ClaudingCount(),
-			Later:    m.sidebar.LaterCount(),
-			Backlog:  m.sidebar.BacklogCount(),
-		})
+		detailContent = m.detail.ViewAllQuiet(m.allQuietCounts())
 	} else {
 		detailContent = m.detail.View()
 	}
@@ -164,82 +160,12 @@ func (m Model) View() string {
 		m.detail.SetRelayView("")
 	}
 
-	// Sidebar panel
-	sidebarWidth := m.sidebarPanelWidth()
-	copilotDockedW := m.copilotDockedWidth()
-	detailWidth := innerWidth - sidebarWidth - copilotDockedW
-
-	sidebarContent := m.sidebar.View()
-	sidebarPanel := ui.SidebarPanelStyle.
-		Width(sidebarWidth).
-		Height(contentHeight).
-		MaxHeight(contentHeight).
-		Render(sidebarContent)
-
-	// Queue section below preview (always visible when items pending, interactive in queue mode)
-	var queueView string
-	var queueHeight int
-	if s, ok := m.sidebar.SelectedItem(); ok {
-		showQueue := len(s.QueuePending) > 0
-		if showQueue {
-			queueView = m.renderQueueSection(s, detailWidth)
-			queueHeight = lipgloss.Height(queueView)
-		}
-	}
-
-	// Detail panel (reduced height when queue section visible)
-	detailH := contentHeight - queueHeight
-	var detailContent string
-	if m.state == StateBacklogPrompt && !m.backlogOverlay {
-		project := ""
-		if m.activeBacklogCWD != "" {
-			project = filepath.Base(m.activeBacklogCWD)
-		}
-		detailContent = m.renderBacklogEditor(project, detailWidth, detailH)
-	} else if backlog, ok := m.sidebar.SelectedBacklog(); ok {
-		detailContent = m.renderBacklogPreview(backlog, detailWidth, detailH, m.backlogScroll)
-	} else if m.sidebar.IsAllQuiet() {
-		detailContent = m.detail.ViewAllQuiet(ui.AllQuietCounts{
-			Clauding: m.sidebar.ClaudingCount(),
-			Later:    m.sidebar.LaterCount(),
-			Backlog:  m.sidebar.BacklogCount(),
-		})
-	} else {
-		detailContent = m.detail.View()
-	}
-	detailPanel := ui.DetailPanelStyle.
-		Width(detailWidth).
-		Height(detailH).
-		MaxHeight(detailH).
-		Render(detailContent)
-
-	// Combine preview + queue section in right column
-	rightColumn := detailPanel
-	if queueView != "" {
-		rightColumn = detailPanel + "\n" + queueView
-	}
-
-	// Copilot docked panel (if in docked mode and visible)
-	var copilotDockedPanel string
-	if copilotDockedW > 0 {
-		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
-		inputView := m.copilotInput.View() // always show (dimmed when unfocused)
-		copilotDockedPanel = ui.RenderCopilotPanel(
-			m.copilot.Messages(), inputView,
-			copilotDockedW, contentHeight,
-			m.copilot.ScrollOffset(), m.copilot.Streaming(),
-			m.copilot.StreamingCursor(),
-			m.copilot.PendingTool(),
-			focused,
-		)
-	}
-
-	// Main content: list | right column (preview + optional queue) | optional docked copilot
+	// Main content: either sidebar+detail (default) or workqueue+detail
 	var content string
-	if copilotDockedPanel != "" {
-		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn, copilotDockedPanel)
+	if m.viewMode == ViewWorkQueue {
+		content = m.viewWorkQueueLayout(innerWidth, contentHeight)
 	} else {
-		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
+		content = m.viewSidebarLayout(innerWidth, contentHeight)
 	}
 
 	// Minimap: docked at bottom in fullscreen (inserted into layout below),

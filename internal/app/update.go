@@ -371,7 +371,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sessions = msg.Sessions
-		m.sidebar.SetItems(m.sessions)
+		m.refreshSessions()
 		m.tryInitialSelection()
 		if !m.initialSelectionDone && !m.selectActive && !m.rotateNext && len(m.sessions) > 0 {
 			m.initialSelectionDone = true
@@ -500,7 +500,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			m.sidebar.SetItems(m.sessions)
+			m.refreshSessions()
 		}
 		if msg.FromCache && msg.UserRequested {
 			return m, m.setFlash("summary unchanged (cached)", false, 2*time.Second)
@@ -530,7 +530,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if updated {
-			m.sidebar.SetItems(m.sessions)
+			m.refreshSessions()
 		}
 		return m, nil
 

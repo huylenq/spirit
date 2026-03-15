@@ -231,7 +231,7 @@ func renderStatusGroupHeader(order int) string {
 	}
 }
 
-func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw diffColWidths, query string) string {
+func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw DiffColWidths, query string) string {
 
 	// Display name priority: custom title → synthesized title → first message → (new session)
 	displayName := s.DisplayName()
@@ -832,9 +832,7 @@ func (m SidebarModel) renderDetail(s claude.ClaudeSession, selected bool) string
 				remaining := FormatCountdown(*s.LaterWakeAt)
 				return bg(StatLaterStyle).Render(IconClock + " " + remaining)
 			}
-			if s.IsPhantom {
-				return bg(StatLaterStyle).Render(IconLater + " " + age)
-			}
+			return bg(StatLaterStyle).Render(IconLater + " " + age)
 		}
 		return bg(ItemDetailStyle).Render(age)
 	case claude.StatusAgentTurn:
@@ -1137,4 +1135,30 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 	}
 
 	return count
+}
+
+// ComputeDiffColWidths exposes diff column width calculation for callers
+// that render multiple cards (e.g. work queue) and want to compute once.
+func (m SidebarModel) ComputeDiffColWidths() DiffColWidths {
+	return m.computeDiffColWidths()
+}
+
+// RenderCard renders a single session item at the given width, padded or truncated
+// to exactly maxLines lines. Reuses renderItem internally. Used by the work queue
+// to render cards at a different width than the sidebar.
+func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJump bool, s claude.ClaudeSession, dw DiffColWidths) string {
+	origWidth := m.width
+	m.width = cardWidth
+	result := m.renderItem(isSelected, isAutoJump, s, dw, "")
+	m.width = origWidth
+
+	// Pad or truncate to exactly maxLines
+	lines := strings.Split(result, "\n")
+	for len(lines) < maxLines {
+		lines = append(lines, strings.Repeat(" ", cardWidth))
+	}
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	return strings.Join(lines, "\n")
 }

@@ -685,15 +685,15 @@ func sessionOrder(s claude.ClaudeSession) int {
 	}
 }
 
-// diffColWidths holds the max digit widths for diff stat columns across all visible items.
-type diffColWidths struct {
+// DiffColWidths holds the max digit widths for diff stat columns across all visible items.
+type DiffColWidths struct {
 	files   int // digits in file count
 	added   int // digits in added lines
 	removed int // digits in removed lines
 }
 
-func (m SidebarModel) computeDiffColWidths() diffColWidths {
-	var dw diffColWidths
+func (m SidebarModel) computeDiffColWidths() DiffColWidths {
+	var dw DiffColWidths
 	for _, s := range m.filtered {
 		if s.SessionID == "" {
 			continue
