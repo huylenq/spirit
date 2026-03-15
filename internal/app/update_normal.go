@@ -252,6 +252,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.execNewSessionAtPath()
 
 	case key.Matches(msg, Keys.NavLeft):
+		if m.viewMode == ViewWorkQueue {
+			m.workQueue.MoveLeft()
+			return m, m.syncWorkQueueSelection()
+		}
 		// h: enter project-level navigation
 		if m.sidebar.SelectionLevel() == ui.LevelSession {
 			m.recordJump()
@@ -263,6 +267,10 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.NavRight):
+		if m.viewMode == ViewWorkQueue {
+			m.workQueue.MoveRight()
+			return m, m.syncWorkQueueSelection()
+		}
 		// l: exit project-level, enter session-level
 		if m.sidebar.SelectionLevel() == ui.LevelProject {
 			m.recordJump()
@@ -423,6 +431,21 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			flashText = "CLAUDING expanded"
 		}
 		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
+
+	case key.Matches(msg, Keys.ViewMode):
+		if m.viewMode == ViewSidebar {
+			m.viewMode = ViewWorkQueue
+			m.syncWorkQueue()
+			// Try to select the sidebar's current session in the queue
+			if s, ok := m.sidebar.SelectedItem(); ok {
+				m.workQueue.SelectByPaneID(s.PaneID)
+			}
+		} else {
+			m.viewMode = ViewSidebar
+		}
+		savePrefString("viewMode", m.viewMode)
+		m.applyLayout()
+		return m, m.setFlash("view: "+m.viewMode, false, 2*time.Second)
 
 	case key.Matches(msg, Keys.AutoJumpToggle):
 		newVal := !m.autoJumpOn

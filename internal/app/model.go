@@ -87,6 +87,12 @@ const (
 
 var minimapModes = []string{MinimapAuto, MinimapDocked, MinimapFloat, MinimapSmart}
 
+// View layout modes (cycled with v key).
+const (
+	ViewSidebar   = "sidebar"   // traditional sidebar + detail layout
+	ViewWorkQueue = "workqueue" // horizontal work queue strip + full-width detail
+)
+
 // Outline display modes (cycled with T key).
 const (
 	ChatOutlineOverlay    = "overlay"     // floats on top of viewport
@@ -259,6 +265,8 @@ type Model struct {
 	copilotDW            int              // delta width from default (positive = wider) [float only]
 	copilotDH            int              // delta max-height from default (positive = taller) [float only]
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
+	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
+	workQueue            ui.WorkQueueModel
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -298,6 +306,7 @@ func NewModel(client *daemon.Client) Model {
 		copilotOffY:       loadPrefInt("copilotOffY", 0),
 		copilotDW:         loadPrefInt("copilotDW", 0),
 		copilotDH:         loadPrefInt("copilotDH", 0),
+		viewMode:          loadPrefString("viewMode", ViewSidebar),
 		macros:            claude.LoadMacros(nil),
 		chatOutlineMode:   loadPrefString("chatOutlineMode", ChatOutlineOverlay),
 		showMinimap:       loadPrefBool("minimap"),
@@ -466,10 +475,21 @@ func (m *Model) applyLayout() {
 	// When docked, subtract minimap height so panels shrink to make room
 	contentHeight = m.panelContentHeight(contentHeight)
 
-	sidebarWidth := m.sidebarPanelWidth()
-	copilotW := m.copilotDockedWidth()
-	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
-	m.detail.SetSize(innerW-sidebarWidth-copilotW, contentHeight)
+	if m.viewMode == ViewWorkQueue {
+		// Work queue: 5-line strip on top, full-width detail below
+		m.workQueue.SetSize(innerW)
+		detailH := contentHeight - ui.WorkQueueHeight
+		copilotW := m.copilotDockedWidth()
+		m.detail.SetSize(innerW-copilotW, detailH)
+		// Still size the sidebar for when we switch back
+		sidebarWidth := m.sidebarPanelWidth()
+		m.sidebar.SetSize(sidebarWidth-1, contentHeight)
+	} else {
+		sidebarWidth := m.sidebarPanelWidth()
+		copilotW := m.copilotDockedWidth()
+		m.sidebar.SetSize(sidebarWidth-1, contentHeight)
+		m.detail.SetSize(innerW-sidebarWidth-copilotW, contentHeight)
+	}
 }
 
 // applyLayoutFast recomputes component sizes like applyLayout but skips

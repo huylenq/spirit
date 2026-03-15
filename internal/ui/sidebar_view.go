@@ -302,8 +302,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 	statsRightWidth := lipgloss.Width(statsRight)
 
-	// prefix is always 4 cells: slot(1) + flag(1) + bar(1) + space(1)
-	const prefixWidth = 4
+	// prefix: 4 cells in sidebar (slot+flag+bar+space), 1 cell in card mode (space only)
+	prefixWidth := 4
+	if m.cardMode {
+		prefixWidth = 1
+	}
 	var worktreeIcon string
 	if s.IsWorktree {
 		worktreeIcon = worktreeIconRendered
@@ -355,12 +358,19 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if s.IsWorktree {
 			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
 		}
-		namePart = slotGlyph + flagGlyph +
-			barSt.Render("▌") +
-			bg.Render(" ") +
-			AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
-			selWorktreeIcon +
-			styledName
+		if m.cardMode {
+			namePart = bg.Render(" ") +
+				AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
+				selWorktreeIcon +
+				styledName
+		} else {
+			namePart = slotGlyph + flagGlyph +
+				barSt.Render("▌") +
+				bg.Render(" ") +
+				AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
+				selWorktreeIcon +
+				styledName
+		}
 		gapStr = bg.Render(strings.Repeat(" ", gap))
 	} else {
 		var styledName string
@@ -369,7 +379,9 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		} else {
 			styledName = displayName
 		}
-		if isAutoJump {
+		if m.cardMode {
+			namePart = " " + iconStr + styledName
+		} else if isAutoJump {
 			namePart = slotGlyph + flagGlyph + autoJumpBarSt.Render("▯") + " " + iconStr + styledName
 		} else if isTrail {
 			namePart = slotGlyph + flagGlyph + trailBarSt.Render("▯") + " " + iconStr + styledName
@@ -382,14 +394,21 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	line := namePart + gapStr + detail
 
 	// selSubtitle wraps a subtitle content string with the selection bar at col 2.
-	// bar(1) + sp("  ")(2) + content(m.width-5) = m.width-2 total, matching the main line.
+	// In card mode: no bar prefix, just indent.
+	selSubPrefixW := 5 // "  ▌" + padding = 5 cells consumed before content
 	selSubtitle := func(style lipgloss.Style, content string) string {
+		if m.cardMode {
+			return withBg(style).Width(m.width - 1).Render(" " + content)
+		}
 		return "  " + barSt.Render("▌") +
-			withBg(style).Width(m.width-5).Render(content)
+			withBg(style).Width(m.width-selSubPrefixW).Render(content)
 	}
 
 	// autoJumpSubtitle wraps an unselected subtitle with the auto-jump bar at col 2.
 	autoJumpSubtitle := func(style lipgloss.Style, content string) string {
+		if m.cardMode {
+			return style.Render(" " + content)
+		}
 		return "  " + autoJumpBarSt.Render("▯") + style.Render("   "+content)
 	}
 
@@ -638,6 +657,14 @@ func (m SidebarModel) renderBacklogItem(isSelected bool, backlog claude.Backlog)
 
 // subtitleMsgWidth returns the available text width for a subtitle line with the given icon.
 func (m SidebarModel) subtitleMsgWidth(icon string, isSelected bool) int {
+	if m.cardMode {
+		prefix := " " + icon + " "
+		w := m.width - 1 - lipgloss.Width(prefix)
+		if w < 1 {
+			return 1
+		}
+		return w
+	}
 	if isSelected {
 		prefix := "   " + icon + " "
 		w := m.width - 5 - lipgloss.Width(prefix)
@@ -659,6 +686,31 @@ func (m SidebarModel) subtitleMsgWidth(icon string, isSelected bool) int {
 func (m SidebarModel) renderSubtitleLine(text, query, icon string, isSelected, isAutoJump, doHighlight bool, avatarColorIdx int, barSt lipgloss.Style) string {
 	msgWidth := m.subtitleMsgWidth(icon, isSelected)
 	truncated := ansi.Truncate(text, msgWidth, "…")
+
+	if m.cardMode {
+		prefix := " " + icon + " "
+		if isSelected {
+			fillBg := AvatarFillBg(avatarColorIdx)
+			baseStyle := ItemDetailStyle.Background(fillBg)
+			bgStyle := lipgloss.NewStyle().Background(fillBg)
+			prefixWidth := lipgloss.Width(prefix)
+			var content string
+			if doHighlight && query != "" {
+				content = baseStyle.Render(prefix) + highlightMatch(truncated, query, baseStyle)
+			} else {
+				content = baseStyle.Render(prefix + truncated)
+			}
+			padWidth := m.width - 1 - prefixWidth - lipgloss.Width(truncated)
+			if padWidth < 0 {
+				padWidth = 0
+			}
+			return content + bgStyle.Render(strings.Repeat(" ", padWidth))
+		}
+		if doHighlight && query != "" {
+			return ItemDetailStyle.Render(prefix) + highlightMatch(truncated, query, ItemDetailStyle)
+		}
+		return ItemDetailStyle.Render(prefix + truncated)
+	}
 
 	if isSelected {
 		prefix := "   " + icon + " "

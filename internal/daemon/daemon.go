@@ -29,8 +29,7 @@ type commitDoneEntry struct {
 	PID           int
 	SawWorking    bool      // true once the session has transitioned to agent-turn
 	KillOnDone    bool      // true for C/D (commit+done), false for c (commit only)
-	RunSimplify   bool      // true for D: run /simplify after commit, before killing
-	SimplifyPhase bool      // true once /simplify has been sent and we're waiting for it
+	SimplifyPhase bool      // true while waiting for /simplify to finish (D flow); false = waiting for commit
 	CreatedAt     time.Time // when the entry was registered; used to expire stuck entries
 }
 

@@ -11,28 +11,43 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/tmux"
 )
 
+// commitCmd is the slash command sent to Claude Code to trigger a git commit.
+const commitCmd = "/commit-commands:commit your changes, constraint to involved files on this session"
+
 func (d *Daemon) handleCommit(data json.RawMessage, killOnDone, runSimplify bool) *Response {
 	var req CommitDoneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	// Send the commit command to the pane
-	if err := tmux.SendKeysLiteral(req.PaneID, "/commit-commands:commit your changes, constraint to involved files on this session"); err != nil {
+	var firstCmd string
+	var tag string
+	if runSimplify {
+		// simplify → commit → kill: send /simplify first
+		firstCmd = "/simplify"
+		tag = "simplify-commit-done"
+	} else {
+		firstCmd = commitCmd
+		if killOnDone {
+			tag = "commit-done"
+		} else {
+			tag = "commit"
+		}
+	}
+	if err := tmux.SendKeysLiteral(req.PaneID, firstCmd); err != nil {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
-	// Register the pending commit keyed by sessionID
 	d.commitDoneMu.Lock()
-	d.commitDonePanes[req.SessionID] = commitDoneEntry{PaneID: req.PaneID, PID: req.PID, KillOnDone: killOnDone, RunSimplify: runSimplify, CreatedAt: time.Now()}
+	d.commitDonePanes[req.SessionID] = commitDoneEntry{
+		PaneID:        req.PaneID,
+		PID:           req.PID,
+		KillOnDone:    killOnDone,
+		SimplifyPhase: runSimplify, // true = waiting for /simplify; false = waiting for commit
+		CreatedAt:     time.Now(),
+	}
 	d.commitDoneMu.Unlock()
 	d.nudge()
-	tag := "commit"
-	if runSimplify {
-		tag = "commit-simplify-done"
-	} else if killOnDone {
-		tag = "commit-done"
-	}
 	log.Printf("%s: registered session %s (pane %s)", tag, req.SessionID, req.PaneID)
 	r := resultResponse("ok")
 	return &r

@@ -12,7 +12,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
-		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
+		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
 		k.JumpBack, k.Note, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -136,6 +136,9 @@ type KeyMap struct {
 
 	// Session note editor
 	Note key.Binding
+
+	// View mode toggle (sidebar ↔ work queue)
+	ViewMode key.Binding
 
 	// Toggle auto-jump after send/commit
 	AutoJumpToggle key.Binding
@@ -451,6 +454,10 @@ var Keys = KeyMap{
 	Note: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "note"),
+	),
+	ViewMode: key.NewBinding(
+		key.WithKeys("v"),
+		key.WithHelp("v", "view mode"),
 	),
 	AutoJumpToggle: key.NewBinding(
 		key.WithKeys("alt+j"),
