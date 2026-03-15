@@ -208,7 +208,6 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	}
 
 	// Build and place bar
-	barStyle := lipgloss.NewStyle().Foreground(ColorBorder)
 	var bar strings.Builder
 	for c := 0; c < barW; c++ {
 		absC := barLeft + c
@@ -230,10 +229,9 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 			bar.WriteRune('─')
 		}
 	}
-	put(barRow, barLeft, barStyle.Render(bar.String()), barW)
+	put(barRow, barLeft, BorderCharStyle.Render(bar.String()), barW)
 
 	// Strings and bobs
-	strStyle := lipgloss.NewStyle().Foreground(ColorBorder)
 	for pi := range a.pends {
 		pend := &a.pends[pi]
 		bobOff := int(math.Round(pend.x))
@@ -261,7 +259,7 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 			default:
 				ch = "│"
 			}
-			put(barRow+r, col, strStyle.Render(ch), 1)
+			put(barRow+r, col, BorderCharStyle.Render(ch), 1)
 		}
 
 		// Bob
