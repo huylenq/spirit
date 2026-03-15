@@ -43,6 +43,7 @@ func (m *DetailModel) NavigateMsgTo(idx int) {
 	m.msgCursor = idx
 	if idx < len(m.msgOffsets) && m.msgOffsets[idx] >= 0 {
 		m.viewport.SetYOffset(m.msgOffsets[idx])
+		m.stickyBottom = m.viewport.AtBottom()
 	}
 }
 
@@ -81,18 +82,25 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 		return -1
 	}
 
-	// Outline panel starts at detail-view row 4:
-	// header=3 rows (line1, sessionTitle, blank) + contentBox top border=1 row.
-	const outlineStartRow = 4
+	// Outline panel starts at detail-view row 3:
+	// header=2 rows (line1, sessionTitle) + contentBox top border=1 row.
+	const outlineStartRow = 3
 	if localY < outlineStartRow {
 		return -1
 	}
 
 	outlineRow := localY - outlineStartRow
-	if outlineRow == 0 {
-		return -1 // top border of outline panel
+	var contentRow int
+	if m.chatOutlineMode == chatOutlineDockedLeft {
+		// No outline border — outlineRow 0 is already content (title)
+		contentRow = outlineRow
+	} else {
+		if outlineRow == 0 {
+			return -1 // outline panel top border
+		}
+		contentRow = outlineRow - 1
 	}
-	contentRow := outlineRow - 1 // 0=title, 1=blank, 2+=messages
+	// contentRow: 0=title, 1=blank, 2+=messages
 
 	if contentRow < 2 {
 		return -1

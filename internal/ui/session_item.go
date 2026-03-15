@@ -14,7 +14,7 @@ import (
 	"github.com/huylenq/claude-mission-control/internal/claude"
 )
 
-func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, dw DiffColWidths, query string) string {
+func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, query string) string {
 
 	// Display name priority: custom title → synthesized title → first message → (new session)
 	displayName := s.DisplayName()
@@ -51,39 +51,9 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 
 	withBg := func(st lipgloss.Style) lipgloss.Style { return selBg(st, isSelected, s.AvatarColorIdx) }
-	sp := func(s string) string {
-		if isSelected {
-			return selBgSt.Render(s)
-		}
-		return s
-	}
-
 	// Detail (spinner/age) stays on line 1; drift, overlap, diff stats move to stats line
 	detail := m.renderDetail(s, isSelected)
 	detailWidth := lipgloss.Width(detail)
-
-	// Build stats-right content (drift + overlap + diff stats) for the badges line
-	var statsRight string
-	if s.TitleDrift {
-		statsRight += sp(" ") + withBg(DriftStyle).Render(IconSynthTitle)
-	}
-	if s.HasOverlap {
-		statsRight += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
-	}
-	if s.SessionID != "" {
-		if stats, ok := m.diffStats[s.SessionID]; ok && len(stats) > 0 {
-			totalAdded, totalRemoved := 0, 0
-			for _, ds := range stats {
-				totalAdded += ds.Added
-				totalRemoved += ds.Removed
-			}
-			statsRight += sp(" ") +
-				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
-				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
-				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
-		}
-	}
-	statsRightWidth := lipgloss.Width(statsRight)
 
 	// prefix: 4 cells in sidebar (slot+flag+bar+space), 1 cell in card mode (space only)
 	prefixWidth := 4
@@ -233,109 +203,42 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		}
 	}
 
-	// Badges + stats placement.
-	// Strategy: place statsRight on the bottom-right of the item, sharing a line
-	// with existing content (badges or last subtitle) when possible.
+	// Badges line (no stats — stats are pinned by the caller after height is finalized).
 	badges := renderBadges(s, withBg, query)
-	showTagInput := isSelected && m.inlineTagSessionID == s.SessionID && m.inlineTagInputView != ""
-	hasBadgesLine := badges != "" || showTagInput
+	showTagInput := !m.cardMode && isSelected && m.inlineTagSessionID == s.SessionID && m.inlineTagInputView != ""
 
 	if showTagInput {
 		sep := ""
 		if badges != "" {
 			sep = "  "
 		}
-		if m.cardMode {
-			line += "\n" + withBg(ItemDetailStyle).Render(" "+badges+sep) + m.inlineTagInputView
-		} else {
-			line += "\n" + "  " + barSt.Render("▌") +
-				withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
-		}
-	}
-
-	if hasBadgesLine {
-		// Dedicated badges+stats line (badges left, statsRight right-aligned)
-		leftContent := badges
-		if showTagInput {
-			leftContent = ""
-		}
-		m.renderStatsLine(&line, leftContent, statsRight, statsRightWidth, isSelected, isAutoJump, sp, barSt, autoJumpBarSt, withBg)
-	} else if statsRightWidth > 0 {
-		// No badges — attach statsRight to the bottom-right of the last content line
-		if idx := strings.LastIndex(line, "\n"); idx >= 0 {
-			// Subtitle lines exist — piggyback on the last one
-			lastLine := line[idx+1:]
-			rest := line[:idx+1]
-			targetW := m.width - 2
-			trimmed := ansi.Truncate(lastLine, targetW-statsRightWidth, "")
-			trimmedW := lipgloss.Width(trimmed)
-			statsGap := targetW - trimmedW - statsRightWidth
-			if statsGap < 0 {
-				statsGap = 0
-			}
-			line = rest + trimmed + sp(strings.Repeat(" ", statsGap)) + statsRight
-		} else {
-			// No subtitle lines — render stats-only line
-			m.renderStatsLine(&line, "", statsRight, statsRightWidth, isSelected, isAutoJump, sp, barSt, autoJumpBarSt, withBg)
-		}
+		line += "\n" + "  " + barSt.Render("▌") +
+			withBg(ItemDetailStyle).Render("   "+badges+sep) + m.inlineTagInputView
+	} else if badges != "" {
+		m.renderBadgesLine(&line, badges, isSelected, isAutoJump, barSt, autoJumpBarSt, withBg)
 	}
 
 	return line
 }
 
-// renderStatsLine appends a new line with leftContent left-aligned and statsRight right-aligned.
-func (m SidebarModel) renderStatsLine(line *string, leftContent, statsRight string, statsRightWidth int, isSelected, isAutoJump bool, sp func(string) string, barSt, autoJumpBarSt lipgloss.Style, withBg func(lipgloss.Style) lipgloss.Style) {
+// renderBadgesLine appends a new line with badge content, respecting sidebar selection and card mode.
+func (m SidebarModel) renderBadgesLine(line *string, badges string, isSelected, isAutoJump bool, barSt, autoJumpBarSt lipgloss.Style, withBg func(lipgloss.Style) lipgloss.Style) {
 	if m.cardMode {
-		leftStr := " " + leftContent
-		leftWidth := lipgloss.Width(leftStr)
-		statsGap := m.width - 1 - leftWidth - statsRightWidth
-		if statsGap < 0 {
-			statsGap = 0
-		}
 		if isSelected {
-			*line += "\n" + withBg(ItemDetailStyle).Render(leftStr) +
-				sp(strings.Repeat(" ", statsGap)) +
-				statsRight
+			*line += "\n" + withBg(ItemDetailStyle).Render(" "+badges)
 		} else {
-			*line += "\n" + ItemDetailStyle.Render(leftStr) +
-				strings.Repeat(" ", statsGap) +
-				statsRight
+			*line += "\n" + ItemDetailStyle.Render(" "+badges)
 		}
 		return
 	}
 	if isSelected {
-		leftStr := "   " + leftContent
-		leftWidth := lipgloss.Width(leftStr)
-		innerWidth := m.width - 5 // content area after "  ▌"
-		statsGap := innerWidth - leftWidth - statsRightWidth
-		if statsGap < 0 {
-			statsGap = 0
-		}
 		*line += "\n" + "  " + barSt.Render("▌") +
-			withBg(ItemDetailStyle).Render(leftStr) +
-			sp(strings.Repeat(" ", statsGap)) +
-			statsRight
+			withBg(ItemDetailStyle).Render("   "+badges)
 	} else if isAutoJump {
-		leftStr := "   " + leftContent
-		leftWidth := lipgloss.Width(leftStr)
-		statsGap := m.width - 5 - leftWidth - statsRightWidth
-		if statsGap < 0 {
-			statsGap = 0
-		}
 		*line += "\n" + "  " + autoJumpBarSt.Render("▯") +
-			ItemDetailStyle.Render(leftStr) +
-			strings.Repeat(" ", statsGap) +
-			statsRight
+			ItemDetailStyle.Render("   "+badges)
 	} else {
-		leftStr := "      " + leftContent
-		leftWidth := lipgloss.Width(leftStr)
-		statsGap := m.width - 2 - leftWidth - statsRightWidth
-		if statsGap < 0 {
-			statsGap = 0
-		}
-		*line += "\n" + ItemDetailStyle.Render(leftStr) +
-			strings.Repeat(" ", statsGap) +
-			statsRight
+		*line += "\n" + ItemDetailStyle.Render("      "+badges)
 	}
 }
 
@@ -665,17 +568,10 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		}
 	}
 
-	// Stats line: only adds a line when badges exist, or when there are stats
-	// but no subtitle lines to piggyback on.
-	hasBadges := renderBadges(s, nil, "") != ""
-	hasStats := s.TitleDrift || s.HasOverlap ||
-		(s.SessionID != "" && len(m.diffStats[s.SessionID]) > 0)
-	hasSubtitles := count > 1
-
-	if hasBadges {
-		count++ // dedicated badges+stats line
-	} else if hasStats && !hasSubtitles {
-		count++ // stats-only line (no subtitle to attach to)
+	// Badges line: only adds a line when badges exist.
+	// (Stats are pinned onto the last line by PinStatsRight, not emitted as a separate line.)
+	if renderBadges(s, nil, "") != "" {
+		count++
 	}
 
 	return count
@@ -687,6 +583,87 @@ func (m SidebarModel) ComputeDiffColWidths() DiffColWidths {
 	return m.computeDiffColWidths()
 }
 
+// BuildStatsRight computes the diff stats string for a session (file count, +/- lines,
+// drift/overlap indicators). isSelected and colorIdx control selection background styling.
+func (m *SidebarModel) BuildStatsRight(s claude.ClaudeSession, dw DiffColWidths, isSelected bool, colorIdx int) string {
+	transform, sp := selectionFuncs(isSelected, colorIdx)
+	if sp == nil {
+		sp = func(s string) string { return s }
+	}
+	withBg := func(st lipgloss.Style) lipgloss.Style {
+		if transform != nil {
+			return transform(st)
+		}
+		return st
+	}
+	var statsRight string
+	if s.TitleDrift {
+		statsRight += sp(" ") + withBg(DriftStyle).Render(IconSynthTitle)
+	}
+	if s.HasOverlap {
+		statsRight += sp(" ") + withBg(OverlapStyle).Render(IconOverlap)
+	}
+	if s.SessionID != "" {
+		if stats, ok := m.diffStats[s.SessionID]; ok && len(stats) > 0 {
+			totalAdded, totalRemoved := 0, 0
+			for _, ds := range stats {
+				totalAdded += ds.Added
+				totalRemoved += ds.Removed
+			}
+			statsRight += sp(" ") +
+				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
+				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
+				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
+		}
+	}
+	return statsRight
+}
+
+// selectionFuncs returns a style transform and padding-space renderer for the
+// selected item's avatar background. Both are nil when not selected.
+func selectionFuncs(isSelected bool, colorIdx int) (func(lipgloss.Style) lipgloss.Style, func(string) string) {
+	if !isSelected {
+		return nil, nil
+	}
+	avatarBg := AvatarFillBg(colorIdx)
+	bgSt := lipgloss.NewStyle().Background(avatarBg)
+	transform := func(st lipgloss.Style) lipgloss.Style { return st.Background(avatarBg) }
+	padSp := func(s string) string { return bgSt.Render(s) }
+	return transform, padSp
+}
+
+// PinStatsRight overlays statsRight on the bottom-right of the last line of content.
+// padSp renders padding spaces (with optional background styling).
+func PinStatsRight(content, statsRight string, width int, padSp func(string) string) string {
+	if statsRight == "" {
+		return content
+	}
+	if padSp == nil {
+		padSp = func(s string) string { return s }
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return content
+	}
+	last := lines[len(lines)-1]
+	statsW := lipgloss.Width(statsRight)
+	lastW := lipgloss.Width(last)
+	targetW := width
+	if lastW <= targetW-statsW {
+		gap := targetW - lastW - statsW
+		lines[len(lines)-1] = last + padSp(strings.Repeat(" ", gap)) + statsRight
+	} else {
+		trimmed := ansi.Truncate(last, max(targetW-statsW-1, 0), "")
+		trimmedW := lipgloss.Width(trimmed)
+		gap := targetW - trimmedW - statsW
+		if gap < 0 {
+			gap = 0
+		}
+		lines[len(lines)-1] = trimmed + padSp(strings.Repeat(" ", gap)) + statsRight
+	}
+	return strings.Join(lines, "\n")
+}
+
 // RenderCard renders a single session item at the given width, padded or truncated
 // to exactly maxLines lines. Reuses renderItem internally. Used by the work queue
 // to render cards at a different width than the sidebar.
@@ -694,7 +671,7 @@ func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJum
 	origWidth := m.width
 	m.width = cardWidth
 	m.cardMode = true
-	result := m.renderItem(isSelected, isAutoJump, s, dw, "")
+	result := m.renderItem(isSelected, isAutoJump, s, "")
 	m.cardMode = false
 	m.width = origWidth
 
@@ -706,5 +683,10 @@ func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJum
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
 	}
-	return strings.Join(lines, "\n")
+	result = strings.Join(lines, "\n")
+
+	// Pin stats on the bottom-right — selection-aware
+	_, padSp := selectionFuncs(isSelected, s.AvatarColorIdx)
+	statsRight := m.BuildStatsRight(s, dw, isSelected, s.AvatarColorIdx)
+	return PinStatsRight(result, statsRight, cardWidth, padSp)
 }

@@ -64,6 +64,11 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 		}
 	}
 
+	// Work queue mode: no sidebar panel — everything is detail
+	if m.viewMode == ViewWorkQueue {
+		return panelDetail
+	}
+
 	// Split on list width boundary
 	innerWidth := m.width
 	if !m.inFullscreenPopup {
@@ -78,7 +83,11 @@ func (m Model) hitTestPanel(x, y int) mousePanel {
 }
 
 // sidebarDragEdge returns the terminal x column of the sidebar's right border.
+// Returns -1 in work queue mode (no sidebar to drag).
 func (m Model) sidebarDragEdge() int {
+	if m.viewMode == ViewWorkQueue {
+		return -1
+	}
 	colOffset := 0
 	if !m.inFullscreenPopup {
 		colOffset = 1
@@ -88,9 +97,9 @@ func (m Model) sidebarDragEdge() int {
 
 // handleMouseClick dispatches a left-click to the appropriate panel handler.
 func (m Model) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Check for sidebar edge drag before panel dispatch.
+	// Check for sidebar edge drag before panel dispatch (not in work queue mode).
 	edge := m.sidebarDragEdge()
-	if msg.X >= edge-1 && msg.X <= edge+1 &&
+	if edge >= 0 && msg.X >= edge-1 && msg.X <= edge+1 &&
 		msg.Y >= contentStartRow && msg.Y < contentStartRow+m.contentHeight() {
 		m.sidebarDragging = true
 		m.sidebarDragStartX = msg.X
@@ -215,7 +224,7 @@ func (m Model) minimapGridCoords(termX, termY int) (int, int, bool) {
 	if !m.inFullscreenPopup {
 		mmTermCol = 1
 	}
-	mmTermRow := 2 + contentHeight - mmH
+	mmTermRow := contentStartRow + contentHeight - mmH
 	// Skip: minimap left border (1), top border + session label + window labels (3)
 	return termX - mmTermCol - 1, termY - mmTermRow - 3, true
 }
@@ -257,7 +266,7 @@ func (m Model) handleMinimapClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	m.recordJump()
 	m.minimap.UpdateSelected(paneID)
-	if isClaude && m.sidebar.SelectByPaneID(paneID) {
+	if isClaude && m.selectByPaneID(paneID) {
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, false)...)
 		}
@@ -273,6 +282,9 @@ func (m Model) detailLocalX(termX int) int {
 	if !m.inFullscreenPopup {
 		colOffset = 1
 	}
+	if m.viewMode == ViewWorkQueue {
+		return termX - colOffset // no sidebar offset in work queue mode
+	}
 	return termX - colOffset - m.sidebarPanelWidth() - 1
 }
 
@@ -285,6 +297,9 @@ func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	localX := m.detailLocalX(msg.X)
 	localY := msg.Y - contentStartRow
+	if m.viewMode == ViewWorkQueue {
+		localY -= ui.WorkQueueHeight
+	}
 
 	// Check if click is on the outline panel drag edge
 	if dragEdge := m.detail.ChatOutlineDragEdge(); dragEdge >= 0 {
@@ -369,7 +384,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if paneID == m.lastClickPaneID && now.Sub(m.lastClickTime) < doubleClickWindow {
 		m.lastClickPaneID = ""
 		m.lastClickTime = time.Time{}
-		m.sidebar.SelectByPaneID(paneID)
+		m.selectByPaneID(paneID)
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			if s.IsPhantom {
 				laterID, cwd := s.LaterID, s.CWD
@@ -400,7 +415,7 @@ func (m Model) handleListClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.recordJump()
-	if m.sidebar.SelectByPaneID(paneID) {
+	if m.selectByPaneID(paneID) {
 		if s, ok := m.sidebar.SelectedItem(); ok {
 			return m, tea.Batch(m.fetchForSelection(s, true)...)
 		}
