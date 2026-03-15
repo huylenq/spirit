@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -10,12 +11,12 @@ import (
 )
 
 const (
-	WorkQueueHeight      = 5  // fixed strip height in lines (including card borders)
-	workQueueCardW       = 62 // card width per session (including border)
-	workQueueCardInnerW  = 60 // card content width (cardW - 2 for border sides)
-	workQueueCardInnerH  = 3  // card content height (height - 2 for border top/bottom)
-	workQueueOthersW     = 28 // width for the compacted "others" section (avatar + status + title)
-	workQueueCardGap     = 1  // margin between cards
+	WorkQueueHeight     = 5  // fixed strip height in lines (including card borders)
+	workQueueCardW      = 62 // card width per session (including border)
+	workQueueCardInnerW = 60 // card content width (cardW - 2 for border sides)
+	workQueueCardInnerH = 3  // card content height (height - 2 for border top/bottom)
+	workQueueOthersW    = 28 // width for the compacted "others" section (avatar + status + title)
+	workQueueCardGap    = 1  // margin between cards
 )
 
 // WorkQueueModel manages the horizontal work queue strip that shows user-turn
@@ -161,9 +162,8 @@ func (m *WorkQueueModel) othersWidth() int {
 	if len(m.others) == 0 {
 		return 0
 	}
-	// Each other session gets 3 chars (avatar + space), plus 1 for the separator
-	needed := len(m.others)*3 + 2
-	return max(needed, workQueueOthersW)
+	// Fixed width: enough for "│ <avatar><status> <title…>"
+	return workQueueOthersW
 }
 
 // View renders the work queue strip. The sidebar parameter is used to render
@@ -292,46 +292,60 @@ func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, ar
 }
 
 // renderOthers renders the compacted "others" section (non-user-turn sessions)
-// as avatar glyphs with status indicators, pinned to the right.
+// as one item per line: avatar + status + truncated title.
 func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 	if len(m.others) == 0 {
 		return ""
 	}
 
-	var items []string
-	for _, s := range m.others {
+	sep := SeparatorStyle.Render("│")
+	// Each line: "│ <avatar><status> <title>"
+	// Reserve: sep(1) + space(1) + avatar(2) + status(1) + space(1) = 6 chars before title
+	const prefixCols = 6
+
+	lines := make([]string, 0, WorkQueueHeight)
+	for i, s := range m.others {
+		if i >= WorkQueueHeight {
+			break
+		}
 		glyph := AvatarGlyph(s.AvatarAnimalIdx)
 		styled := AvatarStyle(s.AvatarColorIdx).Render(glyph)
 
-		// Status indicator
 		var indicator string
 		switch s.Status {
 		case claude.StatusAgentTurn:
 			indicator = StatWorkingStyle.Render(sidebar.SpinnerView())
-		case claude.StatusUserTurn:
-			// User-turn in "others" means it's a Later session
-			indicator = StatLaterStyle.Render(IconLater)
 		default:
 			indicator = ItemDetailStyle.Render("·")
 		}
 
-		items = append(items, styled+indicator)
-	}
-
-	// Distribute items across rows (column-major: fill vertically first).
-	sep := SeparatorStyle.Render("│")
-	lines := make([]string, WorkQueueHeight)
-	for i, item := range items {
-		row := i % WorkQueueHeight
-		if lines[row] != "" {
-			lines[row] += " "
+		title := s.DisplayName()
+		if title == "" {
+			title = "(New session)"
 		}
-		lines[row] += item
+		title = strings.ReplaceAll(title, "\n", " ")
+
+		// Truncate title to fit available width
+		titleW := m.othersWidth() - prefixCols
+		if titleW > 0 {
+			title = ansi.Truncate(title, titleW, "…")
+		} else {
+			title = ""
+		}
+
+		line := sep + " " + styled + indicator + " " + ItemDetailStyle.Render(title)
+		lines = append(lines, line)
 	}
 
-	// Prepend separator to each line
-	for i := range lines {
-		lines[i] = sep + " " + lines[i]
+	// Pad to WorkQueueHeight
+	for len(lines) < WorkQueueHeight {
+		lines = append(lines, sep)
+	}
+
+	// Overflow indicator on last line if more items than visible
+	if len(m.others) > WorkQueueHeight {
+		extra := len(m.others) - WorkQueueHeight
+		lines[WorkQueueHeight-1] = sep + " " + ItemDetailStyle.Render(fmt.Sprintf("+%d more", extra))
 	}
 
 	return strings.Join(lines, "\n")
