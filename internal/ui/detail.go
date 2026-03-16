@@ -37,6 +37,7 @@ type DetailModel struct {
 	userMessages             []string
 	msgOffsets               []int // line index in content for each userMessage; -1 if not found
 	msgCursor                int   // which user message we last navigated to
+	outlineScrollTop         int   // index of first visible message in chat outline
 	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
 	diffStats                map[string]claude.FileDiffStat
 	diffFiles                []diffFileStat // cached sorted file entries
@@ -368,6 +369,7 @@ func (m *DetailModel) ClearSession() {
 	m.session = nil
 	m.content = ""
 	m.userMessages = nil
+	m.outlineScrollTop = 0
 	m.diffFiles = nil
 	m.summary = nil
 	m.renderedInsight = ""

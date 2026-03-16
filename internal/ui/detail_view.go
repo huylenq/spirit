@@ -292,6 +292,10 @@ func (m *DetailModel) ViewAllQuiet(counts AllQuietCounts) string {
 	return renderStaticDashboard(m.width, m.height, counts)
 }
 
+// maxOutlineMessages is the maximum number of user messages visible in the chat outline.
+// When there are more messages, the outline becomes scrollable.
+const maxOutlineMessages = 15
+
 // outlineGap is the number of space columns between the styled bullet glyph and message text.
 const outlineGap = 1
 
@@ -355,7 +359,18 @@ func (m *DetailModel) renderChatOutline(width int) string {
 		m.session.Status == claude.StatusAgentTurn &&
 		len(m.userMessages) > 0
 
-	for i, msg := range m.userMessages {
+	// Compute visible window for scrollable outline.
+	totalMsgs := len(m.userMessages)
+	visStart, visEnd := m.outlineWindow()
+
+	// Show scroll-up indicator.
+	if visStart > 0 {
+		arrow := ItemDetailStyle.Render(fmt.Sprintf("  ↑ %d more", visStart))
+		lines = append(lines, arrow)
+	}
+
+	for i := visStart; i < visEnd; i++ {
+		msg := m.userMessages[i]
 		focused := i == m.msgCursor
 		isLast := i == len(m.userMessages)-1
 
@@ -423,6 +438,12 @@ func (m *DetailModel) renderChatOutline(width int) string {
 				lines = append(lines, reply)
 			}
 		}
+	}
+
+	// Show scroll-down indicator.
+	if visEnd < totalMsgs {
+		arrow := ItemDetailStyle.Render(fmt.Sprintf("  ↓ %d more", totalMsgs-visEnd))
+		lines = append(lines, arrow)
 	}
 
 	content := strings.Join(lines, "\n")

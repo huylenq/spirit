@@ -19,6 +19,13 @@ func (m *DetailModel) SetUserMessages(msgs []string) {
 			m.msgCursor = 0
 		}
 	}
+	// Keep scroll position valid and cursor visible.
+	if total := len(msgs); total > maxOutlineMessages {
+		m.outlineScrollTop = min(m.outlineScrollTop, total-maxOutlineMessages)
+	} else {
+		m.outlineScrollTop = 0
+	}
+	m.ensureOutlineVisible(m.msgCursor)
 }
 
 // recomputeOffsets rebuilds msgOffsets from the current content and userMessages.
@@ -41,10 +48,29 @@ func (m *DetailModel) NavigateMsgTo(idx int) {
 		return
 	}
 	m.msgCursor = idx
+	m.ensureOutlineVisible(idx)
 	if idx < len(m.msgOffsets) && m.msgOffsets[idx] >= 0 {
 		m.viewport.SetYOffset(m.msgOffsets[idx])
 		m.stickyBottom = m.viewport.AtBottom()
 	}
+}
+
+// ensureOutlineVisible adjusts outlineScrollTop so that idx is within the visible window.
+func (m *DetailModel) ensureOutlineVisible(idx int) {
+	if idx < m.outlineScrollTop {
+		m.outlineScrollTop = idx
+	} else if idx >= m.outlineScrollTop+maxOutlineMessages {
+		m.outlineScrollTop = idx - maxOutlineMessages + 1
+	}
+	m.outlineScrollTop = max(0, m.outlineScrollTop)
+}
+
+// outlineWindow returns the visible message range [start, end) for the chat outline.
+func (m *DetailModel) outlineWindow() (visStart, visEnd int) {
+	total := len(m.userMessages)
+	visStart = m.outlineScrollTop
+	visEnd = min(visStart+maxOutlineMessages, total)
+	return
 }
 
 // ChatOutlineMsgAt returns the user message index if the click at (localX, localY)
@@ -113,7 +139,15 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 	}
 	msgWidth := max(1, innerWidth-outlineIndicatorWidth())
 	row := 2
-	for i, msg := range m.userMessages {
+
+	// Account for scroll-up indicator line.
+	visStart, visEnd := m.outlineWindow()
+	if visStart > 0 {
+		row++ // "↑ N more" line
+	}
+
+	for i := visStart; i < visEnd; i++ {
+		msg := m.userMessages[i]
 		if row > contentRow {
 			return -1
 		}
@@ -161,6 +195,9 @@ func findMsgLineOffsets(content string, messages []string) []int {
 		if msg == "" {
 			continue
 		}
+		// Strip type-prefix glyphs (bash/plan/slash) — they exist in the outline
+		// data but not in the terminal capture, so searching with them fails.
+		msg = stripOutlinePrefix(msg)
 		// Use only the first line of the message (multiline messages wrap in the terminal)
 		firstLine := msg
 		if idx := strings.IndexByte(msg, '\n'); idx >= 0 {
