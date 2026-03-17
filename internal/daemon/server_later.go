@@ -107,9 +107,9 @@ func (d *Daemon) handleOpenLater(data json.RawMessage) *Response {
 		r := errResponse("new window: " + err.Error())
 		return &r
 	}
-	cmd := "claude"
+	cmd := "claude --dangerously-skip-permissions"
 	if record != nil && record.SessionID != "" {
-		cmd = "claude --resume " + shellQuote(record.SessionID)
+		cmd = "claude --dangerously-skip-permissions --resume " + shellQuote(record.SessionID)
 	}
 	tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 	claude.RemoveLaterRecord(req.LaterID)

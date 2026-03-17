@@ -165,6 +165,16 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		saveSidebarState(m.sidebar.ExportState())
 		return m, nil
 
+	case key.Matches(msg, Keys.FocusMode):
+		newVal := !m.sidebar.FocusMode()
+		m.sidebar.SetFocusMode(newVal)
+		savePrefBool("focusMode", newVal)
+		flashText := "FOCUS OFF"
+		if newVal {
+			flashText = fmt.Sprintf("FOCUS ON (%d flagged)", m.sidebar.FocusedCount())
+		}
+		return m, m.setFlash(flashText, false, 2*time.Second)
+
 	case isSlotKey(msg.String()):
 		n := slotKeyNum(msg.String())
 		paneID := m.sidebar.PaneIDForSlot(n)

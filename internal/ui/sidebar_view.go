@@ -67,6 +67,10 @@ func (m *SidebarModel) View() string {
 			if !m.laterExpanded && sessionOrder(s) == OrderLater {
 				continue
 			}
+			// Focus mode: skip unflagged sessions
+			if m.focusMode && !m.IsEffectivelyFlagged(s) {
+				continue
+			}
 			// Group headers — always rendered for spatial stability during narrowing
 			if m.groupByProject {
 				order := sessionOrder(s)
@@ -85,9 +89,9 @@ func (m *SidebarModel) View() string {
 						// Project sub-header within Later section
 						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == OrderLater {
 							m.selectedProjectRow = len(lines)
-							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
 						} else {
-							lines = append(lines, renderProjectSubHeader(s.Project))
+							lines = append(lines, renderProjectSubHeader(s.Project, m.flaggedProjects[s.Project]))
 						}
 					} else {
 						if len(lines) > 0 {
@@ -95,9 +99,9 @@ func (m *SidebarModel) View() string {
 						}
 						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
 							m.selectedProjectRow = len(lines)
-							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
 						} else {
-							lines = append(lines, renderGroupHeader(s.Project))
+							lines = append(lines, renderGroupHeader(s.Project, m.flaggedProjects[s.Project]))
 						}
 					}
 				}
@@ -115,9 +119,9 @@ func (m *SidebarModel) View() string {
 					currentProject = s.Project
 					if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
 						m.selectedProjectRow = len(lines)
-						lines = append(lines, renderSelectedProjectHeader(s.Project, m.width))
+						lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
 					} else {
-						lines = append(lines, renderProjectSubHeader(s.Project))
+						lines = append(lines, renderProjectSubHeader(s.Project, m.flaggedProjects[s.Project]))
 					}
 				}
 			}
@@ -150,9 +154,9 @@ func (m *SidebarModel) View() string {
 				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
 				if atProjectLevel && selectedProject == backlogPE {
 					m.selectedProjectRow = len(lines)
-					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width))
+					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]))
 				} else {
-					lines = append(lines, renderProjectSubHeader(backlog.Project))
+					lines = append(lines, renderProjectSubHeader(backlog.Project, m.flaggedProjects[backlog.Project]))
 				}
 			}
 			backlogCursor := len(m.filtered) + i
@@ -207,8 +211,17 @@ func (m *SidebarModel) View() string {
 	return strings.Join(lines, "\n")
 }
 
-func renderGroupHeader(project string) string {
-	return GroupHeaderProjectStyle.Render(IconFolder + " " + project)
+// projectLabel builds the "📁 name [🚩]" string shared by all project headers.
+func projectLabel(project string, flagged bool) string {
+	s := IconFolder + " " + project
+	if flagged {
+		s += " " + flagItemStyle.Render(IconFlag)
+	}
+	return s
+}
+
+func renderGroupHeader(project string, flagged bool) string {
+	return GroupHeaderProjectStyle.Render(projectLabel(project, flagged))
 }
 
 // selectedProjectHeaderStyle is the highlight style for project headers at project-level nav.
@@ -216,12 +229,12 @@ var selectedProjectHeaderStyle = GroupHeaderStyle.
 	Foreground(ColorAccent).
 	Background(ColorSelectionBg)
 
-func renderSelectedProjectHeader(project string, width int) string {
-	return selectedProjectHeaderStyle.Width(width).Render(IconFolder + " " + project)
+func renderSelectedProjectHeader(project string, width int, flagged bool) string {
+	return selectedProjectHeaderStyle.Width(width).Render(projectLabel(project, flagged))
 }
 
-func renderProjectSubHeader(project string) string {
-	return ProjectSubHeaderStyle.Render(IconFolder + " " + project)
+func renderProjectSubHeader(project string, flagged bool) string {
+	return ProjectSubHeaderStyle.Render(projectLabel(project, flagged))
 }
 
 func renderStatusGroupHeader(order int) string {
@@ -399,6 +412,9 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 		if !m.laterExpanded && order == OrderLater {
 			continue
 		}
+		if m.focusMode && !m.IsEffectivelyFlagged(s) {
+			continue
+		}
 
 		// Group headers — must mirror View()'s logic exactly
 		if m.groupByProject {
@@ -484,6 +500,9 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 				continue
 			}
 			if !m.laterExpanded && order == OrderLater {
+				continue
+			}
+			if m.focusMode && !m.IsEffectivelyFlagged(s) {
 				continue
 			}
 

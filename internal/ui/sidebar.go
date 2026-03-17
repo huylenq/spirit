@@ -91,6 +91,8 @@ type SidebarModel struct {
 	cardMode            bool             // when true, renderItem skips the selection bar prefix (used by RenderCard)
 	flaggedSessions     map[string]bool  // paneID → flagged
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
+	flaggedProjects     map[string]bool  // project name → flagged
+	focusMode           bool             // when true, only show effectively-flagged sessions
 	numberSlots         map[int]string   // slot (1-9) → PaneID
 }
 
@@ -183,8 +185,9 @@ func (m SidebarModel) BacklogCount() int  { return len(m.backlogs) }
 
 // IsAllQuiet returns true when sessions exist but none are cursor-navigable
 // (all hidden behind collapsed sections, no YOUR TURN items, not in search mode).
+// Focus mode is excluded — an empty focused set is intentional filtering, not "all quiet".
 func (m SidebarModel) IsAllQuiet() bool {
-	return len(m.items) > 0 && len(m.filtered) == 0 && len(m.filteredBacklog) == 0 && m.narrow == ""
+	return len(m.items) > 0 && len(m.filtered) == 0 && len(m.filteredBacklog) == 0 && m.narrow == "" && !m.focusMode
 }
 
 func NewSidebarModel() SidebarModel {
@@ -374,31 +377,67 @@ func (m SidebarModel) Items() []claude.ClaudeSession {
 	return m.filtered
 }
 
-// ToggleFlagSelected toggles the flag on the currently selected session or backlog item.
+// toggleBoolMap toggles a key in a lazily-initialized bool map.
+func toggleBoolMap(m *map[string]bool, key string) {
+	if *m == nil {
+		*m = make(map[string]bool)
+	}
+	if (*m)[key] {
+		delete(*m, key)
+	} else {
+		(*m)[key] = true
+	}
+}
+
+// ToggleFlagSelected toggles the flag on the currently selected session, backlog item, or project.
 func (m *SidebarModel) ToggleFlagSelected() {
+	if m.selectionLevel == LevelProject {
+		if pe, ok := m.SelectedProject(); ok {
+			toggleBoolMap(&m.flaggedProjects, pe.Name)
+		}
+		return
+	}
 	if m.IsBacklogSelected() {
 		if backlog, ok := m.SelectedBacklog(); ok {
-			if m.flaggedBacklogs == nil {
-				m.flaggedBacklogs = make(map[string]bool)
-			}
-			if m.flaggedBacklogs[backlog.ID] {
-				delete(m.flaggedBacklogs, backlog.ID)
-			} else {
-				m.flaggedBacklogs[backlog.ID] = true
-			}
+			toggleBoolMap(&m.flaggedBacklogs, backlog.ID)
 		}
 		return
 	}
 	if s, ok := m.SelectedItem(); ok {
-		if m.flaggedSessions == nil {
-			m.flaggedSessions = make(map[string]bool)
-		}
-		if m.flaggedSessions[s.PaneID] {
-			delete(m.flaggedSessions, s.PaneID)
-		} else {
-			m.flaggedSessions[s.PaneID] = true
+		toggleBoolMap(&m.flaggedSessions, s.PaneID)
+	}
+}
+
+// IsEffectivelyFlagged returns true if a session is flagged directly or via its project.
+func (m SidebarModel) IsEffectivelyFlagged(s claude.ClaudeSession) bool {
+	return m.flaggedSessions[s.PaneID] || m.flaggedProjects[s.Project]
+}
+
+// IsProjectFlagged returns true if the given project name is flagged.
+func (m SidebarModel) IsProjectFlagged(name string) bool {
+	return m.flaggedProjects[name]
+}
+
+// SetFocusMode toggles focus mode on or off and re-applies the filter.
+func (m *SidebarModel) SetFocusMode(v bool) {
+	m.focusMode = v
+	m.applyNarrow()
+}
+
+// FocusMode returns whether focus mode is active.
+func (m SidebarModel) FocusMode() bool {
+	return m.focusMode
+}
+
+// FocusedCount returns the number of effectively-flagged sessions.
+func (m SidebarModel) FocusedCount() int {
+	n := 0
+	for _, s := range m.items {
+		if m.IsEffectivelyFlagged(s) {
+			n++
 		}
 	}
+	return n
 }
 
 // BindSlot binds the currently selected session to slot n (1-9).
@@ -448,6 +487,7 @@ func (m SidebarModel) PaneIDForSlot(n int) string {
 type SidebarState struct {
 	FlaggedSessions map[string]bool `json:"flagged_sessions,omitempty"`
 	FlaggedBacklogs map[string]bool `json:"flagged_backlogs,omitempty"`
+	FlaggedProjects map[string]bool `json:"flagged_projects,omitempty"`
 	NumberSlots     map[int]string  `json:"number_slots,omitempty"`
 }
 
@@ -456,6 +496,7 @@ func (m SidebarModel) ExportState() SidebarState {
 	return SidebarState{
 		FlaggedSessions: m.flaggedSessions,
 		FlaggedBacklogs: m.flaggedBacklogs,
+		FlaggedProjects: m.flaggedProjects,
 		NumberSlots:     m.numberSlots,
 	}
 }
@@ -464,6 +505,7 @@ func (m SidebarModel) ExportState() SidebarState {
 func (m *SidebarModel) ImportState(st SidebarState) {
 	m.flaggedSessions = st.FlaggedSessions
 	m.flaggedBacklogs = st.FlaggedBacklogs
+	m.flaggedProjects = st.FlaggedProjects
 	m.numberSlots = st.NumberSlots
 }
 
@@ -558,6 +600,17 @@ func (m *SidebarModel) applyNarrow() {
 		} else {
 			sortByStatus(m.filtered)
 		}
+	}
+	// Focus mode: remove sessions that are not effectively flagged
+	if m.focusMode {
+		n := 0
+		for _, s := range m.filtered {
+			if m.IsEffectivelyFlagged(s) {
+				m.filtered[n] = s
+				n++
+			}
+		}
+		m.filtered = m.filtered[:n]
 	}
 	// Count Clauding sessions and remove them from the cursor-navigable list when collapsed
 	m.claudingCount = 0

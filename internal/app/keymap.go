@@ -13,7 +13,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
 		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
-		k.JumpBack, k.Note, k.SlotJump, k.SlotBind,
+		k.JumpBack, k.Note, k.FocusMode, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -142,6 +142,9 @@ type KeyMap struct {
 
 	// Toggle auto-jump after send/commit
 	AutoJumpToggle key.Binding
+
+	// Focus mode (show only flagged sessions)
+	FocusMode key.Binding
 
 	// Number slot jump/bind (video-game style)
 	SlotJump key.Binding
@@ -462,6 +465,10 @@ var Keys = KeyMap{
 	AutoJumpToggle: key.NewBinding(
 		key.WithKeys("alt+j"),
 		key.WithHelp("alt+j", "toggle autojump"),
+	),
+	FocusMode: key.NewBinding(
+		key.WithKeys("F"),
+		key.WithHelp("F", "focus mode"),
 	),
 	SlotJump: key.NewBinding(
 		key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"),

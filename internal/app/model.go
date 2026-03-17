@@ -278,6 +278,7 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetBacklogExpanded(loadPrefBool("backlogExpanded"))
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
+	sidebar.SetFocusMode(loadPrefBool("focusMode"))
 	autoJump := Flag("autoJump")
 	sidebar.ShowAutoJump = autoJump
 	s := spinner.New()
