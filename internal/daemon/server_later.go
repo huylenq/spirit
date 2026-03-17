@@ -100,12 +100,18 @@ func (d *Daemon) handleOpenLater(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
+	// Read the record before removing it so we can resume by session ID.
+	record, _ := claude.ReadLaterRecord(req.LaterID)
 	paneID, err := tmux.NewWindow(req.TmuxSession, req.CWD)
 	if err != nil {
 		r := errResponse("new window: " + err.Error())
 		return &r
 	}
-	tmux.SendKeysLiteral(paneID, "claude") //nolint:errcheck
+	cmd := "claude"
+	if record != nil && record.SessionID != "" {
+		cmd = "claude --resume " + shellQuote(record.SessionID)
+	}
+	tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 	claude.RemoveLaterRecord(req.LaterID)
 	d.nudge()
 	log.Printf("open-later: created window in %s at %s, pane %s", req.TmuxSession, req.CWD, paneID)

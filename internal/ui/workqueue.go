@@ -15,7 +15,7 @@ const (
 	workQueueCardW      = 62 // card width per session (including border)
 	workQueueCardInnerW = 60 // card content width (cardW - 2 for border sides)
 	workQueueCardInnerH = 3  // card content height (height - 2 for border top/bottom)
-	workQueueOthersW    = 28 // width for the compacted "others" section (avatar + status + title)
+	workQueueOthersW    = 26 // width for the compacted "others" section (avatar + status + title)
 	workQueueCardGap    = 1  // margin between cards
 )
 
@@ -162,7 +162,7 @@ func (m *WorkQueueModel) othersWidth() int {
 	if len(m.others) == 0 {
 		return 0
 	}
-	// Fixed width: enough for "│ <avatar><status> <title…>"
+	// Fixed width: enough for "<avatar><status> <title…>"
 	return workQueueOthersW
 }
 
@@ -235,13 +235,10 @@ func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, ar
 		isAutoJump := !isSelected && s.PaneID == m.autoJumpID
 		content := sidebar.RenderCard(innerW, workQueueCardInnerH, isSelected, isAutoJump, s, dw)
 
-		// Wrap in border — only selected gets the solid ▌ bar
+		// Wrap in border
 		border := lipgloss.RoundedBorder()
 		borderColor := ColorBorder
 		if isSelected {
-			border.Left = "▌"
-			border.TopLeft = "╭"
-			border.BottomLeft = "╰"
 			borderColor = AvatarColor(s.AvatarColorIdx)
 		}
 		borderStyle := lipgloss.NewStyle().
@@ -298,10 +295,9 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 		return ""
 	}
 
-	sep := SeparatorStyle.Render("│")
-	// Each line: "│ <avatar><status> <title>"
-	// Reserve: sep(1) + space(1) + avatar(2) + status(1) + space(1) = 6 chars before title
-	const prefixCols = 6
+	// Each line: "<avatar><status> <title>"
+	// Reserve: avatar(2) + status(1) + space(1) = 4 chars before title
+	const prefixCols = 4
 
 	lines := make([]string, 0, WorkQueueHeight)
 	for i, s := range m.others {
@@ -333,19 +329,19 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 			title = ""
 		}
 
-		line := sep + " " + styled + indicator + " " + ItemDetailStyle.Render(title)
+		line := styled + indicator + " " + ItemDetailStyle.Render(title)
 		lines = append(lines, line)
 	}
 
 	// Pad to WorkQueueHeight
 	for len(lines) < WorkQueueHeight {
-		lines = append(lines, sep)
+		lines = append(lines, "")
 	}
 
 	// Overflow indicator on last line if more items than visible
 	if len(m.others) > WorkQueueHeight {
 		extra := len(m.others) - WorkQueueHeight
-		lines[WorkQueueHeight-1] = sep + " " + ItemDetailStyle.Render(fmt.Sprintf("+%d more", extra))
+		lines[WorkQueueHeight-1] = ItemDetailStyle.Render(fmt.Sprintf("+%d more", extra))
 	}
 
 	return strings.Join(lines, "\n")

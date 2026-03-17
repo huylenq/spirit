@@ -198,6 +198,11 @@ func findMsgLineOffsets(content string, messages []string) []int {
 		// Strip type-prefix glyphs (bash/plan/slash) — they exist in the outline
 		// data but not in the terminal capture, so searching with them fails.
 		msg = stripOutlinePrefix(msg)
+		// Interruption messages are stored as "[Request interrupted by user]" in the
+		// transcript but Claude Code renders them as "Interrupted" in the terminal.
+		if strings.HasPrefix(msg, "[Request interrupted") {
+			msg = "Interrupted"
+		}
 		// Use only the first line of the message (multiline messages wrap in the terminal)
 		firstLine := msg
 		if idx := strings.IndexByte(msg, '\n'); idx >= 0 {
