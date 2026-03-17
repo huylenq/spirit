@@ -162,14 +162,26 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		sessions = append(sessions, s)
 	}
 
-	// Merge phantom Later sessions from laters (one per pane, newest wins)
+	// Merge phantom Later sessions from laters (one per pane, newest wins).
+	// Also deduplicate by SessionID: if a session was later-killed and then
+	// manually resumed in a new pane, the live session takes precedence.
 	seenPaneIDs := make(map[string]bool)
+	seenSessionIDs := make(map[string]bool)
 	for _, s := range sessions {
 		seenPaneIDs[s.PaneID] = true
+		if s.SessionID != "" {
+			seenSessionIDs[s.SessionID] = true
+		}
 	}
 	for _, bm := range laters {
 		if seenPaneIDs[bm.PaneID] {
 			continue // pane already represented (live session or earlier Later record)
+		}
+		if bm.SessionID != "" && seenSessionIDs[bm.SessionID] {
+			// Session is already live in a different pane (e.g. manually resumed);
+			// remove the stale Later record and skip the phantom.
+			RemoveLaterRecord(bm.ID)
+			continue
 		}
 		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
