@@ -225,14 +225,27 @@ func parseUsageDialog(text string) (*UsageStats, error) {
 			}
 			found := 0
 
-			// Check the marker line itself — new dialog collapses session data onto one line
+			// Check the marker line itself — new dialog collapses session data onto one line.
+			// Restrict search to the region between this marker and the next section marker
+			// on the same line; otherwise FindStringSubmatch always grabs the first %, which
+			// is the session % when multiple sections share one line.
 			trimmed := strings.TrimSpace(line)
-			if m := rePct.FindStringSubmatch(trimmed); m != nil {
+			markerIdx := strings.Index(trimmed, s.marker)
+			region := trimmed[markerIdx+len(s.marker):]
+			for _, other := range allMarkers {
+				if other == s.marker {
+					continue
+				}
+				if idx := strings.Index(region, other); idx >= 0 {
+					region = region[:idx]
+				}
+			}
+			if m := rePct.FindStringSubmatch(region); m != nil {
 				fmt.Sscanf(m[1], "%d", s.pct)
 				found++
 			}
 			if found == 1 {
-				if m := reResets.FindStringSubmatch(trimmed); m != nil {
+				if m := reResets.FindStringSubmatch(region); m != nil {
 					*s.resets = strings.TrimSpace(m[1])
 					found++
 				}
