@@ -40,13 +40,13 @@ analyze the situation and the codebaes at claude-agent-sdk-python carefully
   What the SDK Does Offer Over Current Approach
 
   1. Bidirectional control protocol — persistent stdin/stdout JSON stream with the CLI, meaning Huy could theoretically keep a ClaudeSDKClient alive across multiple prompts (via --continue). Current code spawns a fresh process per prompt.
-  2. In-process MCP servers — the @tool() decorator runs tools directly in the Python process, eliminating the cmc mcp-serve subprocess spawn. This would shave ~500ms per tool invocation.
+  2. In-process MCP servers — the @tool() decorator runs tools directly in the Python process, eliminating the spirit mcp-serve subprocess spawn. This would shave ~500ms per tool invocation.
   3. Hooks system — Python callbacks for PreToolUse, PostToolUse, etc. Currently Huy's copilot has no hook integration.
   4. Structured message types — typed AssistantMessage, ToolUseBlock, ResultMessage vs. the current hand-rolled cliStreamLine parser.
 
   The Porting Problem: It's Python, Huy's Daemon is Go
 
-  This is the elephant in the room. The entire claude-mission-control daemon is Go. Porting to the SDK means one of:
+  This is the elephant in the room. The entire spirit daemon is Go. Porting to the SDK means one of:
 
   ┌────────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────┬──────────────────────────────┐
   │                                          Approach                                          │           Complexity            │     Latency Improvement      │
@@ -79,7 +79,7 @@ analyze the situation and the codebaes at claude-agent-sdk-python carefully
   3. A Go-native solution is strongly preferred over adding a Python dependency
   → Correct me now or I'll proceed with these.
 
-  Option D (Direct Anthropic API) is the highest-payoff path. It eliminates all subprocess overhead, gives true token-level streaming, and stays in Go. The copilot's tool needs (memory append, session queries) are already handled via the cmc mcp-serve MCP server — those could be reimplemented as native tool-use
+  Option D (Direct Anthropic API) is the highest-payoff path. It eliminates all subprocess overhead, gives true token-level streaming, and stays in Go. The copilot's tool needs (memory append, session queries) are already handled via the spirit mcp-serve MCP server — those could be reimplemented as native tool-use
   callbacks in the API integration.
 
   Option B (port the control protocol to Go) is the middle ground if Huy wants to keep the CLI's built-in tools available to copilot. The protocol is just newline-delimited JSON over stdin/stdout — not hard to implement, and the SDK's source code serves as a clear spec.

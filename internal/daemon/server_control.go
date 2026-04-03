@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // commitCmd is the slash command sent to Claude Code to trigger a git commit.

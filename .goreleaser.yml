@@ -1,9 +1,9 @@
 version: 2
 
 builds:
-  - id: cmc
-    main: ./cmd/cmc
-    binary: cmc
+  - id: spirit
+    main: ./cmd/spirit
+    binary: spirit
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
@@ -18,7 +18,7 @@ archives:
     formats: ['tar.gz']
     files:
       - hooks/*
-      - cmc.tmux
+      - spirit.tmux
       - LICENSE
       - README.md
 

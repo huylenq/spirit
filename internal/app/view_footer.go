@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // hint formats a single key hint for the footer bar.

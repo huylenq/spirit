@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/huylenq/claude-mission-control/internal/daemon"
+	"github.com/huylenq/spirit/internal/daemon"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -24,7 +24,7 @@ type Deps struct {
 
 //go:generate go run ../../cmd/gen-lua-help
 
-// RunEval executes a Lua script in a sandboxed VM with the cmc API available.
+// RunEval executes a Lua script in a sandboxed VM with the spirit API available.
 // Returns the JSON-encoded result, any flash/toast messages emitted, and any error.
 func RunEval(script string, client *daemon.Client, stderr io.Writer) (string, Msgs, error) {
 	return RunEvalWithContext(script, client, stderr, EvalContext{})

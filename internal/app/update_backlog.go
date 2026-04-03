@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (m Model) handleKeyBacklogPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

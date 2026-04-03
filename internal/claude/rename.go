@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // WindowPaneInfo describes one pane in a tmux window, regardless of whether it runs Claude.

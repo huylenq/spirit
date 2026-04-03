@@ -9,7 +9,7 @@ import (
 
 func prefsPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "cmc", "prefs")
+	return filepath.Join(home, ".cache", "spirit", "prefs")
 }
 
 func loadPrefs() map[string]string {

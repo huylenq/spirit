@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 const (

@@ -4,8 +4,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
-	"github.com/huylenq/claude-mission-control/internal/scripting"
+	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/scripting"
 )
 
 // evalLua runs a Lua script async against the daemon and returns a LuaEvalDoneMsg.

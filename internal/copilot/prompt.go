@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // BuildSessionsPreamble constructs a lightweight preamble with just live session state.
 // This is the only daemon-only data worth injecting — everything else the agent can
-// fetch via cmc agent commands or already knows from OpenClaw's context.
+// fetch via spirit agent commands or already knows from OpenClaw's context.
 func BuildSessionsPreamble(sessions []claude.ClaudeSession) string {
 	var b strings.Builder
 	b.WriteString("<live-sessions time=\"")

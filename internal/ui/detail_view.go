@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (m *DetailModel) View() string {

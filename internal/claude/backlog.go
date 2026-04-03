@@ -104,7 +104,7 @@ func (b Backlog) DisplayTitle() string {
 
 // BacklogDir returns the backlog directory path for a given project root.
 func BacklogDir(cwd string) string {
-	return filepath.Join(cwd, ".cmc", "backlog")
+	return filepath.Join(cwd, ".spirit", "backlog")
 }
 
 // GenerateBacklogID creates a random hex ID for a backlog file.
@@ -147,7 +147,7 @@ func ReadBacklog(cwd, id string) (*Backlog, error) {
 	}, nil
 }
 
-// ReadAllBacklog reads all backlog files from a project's .cmc/backlog/ directory.
+// ReadAllBacklog reads all backlog files from a project's .spirit/backlog/ directory.
 func ReadAllBacklog(cwd string) ([]Backlog, error) {
 	dir := BacklogDir(cwd)
 	entries, err := os.ReadDir(dir)
@@ -199,18 +199,22 @@ func CollectUniqueCWDs(sessions []ClaudeSession) []string {
 	return cwds
 }
 
-// migrateIdeaDir renames <cwd>/.cmc/ideas to <cwd>/.cmc/backlog.
-// Silently no-ops if the source does not exist or the destination is non-empty.
-func migrateIdeaDir(cwd string) {
-	_ = os.Rename(filepath.Join(cwd, ".cmc", "ideas"), BacklogDir(cwd))
+// migrateLegacyBacklogDirs migrates old backlog directories to .spirit/backlog.
+// Handles both .cmc/ideas (oldest) and .cmc/backlog (pre-rebrand).
+func migrateLegacyBacklogDirs(cwd string) {
+	target := BacklogDir(cwd)
+	// Oldest legacy: .cmc/ideas → .spirit/backlog
+	_ = os.Rename(filepath.Join(cwd, ".cmc", "ideas"), target)
+	// Pre-rebrand: .cmc/backlog → .spirit/backlog
+	_ = os.Rename(filepath.Join(cwd, ".cmc", "backlog"), target)
 }
 
 // DiscoverBacklogs reads all backlog items from the CWDs of the given sessions.
-// It also auto-migrates any legacy .cmc/ideas/ directories to .cmc/backlog/.
+// It also auto-migrates any legacy .cmc/ directories to .spirit/backlog/.
 func DiscoverBacklogs(sessions []ClaudeSession) []Backlog {
 	var all []Backlog
 	for _, cwd := range CollectUniqueCWDs(sessions) {
-		migrateIdeaDir(cwd)
+		migrateLegacyBacklogDirs(cwd)
 		backlogs, _ := ReadAllBacklog(cwd)
 		all = append(all, backlogs...)
 	}

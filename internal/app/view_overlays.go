@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // formatMessageEntry formats a single message log entry as a styled line.

@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (m Model) execPromptRelay() (Model, tea.Cmd) {

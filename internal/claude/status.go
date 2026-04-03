@@ -19,10 +19,10 @@ func statusDir() string {
 	return StatusDir()
 }
 
-// StatusDir returns the path to the cmc cache directory.
+// StatusDir returns the path to the spirit cache directory.
 func StatusDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "cmc")
+	return filepath.Join(home, ".cache", "spirit")
 }
 
 // DaemonSocketPath returns the path to the daemon Unix socket.
@@ -38,7 +38,7 @@ func DaemonSocketPath() string {
 				if out, err := cmd.Output(); err == nil {
 					root := strings.TrimSpace(string(out))
 					h := sha256.Sum256([]byte(root))
-					cachedDaemonSocket = fmt.Sprintf("/tmp/cmc-%x.sock", h[:6])
+					cachedDaemonSocket = fmt.Sprintf("/tmp/spirit-%x.sock", h[:6])
 					return
 				}
 			}
@@ -124,7 +124,7 @@ type HookEvent struct {
 	Time     string
 	HookType string
 	Payload  string
-	Effect   string // what cmc did with this hook (empty = legacy/no data)
+	Effect   string // what spirit did with this hook (empty = legacy/no data)
 }
 
 // GlobalHookEffect is a handled hook event tagged with its source session's avatar.

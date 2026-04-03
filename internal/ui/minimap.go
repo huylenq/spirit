@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // MinimapModel renders a spatial minimap of tmux pane layout.

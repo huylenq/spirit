@@ -13,7 +13,7 @@ CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 | Field | Source | When populated |
 |-------|--------|----------------|
 | **CustomTitle** | Claude Code transcript (`custom-title` JSONL entry) | User runs `/rename` in Claude Code |
-| **SynthesizedTitle** | AI synthesis cache (`~/.cache/cmc/{sessionID}.summary`) | Daemon auto-synthesizes on agent→user turn transition, or user presses `s` |
+| **SynthesizedTitle** | AI synthesis cache (`~/.cache/spirit/{sessionID}.summary`) | Daemon auto-synthesizes on agent→user turn transition, or user presses `s` |
 | **FirstMessage** | Transcript forward-scan for first `human` turn | Always available once user sends a message |
 
 ## Data Flow
@@ -27,7 +27,7 @@ flowchart TD
 
     subgraph "Synthesis"
         AI["claude --model haiku"]
-        Cache[("~/.cache/cmc/<br/>{sessionID}.summary")]
+        Cache[("~/.cache/spirit/<br/>{sessionID}.summary")]
     end
 
     subgraph "Discovery (each poll)"

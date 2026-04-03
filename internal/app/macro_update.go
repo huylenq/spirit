@@ -9,8 +9,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/scripting"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/scripting"
 )
 
 // handleKeyMacro handles input when the macro palette is shown.

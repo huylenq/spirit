@@ -1,4 +1,4 @@
-# Claude Mission Control (cmc)
+# Spirit
 
 A TUI for monitoring and switching between Claude Code sessions across tmux panes.
 
@@ -18,19 +18,19 @@ A TUI for monitoring and switching between Claude Code sessions across tmux pane
 ### With TPM
 
 ```bash
-set -g @plugin 'huylenq/claude-mission-control'
+set -g @plugin 'huylenq/spirit'
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/huylenq/claude-mission-control ~/.tmux/plugins/claude-mission-control
-cd ~/.tmux/plugins/claude-mission-control && make build
+git clone https://github.com/huylenq/spirit ~/.tmux/plugins/spirit
+cd ~/.tmux/plugins/spirit && make build
 ```
 
 Then add to `~/.tmux.conf`:
 ```bash
-run-shell ~/.tmux/plugins/claude-mission-control/cmc.tmux
+run-shell ~/.tmux/plugins/spirit/spirit.tmux
 ```
 
 ## Setup
@@ -40,14 +40,14 @@ run-shell ~/.tmux/plugins/claude-mission-control/cmc.tmux
 Run once after install:
 
 ```bash
-~/.tmux/plugins/claude-mission-control/bin/cmc setup
+~/.tmux/plugins/spirit/bin/spirit setup
 ```
 
 This auto-patches `~/.claude/settings.json` with the required hooks. Re-run after updates to migrate hook paths if needed.
 
 ## Keybindings
 
-The tmux plugin (`cmc.tmux`) binds:
+The tmux plugin (`spirit.tmux`) binds:
 
 | Key | Mode | Action |
 |-----|------|--------|
@@ -84,7 +84,7 @@ The plugin uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-co
 - `UserPromptSubmit` — sets status to "agent-turn" and captures the user's prompt
 - `Stop` — sets status to "user-turn" when Claude finishes
 
-Status files are stored in `~/.cache/cmc/`. A background daemon polls tmux panes every second and pushes updates to connected TUI clients over a Unix socket.
+Status files are stored in `~/.cache/spirit/`. A background daemon polls tmux panes every second and pushes updates to connected TUI clients over a Unix socket.
 
 ## License
 

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func messageLogPath() string {

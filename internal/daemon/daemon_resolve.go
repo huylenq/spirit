@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // resolveCommitDone checks pending commit-done operations against current sessions.

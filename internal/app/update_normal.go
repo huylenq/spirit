@@ -6,9 +6,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

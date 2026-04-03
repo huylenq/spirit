@@ -1,12 +1,12 @@
 # Persistence & Daemon Memory Model
 
-How claude-mission-control stores state, communicates between processes, and recovers after restarts.
+How spirit stores state, communicates between processes, and recovers after restarts.
 
 ## Daemon Architecture
 
 ### Process Model
 
-The daemon is a single long-lived background process started via `cmc daemon` (or auto-started on first client connect).
+The daemon is a single long-lived background process started via `spirit daemon` (or auto-started on first client connect).
 
 ```go
 type Daemon struct {
@@ -71,7 +71,7 @@ Each `Client` opens **two connections** to the daemon:
 | **Subscribe** (`subConn`) | Persistent push stream | Client sends `subscribe` once, then blocks reading; daemon pushes on every state change |
 | **RPC** (`rpcConn`) | Request/response | Serialized with `rpcMu` mutex; one request at a time |
 
-`ConnectRPCOnly()` is available for non-TUI commands (`cmc eval`, `cmc orchestrator`) that don't need the subscribe stream.
+`ConnectRPCOnly()` is available for non-TUI commands (`spirit eval`, `spirit orchestrator`) that don't need the subscribe stream.
 
 ### Subscribe Flow
 
@@ -178,11 +178,11 @@ type NudgeData struct {
 
 ### Directory Layout
 
-All state files live under `~/.cache/cmc/` unless noted otherwise.
+All state files live under `~/.cache/spirit/` unless noted otherwise.
 
 ```
-~/.cache/cmc/
-├── daemon.sock              # Unix domain socket (or /tmp/cmc-<hash>.sock)
+~/.cache/spirit/
+├── daemon.sock              # Unix domain socket (or /tmp/spirit-<hash>.sock)
 ├── daemon.pid               # Process ID file
 ├── daemon.sock.lock         # flock file for singleton
 ├── daemon.log               # Daemon log output
@@ -268,10 +268,10 @@ Preferences are read on startup in `NewModel()` and written immediately on each 
 
 | File | Purpose |
 |------|---------|
-| `daemon.sock` | Unix domain socket (or `/tmp/cmc-<hash>.sock`) |
+| `daemon.sock` | Unix domain socket (or `/tmp/spirit-<hash>.sock`) |
 | `daemon.pid` | Daemon process ID |
 | `<socket>.lock` | `flock` file for singleton guarantee |
-| `daemon.log` | Always at `~/.cache/cmc/daemon.log` regardless of worktree |
+| `daemon.log` | Always at `~/.cache/spirit/daemon.log` regardless of worktree |
 
 ## Memory vs Disk
 
@@ -302,7 +302,7 @@ Preferences are read on startup in `NewModel()` and written immediately on each 
 
 ```mermaid
 flowchart LR
-    D[("Disk files<br/>~/.cache/cmc/<br/>.status, .lastmsg, ...")] --> DS["DiscoverSessions()"]
+    D[("Disk files<br/>~/.cache/spirit/<br/>.status, .lastmsg, ...")] --> DS["DiscoverSessions()"]
     T["tmux list-panes -a<br/>(live panes)"] --> DS
     P["ps -eo pid,ppid,comm<br/>(process table)"] --> DS
     DS --> S["sessions []ClaudeSession<br/>(computed cache)"]
@@ -357,30 +357,30 @@ flowchart TD
     BIN["os.Executable()"] --> SYM["Resolve symlinks"]
     SYM --> GIT{"Inside a<br/>git repo?"}
     GIT -->|"yes"| HASH["sha256(repoRoot)[:12]"]
-    HASH --> TMP["/tmp/cmc-&lt;hash&gt;.sock<br/>/tmp/cmc-&lt;hash&gt;.pid"]
-    GIT -->|"no (global install)"| DEFAULT["~/.cache/cmc/daemon.sock<br/>~/.cache/cmc/daemon.pid"]
+    HASH --> TMP["/tmp/spirit-&lt;hash&gt;.sock<br/>/tmp/spirit-&lt;hash&gt;.pid"]
+    GIT -->|"no (global install)"| DEFAULT["~/.cache/spirit/daemon.sock<br/>~/.cache/spirit/daemon.pid"]
 
     subgraph "Worktree A"
-        WA["bin/cmc"] --> DA["Daemon A<br/>/tmp/cmc-abc123.sock"]
+        WA["bin/spirit"] --> DA["Daemon A<br/>/tmp/spirit-abc123.sock"]
     end
     subgraph "Worktree B"
-        WB["bin/cmc"] --> DB["Daemon B<br/>/tmp/cmc-def456.sock"]
+        WB["bin/spirit"] --> DB["Daemon B<br/>/tmp/spirit-def456.sock"]
     end
     subgraph "Global install"
-        WG["cmc (PATH)"] --> DG["Daemon<br/>~/.cache/cmc/daemon.sock"]
+        WG["spirit (PATH)"] --> DG["Daemon<br/>~/.cache/spirit/daemon.sock"]
     end
 ```
 
-When the `cmc` binary lives inside a git repo (a dev worktree build), `DaemonSocketPath()` computes:
+When the `spirit` binary lives inside a git repo (a dev worktree build), `DaemonSocketPath()` computes:
 
 ```
-/tmp/cmc-<sha256(repoRoot)[:12]>.sock
-/tmp/cmc-<sha256(repoRoot)[:12]>.pid
+/tmp/spirit-<sha256(repoRoot)[:12]>.sock
+/tmp/spirit-<sha256(repoRoot)[:12]>.pid
 ```
 
-Binaries installed globally (via TPM or PATH) that are **not** inside a git repo fall back to `~/.cache/cmc/daemon.sock`.
+Binaries installed globally (via TPM or PATH) that are **not** inside a git repo fall back to `~/.cache/spirit/daemon.sock`.
 
-This means each worktree's `cmc` binary talks to an independent daemon instance with zero session sharing. No configuration needed — detection is automatic via `os.Executable()` → resolve symlinks → find git root.
+This means each worktree's `spirit` binary talks to an independent daemon instance with zero session sharing. No configuration needed — detection is automatic via `os.Executable()` → resolve symlinks → find git root.
 
 ### Session-Level Worktree Detection
 
@@ -472,17 +472,17 @@ Pure in-memory computation using cached diff stats. Detects when 2+ active sessi
 
 ### Hook Registration
 
-`cmc setup` reads and patches `~/.claude/settings.json`:
+`spirit setup` reads and patches `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
-      {"command": "/path/to/cmc _hook PreToolUse #cmc-hook", "matcher": {"tool_name": "*"}}
+      {"command": "/path/to/spirit _hook PreToolUse #spirit-hook", "matcher": {"tool_name": "*"}}
     ],
     ...
   }
 }
 ```
 
-The `#cmc-hook` marker identifies cmc-managed hooks for future migration. `upsertHookCmd()` adds or updates hooks without disturbing user-defined hooks.
+The `#spirit-hook` marker identifies spirit-managed hooks for future migration. `upsertHookCmd()` adds or updates hooks without disturbing user-defined hooks.

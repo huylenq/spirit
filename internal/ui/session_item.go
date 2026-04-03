@@ -11,7 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, query string) string {

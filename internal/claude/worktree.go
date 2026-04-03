@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/huylenq/claude-mission-control/internal/spirit"
+	"github.com/huylenq/spirit/internal/spirit"
 )
 
 const (

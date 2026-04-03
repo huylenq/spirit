@@ -13,7 +13,7 @@ func TestFuzzyMatch(t *testing.T) {
 		{"fix the bug", "fix", true, "exact prefix"},
 		{"the fix is in", "fix", true, "word boundary substring"},
 		{"daemon", "daemon", true, "exact match"},
-		{"mission-control", "mc", true, "word initials"},
+		{"spirit-animal", "sa", true, "word initials"},
 		{"CamelCase", "cc", true, "camelCase initials"},
 		{"bug_fix_parser", "bfp", true, "underscore-separated initials"},
 

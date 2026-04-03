@@ -9,11 +9,11 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
-	"github.com/huylenq/claude-mission-control/internal/ui"
-	"github.com/huylenq/claude-mission-control/internal/ui/destroyer"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/tmux"
+	"github.com/huylenq/spirit/internal/ui"
+	"github.com/huylenq/spirit/internal/ui/destroyer"
 )
 
 // MessageLogEntry is a recorded flash message for the message log.
@@ -218,8 +218,8 @@ type Model struct {
 	killTargetAnimalIdx  int               // avatar animal index for kill confirmation
 	killTargetColorIdx   int               // avatar color index for kill confirmation
 	killTargetLaterID    string            // Later ID to remove when killing a Later session
-	selectActive         bool              // true when launched with CMC_SELECT_ACTIVE=1 (ctrl-space)
-	rotateNext           bool              // true when launched with CMC_ROTATE_NEXT=1 (ctrl-tab)
+	selectActive         bool              // true when launched with SPIRIT_SELECT_ACTIVE=1 (ctrl-space)
+	rotateNext           bool              // true when launched with SPIRIT_ROTATE_NEXT=1 (ctrl-tab)
 	pendingSelectPaneID  string            // pane to auto-select once it appears in the sidebar
 	promptEditor         ui.PromptEditorModel
 	pathInput            ui.RelayModel             // single-line path input for "A" new-session-at-path
@@ -318,8 +318,8 @@ func NewModel(client *daemon.Client) Model {
 		sidebarWidthPct:   loadPrefInt("sidebarWidthPct", 30),
 		spinner:           s,
 		inFullscreenPopup: os.Getenv("CLAUDE_TUI_FULLSCREEN") == "1",
-		selectActive:      os.Getenv("CMC_SELECT_ACTIVE") == "1",
-		rotateNext:        os.Getenv("CMC_ROTATE_NEXT") == "1",
+		selectActive:      os.Getenv("SPIRIT_SELECT_ACTIVE") == "1",
+		rotateNext:        os.Getenv("SPIRIT_ROTATE_NEXT") == "1",
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 		autoJumpOn:        autoJump,
@@ -866,7 +866,7 @@ func (m *Model) jumpForward() string {
 	return m.jumpTrail[m.jumpCursor]
 }
 
-// discoverBacklogs scans unique CWDs from sessions for .cmc/backlog/ directories.
+// discoverBacklogs scans unique CWDs from sessions for .spirit/backlog/ directories.
 func (m Model) discoverBacklogs(sessions []claude.ClaudeSession) tea.Cmd {
 	if len(sessions) == 0 {
 		return nil

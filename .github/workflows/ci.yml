@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           tmux kill-server >/dev/null 2>&1 || true
           tmux -f /dev/null new-session -d -s test 'sleep 5'
-          bash cmc.tmux
+          bash spirit.tmux
           tmux list-keys | grep -q 'C-Space'
           tmux list-keys | grep -q 'C-Tab'
           tmux kill-server

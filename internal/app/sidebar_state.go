@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 func sidebarStatePath() string {

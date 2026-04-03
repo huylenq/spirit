@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Local dev entry point — builds from source, no download.
 # Usage: add to ~/.tmux.conf:
-#   run-shell ~/src/claude-mission-control/cmc-dev.tmux
+#   run-shell ~/src/spirit/spirit-dev.tmux
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY="${CURRENT_DIR}/bin/cmc"
+BINARY="${CURRENT_DIR}/bin/spirit"
 
 # Always rebuild if any Go source is newer than the binary
 if [ ! -f "$BINARY" ] || [ -n "$(find "$CURRENT_DIR" -name '*.go' -newer "$BINARY" 2>/dev/null | head -1)" ]; then
@@ -21,7 +21,7 @@ tmux bind-key -n C-Space run-shell "$BINARY popup --select-active"
 tmux bind-key -n C-Tab run-shell "$BINARY popup --rotate-next"
 
 # <prefix>-Ctrl-Space / <prefix>-Ctrl-Tab → dev picker: fzf over git worktrees,
-# then launch the chosen worktree's bin/cmc inside the same popup.
+# then launch the chosen worktree's bin/spirit inside the same popup.
 # Size matches the default non-fullscreen popup (80%×70%).
 # Fullscreen users: replace -w 80% -h 70% with -w 100% -h 100%.
 tmux bind-key C-Space display-popup -B -E -w 80% -h 70% "$BINARY dev --select-active"

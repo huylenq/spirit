@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // Client connects to the daemon over two Unix socket connections:
@@ -93,7 +93,7 @@ func autoStart(_ DaemonInfo) error {
 }
 
 // ConnectRPCOnly dials the daemon once (RPC only, no subscribe stream).
-// Used by cmc eval and other non-TUI commands.
+// Used by spirit eval and other non-TUI commands.
 func ConnectRPCOnly() (*Client, error) {
 	rpcConn, err := dialWithAutoStart()
 	if err != nil {

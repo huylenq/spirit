@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // Command represents a single dispatchable action for the command palette.

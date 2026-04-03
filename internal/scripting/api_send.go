@@ -1,7 +1,7 @@
 package scripting
 
 import (
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 	lua "github.com/yuin/gopher-lua"
 )
 

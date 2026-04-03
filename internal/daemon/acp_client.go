@@ -179,8 +179,8 @@ func (c *acpClient) handshake() error {
 				},
 			},
 			"clientInfo": map[string]any{
-				"name":    "cmc-copilot",
-				"title":   "CMC Copilot",
+				"name":    "spirit-copilot",
+				"title":   "Spirit Copilot",
 				"version": "1.0.0",
 			},
 		},

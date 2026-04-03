@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // Real pane layout from tmux (window 2 + window 3):

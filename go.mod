@@ -1,4 +1,4 @@
-module github.com/huylenq/claude-mission-control
+module github.com/huylenq/spirit
 
 go 1.24.1
 

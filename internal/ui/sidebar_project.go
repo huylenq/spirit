@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/huylenq/claude-mission-control/internal/claude"
+import "github.com/huylenq/spirit/internal/claude"
 
 // Project-level query methods for SidebarModel.
 

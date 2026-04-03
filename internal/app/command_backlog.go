@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // findTmuxSessionForCWD returns the tmux session name to use for a given CWD.

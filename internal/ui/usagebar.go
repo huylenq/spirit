@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // tzCache caches loaded *time.Location by name to avoid repeated disk reads from time.LoadLocation.
@@ -222,9 +222,17 @@ func (m *UsageBarModel) TopBorderView(width int, corners bool) string {
 			t := float64(i-thickStart) / float64(max(weeklyFilledChars-1-thickStart, 1))
 			t = cubicEaseIn(t) // stays near bg, accelerates sharply at tail
 			bg := blendHex(colorWeeklyBg, colorWeeklyTail, t)
+			// Blend foreground from session's end color to ColorBorder
+			// over a short transition zone to avoid a hard seam.
+			const transitionWidth = 6
+			fg := ColorBorder.Dark // default to border color
+			if distFromSession := i - filledChars; filledChars > thickStart && distFromSession < transitionWidth {
+				blend := float64(distFromSession+1) / float64(transitionWidth)
+				fg = blendHex("#8a5a00", ColorBorder.Dark, blend)
+			}
 			style := lipgloss.NewStyle().
 				Background(lipgloss.Color(bg)).
-				Foreground(ColorBorder)
+				Foreground(lipgloss.Color(fg))
 			sb.WriteString(style.Render(glyph))
 		} else {
 			sb.WriteString(BorderCharStyle.Render(glyph))

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/copilot"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/copilot"
 )
 
 func (d *Daemon) pollLoop(stop chan struct{}) {

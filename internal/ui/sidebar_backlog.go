@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // Backlog-related methods for SidebarModel.

@@ -1,6 +1,6 @@
 # UX Vocabulary & Patterns
 
-Comprehensive glossary of UI components, interaction patterns, visual design, and domain terminology used throughout the claude-mission-control TUI.
+Comprehensive glossary of UI components, interaction patterns, visual design, and domain terminology used throughout the spirit TUI.
 
 ## Layout Structure
 
@@ -199,7 +199,7 @@ Source: `internal/app/keymap.go`
 
 ### Chord Bindings
 
-Two-key sequences. The first key puts cmc into chord-pending state; available continuations are shown in the footer.
+Two-key sequences. The first key puts spirit into chord-pending state; available continuations are shown in the footer.
 
 | Chord | Action |
 |-------|--------|
@@ -234,7 +234,7 @@ Sessions are grouped by status, rendered in this order:
 | **WORKING** | Amber | Sessions where Claude is actively working (agent-turn) |
 | **YOUR TURN** | Blue | Sessions waiting for user (user-turn, not marked later) |
 | **LATER** | Purple | Later-marked sessions (collapsible with `alt+w`) |
-| **BACKLOG** | Cyan | Idea/task items from `.cmc/backlog/` dirs (collapsible with `alt+b`) |
+| **BACKLOG** | Cyan | Idea/task items from `.spirit/backlog/` dirs (collapsible with `alt+b`) |
 
 ### Group-by-Project Layout
 
@@ -414,7 +414,7 @@ Cycled with `M` key:
 | **phantom session** | Session from a Later record with no live tmux pane (`IsPhantom=true`) |
 | **worktree session** | Session running in a Claude Code git worktree |
 | **synthesize / synthesis** | AI-generated summary producing `Headline` + `ProblemType` |
-| **relay** | Sending text from cmc to a Claude session via tmux keystrokes |
+| **relay** | Sending text from spirit to a Claude session via tmux keystrokes |
 | **bang mode** | `!` prefix in relay triggers Claude's bash mode switch |
 | **commit + done** | Compound action: trigger `/commit`, verify completion, then kill pane |
 | **kill** | Terminate Claude process and close tmux pane |
@@ -425,9 +425,9 @@ Cycled with `M` key:
 | **spatial navigation** | Moving between tmux panes using minimap coordinates (H/J/K/L) |
 | **docked** | Panel mode sharing the screen layout (vs. floating overlay) |
 | **group mode** | Sidebar layout grouping sessions by project header |
-| **original pane** | The tmux pane active when cmc launched; restored on quit/esc |
+| **original pane** | The tmux pane active when spirit launched; restored on quit/esc |
 | **macro** | User-defined or built-in text snippet; invoked via macro palette |
-| **backlog** | Idea/task item stored in `.cmc/backlog/`; shown in sidebar |
+| **backlog** | Idea/task item stored in `.spirit/backlog/`; shown in sidebar |
 | **memo / note** | Freeform sticky note per session |
 | **tags** | User-defined labels per session |
 | **queue** | Messages waiting to be sent when session becomes idle |

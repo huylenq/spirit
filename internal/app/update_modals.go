@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

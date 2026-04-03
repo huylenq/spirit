@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/copilot"
+	"github.com/huylenq/spirit/internal/copilot"
 )
 
 const maxCopilotHistory = 200 // 100 exchanges (user + copilot per exchange)
@@ -205,7 +205,7 @@ func clearACPSessionMapping() {
 }
 
 // readACPHistory reads the current copilot conversation from OpenClaw's JSONL session
-// transcript. This is the source of truth: the actual messages sent between cmc and
+// transcript. This is the source of truth: the actual messages sent between spirit and
 // the OpenClaw agent, persisted by OpenClaw automatically.
 func readACPHistory() []CopilotHistoryMsg {
 	// Parse agent ID from "agent:development:copilot"
@@ -285,7 +285,7 @@ func parseACPSessionHistory(data []byte) []CopilotHistoryMsg {
 //
 // User messages are double-wrapped:
 //  1. ACP sender envelope: "Sender (untrusted metadata):\n```json\n...\n```\n[timestamp]\n\n<body>"
-//  2. cmc preamble: "<live-sessions ...>...</live-sessions>\n\n<actual user text>"
+//  2. spirit preamble: "<live-sessions ...>...</live-sessions>\n\n<actual user text>"
 //
 // Assistant messages: concatenate text blocks; skip thinking blocks.
 func extractACPMessageText(role string, contentRaw json.RawMessage) string {
@@ -311,7 +311,7 @@ func extractACPMessageText(role string, contentRaw json.RawMessage) string {
 					text = strings.TrimSpace(text[nl+1:])
 				}
 			}
-			// Strip cmc preamble: "<live-sessions ...>...</live-sessions>\n\n<user text>"
+			// Strip spirit preamble: "<live-sessions ...>...</live-sessions>\n\n<user text>"
 			if idx := strings.Index(text, "</live-sessions>"); idx != -1 {
 				text = strings.TrimSpace(text[idx+len("</live-sessions>"):])
 			}

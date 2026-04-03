@@ -13,20 +13,34 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/app"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
-	"github.com/huylenq/claude-mission-control/internal/scripting"
+	"github.com/huylenq/spirit/internal/app"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/scripting"
 )
 
 var version = "dev"
+
+func init() {
+	// Migrate cache directory from pre-rebrand location.
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		oldCache := filepath.Join(home, ".cache", "cmc")
+		newCache := filepath.Join(home, ".cache", "spirit")
+		if info, err := os.Stat(oldCache); err == nil && info.IsDir() {
+			if _, err := os.Stat(newCache); os.IsNotExist(err) {
+				os.Rename(oldCache, newCache) //nolint:errcheck
+			}
+		}
+	}
+}
 
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "_hook":
 			if len(os.Args) < 3 {
-				fmt.Fprintln(os.Stderr, "usage: cmc _hook <HookType>")
+				fmt.Fprintln(os.Stderr, "usage: spirit _hook <HookType>")
 				os.Exit(1)
 			}
 			claude.HandleHook(os.Args[2])
@@ -99,7 +113,7 @@ func main() {
 
 	// Client mode — must be inside tmux
 	if os.Getenv("TMUX") == "" {
-		fmt.Fprintln(os.Stderr, "cmc must be run inside a tmux session")
+		fmt.Fprintln(os.Stderr, "spirit must be run inside a tmux session")
 		os.Exit(1)
 	}
 
@@ -123,36 +137,36 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Printf(`cmc %s — Claude Mission Control
+	fmt.Printf(`spirit %s — Spirit
 
 Usage:
-  cmc                  Launch the TUI (connects to daemon, auto-starts if needed)
-  cmc popup            Open TUI in a tmux popup (respects zoom pref)
-  cmc dev              Dev picker: fzf over git worktrees, launch chosen worktree's TUI
-  cmc popup --select-active  Same, but auto-select the current pane (ctrl-space)
-  cmc popup --rotate-next    Same, but skip current pane → next YOUR TURN (ctrl-tab)
-  cmc eval <file.lua>        Evaluate a Lua script against the daemon
-  cmc eval -e '<expr>'       Evaluate an inline Lua expression
-  echo '<expr>' | cmc eval   Evaluate Lua from stdin
-  cmc orchestrator register <session-id>     Exclude session from eval sessions()
-  cmc orchestrator unregister <session-id>   Re-include session
-  cmc agent <verb>  Machine-friendly session management (for AI agents)
-  cmc capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
-  cmc setup            Install Claude Code hooks into ~/.claude/settings.json
-  cmc _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
-  cmc daemon           Start the background daemon
-  cmc daemon --check   Exit 0 if daemon is running, 1 otherwise
-  cmc daemon --stop    Stop the running daemon
+  spirit                  Launch the TUI (connects to daemon, auto-starts if needed)
+  spirit popup            Open TUI in a tmux popup (respects zoom pref)
+  spirit dev              Dev picker: fzf over git worktrees, launch chosen worktree's TUI
+  spirit popup --select-active  Same, but auto-select the current pane (ctrl-space)
+  spirit popup --rotate-next    Same, but skip current pane → next YOUR TURN (ctrl-tab)
+  spirit eval <file.lua>        Evaluate a Lua script against the daemon
+  spirit eval -e '<expr>'       Evaluate an inline Lua expression
+  echo '<expr>' | spirit eval   Evaluate Lua from stdin
+  spirit orchestrator register <session-id>     Exclude session from eval sessions()
+  spirit orchestrator unregister <session-id>   Re-include session
+  spirit agent <verb>  Machine-friendly session management (for AI agents)
+  spirit capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
+  spirit setup            Install Claude Code hooks into ~/.claude/settings.json
+  spirit _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
+  spirit daemon           Start the background daemon
+  spirit daemon --check   Exit 0 if daemon is running, 1 otherwise
+  spirit daemon --stop    Stop the running daemon
 
-  cmc --agent-help     Machine-readable reference for LLM agents using cmc
+  spirit --agent-help     Machine-readable reference for LLM agents using spirit
 
 The daemon polls sessions every 1s and pushes updates to connected clients.
 It auto-shuts down after 10 minutes with no clients.
 
 Files:
-  ~/.cache/cmc/daemon.sock   Unix socket
-  ~/.cache/cmc/daemon.pid    PID file
-  ~/.cache/cmc/daemon.log    Log output
+  ~/.cache/spirit/daemon.sock   Unix socket
+  ~/.cache/spirit/daemon.pid    PID file
+  ~/.cache/spirit/daemon.log    Log output
 `, version)
 }
 
@@ -185,7 +199,7 @@ func runDaemon() {
 	}
 
 	// Redirect log output to a file for debugging
-	logPath := os.ExpandEnv("$HOME/.cache/cmc/daemon.log")
+	logPath := os.ExpandEnv("$HOME/.cache/spirit/daemon.log")
 	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
 		log.SetOutput(f)
 		defer f.Close()
@@ -199,7 +213,10 @@ func runDaemon() {
 
 // hookMarker is embedded in hook commands so we can identify and migrate them later.
 // Even if the binary or hook script is renamed, this marker stays constant.
-const hookMarker = "#cmc-hook"
+const hookMarker = "#spirit-hook"
+
+// oldHookMarker is the pre-rebrand marker, used for migration.
+const oldHookMarker = "#cmc-hook"
 
 func runSetup() {
 	// Resolve the absolute path to our own binary
@@ -281,13 +298,14 @@ func runSetup() {
 	fmt.Printf("Hook command: %s _hook <type>\n", exe)
 }
 
-// upsertHookCmd inserts or updates a cmc hook command in a hook type's group list.
-// Identifies existing cmc hooks by hookMarker. Preserves non-cmc hooks untouched.
+// upsertHookCmd inserts or updates a spirit hook command in a hook type's group list.
+// Identifies existing spirit hooks by hookMarker. Preserves non-spirit hooks untouched.
+// Also migrates old #cmc-hook entries to the new marker.
 // Returns the (possibly new) groups slice and whether anything changed.
 func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 	groups, _ := existing.([]any)
 
-	// Search existing groups for a cmc hook to update
+	// Search existing groups for a spirit or legacy cmc hook to update
 	for _, group := range groups {
 		gm, ok := group.(map[string]any)
 		if !ok {
@@ -303,7 +321,7 @@ func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 				continue
 			}
 			cmd, _ := hm["command"].(string)
-			if strings.Contains(cmd, hookMarker) {
+			if strings.Contains(cmd, hookMarker) || strings.Contains(cmd, oldHookMarker) {
 				existingMatcher, _ := gm["matcher"].(string)
 				if cmd == newCmd && existingMatcher == matcher {
 					return groups, false // already up to date
@@ -316,7 +334,7 @@ func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 		}
 	}
 
-	// No existing cmc hook — append a new group
+	// No existing hook — append a new group
 	newGroup := map[string]any{
 		"matcher": matcher,
 		"hooks": []any{
@@ -329,10 +347,10 @@ func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 	return append(groups, newGroup), true
 }
 
-// readPref reads a single key from the cmc prefs file (~/.cache/cmc/prefs).
+// readPref reads a single key from the spirit prefs file (~/.cache/spirit/prefs).
 func readPref(key string) string {
 	home, _ := os.UserHomeDir()
-	data, err := os.ReadFile(filepath.Join(home, ".cache", "cmc", "prefs"))
+	data, err := os.ReadFile(filepath.Join(home, ".cache", "spirit", "prefs"))
 	if err != nil {
 		return ""
 	}
@@ -345,7 +363,7 @@ func readPref(key string) string {
 	return ""
 }
 
-// runPopup opens a tmux display-popup with the cmc TUI.
+// runPopup opens a tmux display-popup with the spirit TUI.
 // Reads the fullscreen preference to determine popup size.
 // Flags:
 //
@@ -381,10 +399,10 @@ func runPopup() {
 		args = append(args, "-e", "CLAUDE_TUI_FULLSCREEN=1")
 	}
 	if selectActive {
-		args = append(args, "-e", "CMC_SELECT_ACTIVE=1")
+		args = append(args, "-e", "SPIRIT_SELECT_ACTIVE=1")
 	}
 	if rotateNext {
-		args = append(args, "-e", "CMC_ROTATE_NEXT=1")
+		args = append(args, "-e", "SPIRIT_ROTATE_NEXT=1")
 	}
 	args = append(args, bin)
 
@@ -438,13 +456,13 @@ func listWorktrees(repoRoot string) ([]worktreeInfo, error) {
 	return result, nil
 }
 
-// ensureWorktreeBinary builds bin/cmc in the given worktree if it's missing
+// ensureWorktreeBinary builds bin/spirit in the given worktree if it's missing
 // or stale (older than the current process's binary).
 func ensureWorktreeBinary(wtPath string) {
-	binPath := filepath.Join(wtPath, "bin", "cmc")
+	binPath := filepath.Join(wtPath, "bin", "spirit")
 	myExe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmc dev: cannot resolve own executable: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spirit dev: cannot resolve own executable: %v\n", err)
 		os.Exit(1)
 	}
 	myExe, _ = filepath.EvalSymlinks(myExe)
@@ -466,39 +484,39 @@ func ensureWorktreeBinary(wtPath string) {
 	} else {
 		action = "rebuilding (stale)"
 	}
-	fmt.Fprintf(os.Stderr, "cmc dev: %s %s/bin/cmc...\n", action, filepath.Base(wtPath))
+	fmt.Fprintf(os.Stderr, "spirit dev: %s %s/bin/spirit...\n", action, filepath.Base(wtPath))
 
 	cmd := exec.Command("make", "build")
 	cmd.Dir = wtPath
 	cmd.Stdout = os.Stderr // show build output in popup
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "cmc dev: build failed in %s: %v\n", wtPath, err)
+		fmt.Fprintf(os.Stderr, "spirit dev: build failed in %s: %v\n", wtPath, err)
 		os.Exit(1)
 	}
 }
 
 // execWorktreeCMC builds (if needed) then execs into the given worktree's
-// bin/cmc, setting the appropriate env var for select-active or rotate-next mode.
+// bin/spirit, setting the appropriate env var for select-active or rotate-next mode.
 // This replaces the current process — caller must not return.
 func execWorktreeCMC(wtPath string, selectActive bool) {
 	ensureWorktreeBinary(wtPath)
-	binPath := filepath.Join(wtPath, "bin", "cmc")
+	binPath := filepath.Join(wtPath, "bin", "spirit")
 	env := os.Environ()
 	if selectActive {
-		env = append(env, "CMC_SELECT_ACTIVE=1")
+		env = append(env, "SPIRIT_SELECT_ACTIVE=1")
 	} else {
-		env = append(env, "CMC_ROTATE_NEXT=1")
+		env = append(env, "SPIRIT_ROTATE_NEXT=1")
 	}
 	if err := syscall.Exec(binPath, []string{binPath}, env); err != nil {
-		fmt.Fprintln(os.Stderr, "cmc dev: exec:", err)
+		fmt.Fprintln(os.Stderr, "spirit dev: exec:", err)
 		os.Exit(1)
 	}
 }
 
 // runDev is the dev-mode worktree picker.
 // It lists all git worktrees for this binary's repo, shows an fzf picker with
-// daemon status, and execs the chosen worktree's bin/cmc (auto-starting its
+// daemon status, and execs the chosen worktree's bin/spirit (auto-starting its
 // daemon on first connect as usual).
 func runDev() {
 	selectActive := false
@@ -518,24 +536,24 @@ func runDev() {
 	// Resolve repo root from this binary's location.
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cmc dev: cannot resolve executable:", err)
+		fmt.Fprintln(os.Stderr, "spirit dev: cannot resolve executable:", err)
 		os.Exit(1)
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
 	repoRoot, err := daemon.RepoRootForDir(filepath.Dir(exe))
 	if err != nil {
-		// Fallback: try $PWD (useful when running `go run ./cmd/cmc dev`).
+		// Fallback: try $PWD (useful when running `go run ./cmd/spirit dev`).
 		cwd, _ := os.Getwd()
 		repoRoot, err = daemon.RepoRootForDir(cwd)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "cmc dev: not in a git repository")
+			fmt.Fprintln(os.Stderr, "spirit dev: not in a git repository")
 			os.Exit(1)
 		}
 	}
 
 	worktrees, err := listWorktrees(repoRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cmc dev: listing worktrees:", err)
+		fmt.Fprintln(os.Stderr, "spirit dev: listing worktrees:", err)
 		os.Exit(1)
 	}
 
@@ -592,15 +610,15 @@ func runEval() {
 
 	switch {
 	case len(os.Args) > 2 && os.Args[2] == "-e":
-		// Inline expression: cmc eval -e 'expr'
+		// Inline expression: spirit eval -e 'expr'
 		if len(os.Args) < 4 {
-			fmt.Fprintln(os.Stderr, "usage: cmc eval -e '<expression>'")
+			fmt.Fprintln(os.Stderr, "usage: spirit eval -e '<expression>'")
 			os.Exit(1)
 		}
 		script = os.Args[3]
 
 	case len(os.Args) > 2 && os.Args[2] != "-":
-		// File: cmc eval script.lua
+		// File: spirit eval script.lua
 		data, err := os.ReadFile(os.Args[2])
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", os.Args[2], err)
@@ -609,7 +627,7 @@ func runEval() {
 		script = string(data)
 
 	default:
-		// Stdin: echo 'expr' | cmc eval
+		// Stdin: echo 'expr' | spirit eval
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
@@ -648,7 +666,7 @@ func runEval() {
 
 func runOrchestrator() {
 	if len(os.Args) < 4 {
-		fmt.Fprintln(os.Stderr, "usage: cmc orchestrator register|unregister <session-id>")
+		fmt.Fprintln(os.Stderr, "usage: spirit orchestrator register|unregister <session-id>")
 		os.Exit(1)
 	}
 	action := os.Args[2]
@@ -683,13 +701,13 @@ func runCapture() {
 	if len(os.Args) > 2 {
 		arg := os.Args[2]
 		if arg == "-h" || arg == "--help" || arg == "help" {
-			fmt.Println(`Usage: cmc capture [COLSxROWS]
+			fmt.Println(`Usage: spirit capture [COLSxROWS]
 
 Capture a text snapshot of the TUI to stdout.
 
 Examples:
-  cmc capture          Auto-detect terminal size (default 200x50 if not a TTY)
-  cmc capture 160x40   Render at 160 columns by 40 rows`)
+  spirit capture          Auto-detect terminal size (default 200x50 if not a TTY)
+  spirit capture 160x40   Render at 160 columns by 40 rows`)
 			return
 		}
 		if _, err := fmt.Sscanf(arg, "%dx%d", &cols, &rows); err != nil || cols <= 0 || rows <= 0 {

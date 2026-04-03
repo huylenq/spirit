@@ -3,19 +3,19 @@
 ## Setup
 
 ```sh
-git clone https://github.com/huylenq/claude-mission-control ~/src/claude-mission-control
-cd ~/src/claude-mission-control
+git clone https://github.com/huylenq/spirit ~/src/spirit
+cd ~/src/spirit
 ```
 
 Add to `~/.tmux.conf`:
 
 ```bash
-run-shell ~/src/claude-mission-control/cmc-dev.tmux
+run-shell ~/src/spirit/spirit-dev.tmux
 ```
 
 Then reload: `tmux source-file ~/.tmux.conf`
 
-`cmc-dev.tmux` rebuilds the binary if any `.go` source is newer than the binary,
+`spirit-dev.tmux` rebuilds the binary if any `.go` source is newer than the binary,
 installs Claude Code hooks, and binds the keybindings below.
 
 ## Build
@@ -25,7 +25,7 @@ make        # build + restart daemon (default target)
 make build  # build only
 ```
 
-Binary output: `bin/cmc`
+Binary output: `bin/spirit`
 
 ## Daemon isolation per worktree
 
@@ -33,8 +33,8 @@ Each git worktree runs its own daemon on an independent socket derived from the
 repo root path:
 
 ```
-/tmp/cmc-<sha256[:12] of repo root>.sock
-/tmp/cmc-<sha256[:12] of repo root>.pid
+/tmp/spirit-<sha256[:12] of repo root>.sock
+/tmp/spirit-<sha256[:12] of repo root>.pid
 ```
 
 This happens automatically — the binary detects its own location with
@@ -42,7 +42,7 @@ This happens automatically — the binary detects its own location with
 needed. `make` in any worktree builds and restarts only that worktree's daemon.
 
 Binaries installed globally (TPM, PATH) that are not inside a git repo fall back
-to `~/.cache/cmc/daemon.sock`.
+to `~/.cache/spirit/daemon.sock`.
 
 ## Concurrent agent development
 
@@ -54,13 +54,13 @@ git worktree add .worktrees/feat-x -b feat-x
 ```
 
 Each worktree:
-- builds its own `bin/cmc` via `make`
-- runs its own daemon on its own `/tmp/cmc-*.sock`
+- builds its own `bin/spirit` via `make`
+- runs its own daemon on its own `/tmp/spirit-*.sock`
 - can be launched independently without interfering with other worktrees
 
 ## Keybindings
 
-`cmc-dev.tmux` registers four bindings:
+`spirit-dev.tmux` registers four bindings:
 
 | Binding | Action |
 |---|---|
@@ -79,7 +79,7 @@ feat-macros                      ●  (no binary — run make)
 
 `●` = daemon running, `○` = stopped (auto-starts on selection).
 
-On selection the picker execs into the chosen worktree's `bin/cmc`, replacing
+On selection the picker execs into the chosen worktree's `bin/spirit`, replacing
 itself in the same popup window. The TUI takes over seamlessly.
 
 The picker always appears, even with a single worktree — so Huy always knows which build he's launching against.
@@ -89,8 +89,8 @@ The picker always appears, even with a single worktree — so Huy always knows w
 Capture a headless text render of the TUI at any resolution:
 
 ```sh
-./bin/cmc capture          # 200×50 default
-./bin/cmc capture 160x40   # specific size
+./bin/spirit capture          # 200×50 default
+./bin/spirit capture 160x40   # specific size
 ```
 
 Works outside tmux as long as the daemon is running. Useful for inspecting
@@ -98,16 +98,16 @@ layout without opening the popup.
 
 ## Daemon log
 
-Always at `~/.cache/cmc/daemon.log` regardless of which worktree's daemon is running:
+Always at `~/.cache/spirit/daemon.log` regardless of which worktree's daemon is running:
 
 ```sh
-tail -f ~/.cache/cmc/daemon.log
+tail -f ~/.cache/spirit/daemon.log
 ```
 
 ## Project structure
 
 ```
-cmd/cmc/            main entrypoint, CLI subcommands
+cmd/spirit/            main entrypoint, CLI subcommands
 internal/app/       Bubble Tea model, update, view, keymap
 internal/claude/    session discovery, parsing, hooks, synthesis
 internal/daemon/    background daemon, client, protocol, workdir socket logic
@@ -116,8 +116,8 @@ internal/ui/        shared styles, list component, macro editor
 internal/scripting/ Lua eval engine
 docs/               documentation
 hooks/              legacy hook script (kept for compatibility)
-cmc.tmux            TPM entry point (production)
-cmc-dev.tmux        local dev entry point
+spirit.tmux            TPM entry point (production)
+spirit-dev.tmux        local dev entry point
 ```
 
 ## Adding a new RPC command

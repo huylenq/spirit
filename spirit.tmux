@@ -4,8 +4,8 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY="${CURRENT_DIR}/bin/cmc"
-REPO="huylenq/claude-mission-control"
+BINARY="${CURRENT_DIR}/bin/spirit"
+REPO="huylenq/spirit"
 
 get_platform() {
     local os arch
@@ -37,13 +37,13 @@ install_binary() {
         return 0
     fi
 
-    url="https://github.com/${REPO}/releases/download/${tag}/claude-mission-control_${tag#v}_${platform}.tar.gz"
+    url="https://github.com/${REPO}/releases/download/${tag}/spirit_${tag#v}_${platform}.tar.gz"
     tmpdir="$(mktemp -d)"
     trap 'rm -rf "$tmpdir"' EXIT
 
     curl -fsSL "$url" | tar xz -C "$tmpdir" || return 1
     mkdir -p "${CURRENT_DIR}/bin"
-    mv "$tmpdir/cmc" "$BINARY"
+    mv "$tmpdir/spirit" "$BINARY"
     chmod +x "$BINARY"
 }
 
@@ -57,7 +57,7 @@ if [ ! -f "$BINARY" ] && command -v go >/dev/null 2>&1; then
     cd "$CURRENT_DIR" && make build 2>/dev/null || true
 fi
 
-[ -f "$BINARY" ] || { echo "cmc: binary not available" >&2; exit 0; }
+[ -f "$BINARY" ] || { echo "spirit: binary not available" >&2; exit 0; }
 
 # Auto-install Claude Code hooks (idempotent — skips if already up to date)
 "$BINARY" setup 2>/dev/null || true

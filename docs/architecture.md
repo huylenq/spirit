@@ -1,14 +1,14 @@
 # Runtime Architecture
 
-How claude-mission-control starts, processes events, discovers sessions, and renders UI.
+How spirit starts, processes events, discovers sessions, and renders UI.
 
 ## System Overview
 
 ```mermaid
 flowchart LR
     CC["Claude Code<br/>(per pane)"]
-    Hook["cmc _hook<br/>(subprocess)"]
-    Files[("~/.cache/cmc/<br/>status files")]
+    Hook["spirit _hook<br/>(subprocess)"]
+    Files[("~/.cache/spirit/<br/>status files")]
     Daemon["Daemon<br/>(singleton)"]
     TUI["TUI Client<br/>(Bubble Tea)"]
 
@@ -22,13 +22,13 @@ flowchart LR
 Three processes collaborate:
 1. **Daemon** — long-lived singleton that polls sessions and serves clients
 2. **TUI Client** — Bubble Tea terminal UI connecting to the daemon
-3. **Hook Handler** — short-lived `cmc _hook <type>` subprocess invoked by Claude Code
+3. **Hook Handler** — short-lived `spirit _hook <type>` subprocess invoked by Claude Code
 
 ## Startup Flow
 
 ### Entrypoint
 
-`cmd/cmc/main.go` dispatches on `os.Args[1]`:
+`cmd/spirit/main.go` dispatches on `os.Args[1]`:
 
 | Subcommand | Action |
 |-----------|--------|
@@ -175,7 +175,7 @@ flowchart TD
 1. **Pane enumeration**: Single `tmux list-panes -a -F <format>` call returns all panes across all tmux sessions
 2. **Process tree**: Single `ps -eo pid,ppid,comm` call builds a PPID→children map
 3. **Session matching**: For each pane:
-   - `ReadSessionID(paneID)` reads `~/.cache/cmc/<paneID>.session` (written by hooks)
+   - `ReadSessionID(paneID)` reads `~/.cache/spirit/<paneID>.session` (written by hooks)
    - `findClaudeInTree()` walks the process tree under the pane's shell PID looking for a `claude` process
 4. **State assembly**: `buildSession()` reads the cluster of per-session status files (`ReadStatus`, `ReadLastUserMessage`, `ReadCachedSummary`, `ReadCustomTitle`, `ReadStopReason`, `ReadSkillName`, etc.)
 5. **Git branch**: Looked up with a 10-second in-process cache
@@ -198,7 +198,7 @@ flowchart TD
 
 ### Registration
 
-`cmc setup` patches `~/.claude/settings.json` to call `cmc _hook <HookType>` for 8 event types:
+`spirit setup` patches `~/.claude/settings.json` to call `spirit _hook <HookType>` for 8 event types:
 
 | Hook Type | Matcher | Purpose |
 |-----------|---------|---------|
@@ -211,7 +211,7 @@ flowchart TD
 | `SessionEnd` | (all) | Clean up all session files |
 | `PreCompact` | (all) | Increment compact counter |
 
-Each hook command embeds a `#cmc-hook` marker for migration/deduplication.
+Each hook command embeds a `#spirit-hook` marker for migration/deduplication.
 
 ### Hook Handler Flow
 
@@ -273,7 +273,7 @@ block-beta
 
 ```mermaid
 sequenceDiagram
-    participant H as cmc _hook
+    participant H as spirit _hook
     participant S as daemon.sock
     participant D as Daemon
     participant C as TUI Clients
@@ -343,7 +343,7 @@ All `tea.Msg` types defined in `internal/app/messages.go`:
 | `SynthesizeAllReadyMsg` | `fetchSynthesizeAll()` — batch synthesis |
 | `GlobalEffectsReadyMsg` | `fetchGlobalEffects()` — when debug mode is active |
 | `MinimapReadyMsg` | `fetchMinimapData()` — pane geometry for minimap |
-| `BacklogsRefreshedMsg` | `discoverBacklogs()` — scans `.cmc/backlog/` directories |
+| `BacklogsRefreshedMsg` | `discoverBacklogs()` — scans `.spirit/backlog/` directories |
 
 ### Lifecycle Messages
 | Message | Trigger |

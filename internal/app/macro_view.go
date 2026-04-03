@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // renderMacroPalette renders the macro palette overlay.

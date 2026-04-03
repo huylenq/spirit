@@ -3,9 +3,9 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 func (m Model) execSwitchPane() (Model, tea.Cmd) {

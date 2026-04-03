@@ -68,7 +68,7 @@ func Stop(info DaemonInfo) error {
 // Duplicates the parsePrefsText logic to avoid import cycles with app package.
 func (d *Daemon) readPref(key string) string {
 	home, _ := os.UserHomeDir()
-	data, err := os.ReadFile(home + "/.cache/cmc/prefs")
+	data, err := os.ReadFile(home + "/.cache/spirit/prefs")
 	if err != nil {
 		return ""
 	}

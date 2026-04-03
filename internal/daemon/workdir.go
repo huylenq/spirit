@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 // RepoRootForDir runs git rev-parse --show-toplevel from dir and returns
@@ -28,15 +28,15 @@ func WorkdirDaemonInfo(repoRoot string) DaemonInfo {
 	h := sha256.Sum256([]byte(repoRoot))
 	hash := fmt.Sprintf("%x", h[:6]) // 12 hex chars, collision-unlikely for local worktrees
 	return DaemonInfo{
-		SocketPath: fmt.Sprintf("/tmp/cmc-%s.sock", hash),
-		PIDPath:    fmt.Sprintf("/tmp/cmc-%s.pid", hash),
+		SocketPath: fmt.Sprintf("/tmp/spirit-%s.sock", hash),
+		PIDPath:    fmt.Sprintf("/tmp/spirit-%s.pid", hash),
 	}
 }
 
 // DefaultDaemonInfo returns the DaemonInfo for this process.
 // If the binary lives inside a git repository (e.g. a dev worktree build),
 // the socket is scoped to that repo root so multiple worktrees can each run
-// an independent daemon. Otherwise falls back to ~/.cache/cmc/daemon.sock.
+// an independent daemon. Otherwise falls back to ~/.cache/spirit/daemon.sock.
 // Result is cached — the binary location doesn't change within a process.
 func DefaultDaemonInfo() DaemonInfo {
 	cachedInfoOnce.Do(func() {

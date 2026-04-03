@@ -1,11 +1,11 @@
 package app
 
 import (
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
-	"github.com/huylenq/claude-mission-control/internal/scripting"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/scripting"
+	"github.com/huylenq/spirit/internal/tmux"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // SessionsRefreshedMsg is sent when session discovery completes (pushed by daemon).

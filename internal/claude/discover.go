@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 type processInfo struct {

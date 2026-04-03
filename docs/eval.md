@@ -1,13 +1,13 @@
-# `cmc eval` — Lua Scripting Interface
+# `spirit eval` — Lua Scripting Interface
 
 Programmatically observe and control Claude Code sessions through Mission Control.
 
 ## Usage
 
 ```sh
-cmc eval script.lua          # run a file
-cmc eval -e 'return 1 + 1'   # inline expression
-echo 'return sessions()' | cmc eval  # stdin
+spirit eval script.lua          # run a file
+spirit eval -e 'return 1 + 1'   # inline expression
+echo 'return sessions()' | spirit eval  # stdin
 ```
 
 Output: JSON of the last expression to stdout. Errors go to stderr with exit code 1.
@@ -114,8 +114,8 @@ unregister_orchestrator("my-session-id")
 
 Also available as CLI commands:
 ```sh
-cmc orchestrator register <session-id>
-cmc orchestrator unregister <session-id>
+spirit orchestrator register <session-id>
+spirit orchestrator unregister <session-id>
 ```
 
 ### Mission Control Features

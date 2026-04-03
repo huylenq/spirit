@@ -5,8 +5,8 @@
 ```mermaid
 flowchart LR
     CC["Claude Code<br/>(hook event)"]
-    Hook["cmc _hook &lt;type&gt;<br/>(subprocess)"]
-    Files[("~/.cache/cmc/<br/>status files")]
+    Hook["spirit _hook &lt;type&gt;<br/>(subprocess)"]
+    Files[("~/.cache/spirit/<br/>status files")]
     Sock["daemon.sock<br/>(Unix socket)"]
     Daemon["Daemon<br/>(patchSession)"]
     TUI["TUI<br/>(Bubble Tea)"]
@@ -28,11 +28,11 @@ The daemon has **two paths** to learn about state changes:
 
 ## Hook Registration
 
-`cmc setup` writes hook commands into `~/.claude/settings.json`:
+`spirit setup` writes hook commands into `~/.claude/settings.json`:
 
 ```mermaid
 flowchart TD
-    Setup["cmc setup"]
+    Setup["spirit setup"]
     Settings["~/.claude/settings.json"]
     Setup -- "upsertHookCmd()" --> Settings
 
@@ -48,7 +48,7 @@ flowchart TD
     end
 ```
 
-Each hook command embeds `#cmc-hook` marker for future migration/deduplication.
+Each hook command embeds `#spirit-hook` marker for future migration/deduplication.
 
 ## Session Lifecycle
 
@@ -295,7 +295,7 @@ The hook subprocess sends a fire-and-forget JSON message to the daemon:
 
 ```mermaid
 sequenceDiagram
-    participant H as cmc _hook
+    participant H as spirit _hook
     participant S as daemon.sock
     participant D as Daemon
     participant C as TUI Clients
@@ -400,7 +400,7 @@ flowchart TD
 
 ## Status Files
 
-All stored in `~/.cache/cmc/`, keyed by tmux pane ID (e.g., `%1`).
+All stored in `~/.cache/spirit/`, keyed by tmux pane ID (e.g., `%1`).
 
 #### Current
 

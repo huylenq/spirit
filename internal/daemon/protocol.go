@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // Request/Response are newline-delimited JSON over Unix socket.
@@ -340,7 +340,7 @@ type DaemonInfo struct {
 }
 
 // DefaultDaemonInfo is defined in workdir.go — it auto-detects from the
-// binary's location and falls back to ~/.cache/cmc/daemon.sock.
+// binary's location and falls back to ~/.cache/spirit/daemon.sock.
 
 // IdleTimeout is how long the daemon stays alive with zero clients.
 const IdleTimeout = 10 * time.Minute

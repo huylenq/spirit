@@ -4,7 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/ui/destroyer"
+	"github.com/huylenq/spirit/internal/ui/destroyer"
 )
 
 // DestroyerTickMsg advances the destroyer animation.

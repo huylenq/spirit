@@ -10,9 +10,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/tmux"
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/tmux"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // executeChord dispatches a completed chord sequence to its action.
@@ -92,10 +92,10 @@ type flashInfoMsg string
 type flashErrorMsg string
 
 // reopenPopup schedules a new tmux popup to open after the current one closes.
-// It persists the new fullscreen state to prefs so `cmc popup` picks it up,
+// It persists the new fullscreen state to prefs so `spirit popup` picks it up,
 // then uses run-shell with a short sleep so the new popup opens after the old one exits.
 func reopenPopup(bin string, currentlyFullscreen bool) tea.Cmd {
-	// Persist the toggled state so future `cmc popup` invocations use it
+	// Persist the toggled state so future `spirit popup` invocations use it
 	savePrefBool("fullscreen", !currentlyFullscreen)
 	return func() tea.Msg {
 		if bin == "" || os.Getenv("TMUX") == "" {

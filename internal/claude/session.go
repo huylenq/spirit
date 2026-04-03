@@ -97,8 +97,8 @@ type ClaudeSession struct {
 	IsWorktree              bool       // session runs in a Claude Code worktree
 	WorktreeName            string     // e.g. "ember-cat"
 	WorktreeRootProjectPath string     // parent repo path (the real project root)
-	Tags                    []string   // user-defined labels (persisted to ~/.cache/cmc/{sessionID}.tags)
-	Note                    string     // freeform note (persisted to ~/.cache/cmc/{sessionID}.note)
+	Tags                    []string   // user-defined labels (persisted to ~/.cache/spirit/{sessionID}.tags)
+	Note                    string     // freeform note (persisted to ~/.cache/spirit/{sessionID}.note)
 	LaterWakeAt             *time.Time // when this Later record auto-expires (nil = indefinite)
 }
 

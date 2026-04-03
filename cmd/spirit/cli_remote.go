@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
-	"github.com/huylenq/claude-mission-control/internal/daemon"
-	"github.com/huylenq/claude-mission-control/internal/scripting"
+	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/scripting"
 )
 
 // All subcommands output JSON to stdout and errors to stderr.
@@ -16,16 +16,16 @@ import (
 
 // --- Command registry ---
 
-// agentCommand describes a cmc agent subcommand for dispatch and doc generation.
+// agentCommand describes a spirit agent subcommand for dispatch and doc generation.
 type agentCommand struct {
 	Name     string   // verb: "sessions", "send", etc.
 	Args     string   // arg syntax: "<id> <message>", "[--status idle|working]"
 	Desc     string   // one-line description
-	Examples []string // bash examples (each prefixed with "cmc agent")
+	Examples []string // bash examples (each prefixed with "spirit agent")
 	Handler  func()
 }
 
-// agentCommands is the single source of truth for cmc agent subcommands.
+// agentCommands is the single source of truth for spirit agent subcommands.
 // Used for dispatch, help text, --agent-help, and SKILL.md generation.
 var agentCommands = []agentCommand{
 	{
@@ -200,11 +200,11 @@ func resolveSessionOrDie(client *daemon.Client, id string) claude.ClaudeSession 
 
 // --- Dispatcher ---
 
-// runAgent dispatches `cmc agent <verb>` subcommands via the command table.
+// runAgent dispatches `spirit agent <verb>` subcommands via the command table.
 // Shifts os.Args by 1 so handlers see verb at [1], first arg at [2].
 func runAgent() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: cmc agent <command> [args...]\n\nCommands:")
+		fmt.Fprintln(os.Stderr, "usage: spirit agent <command> [args...]\n\nCommands:")
 		for _, cmd := range agentCommands {
 			fmt.Fprintf(os.Stderr, "  %-40s %s\n", cmd.Name+" "+cmd.Args, cmd.Desc)
 		}
@@ -221,7 +221,7 @@ func runAgent() {
 			return
 		}
 	}
-	dieUsage(fmt.Sprintf("unknown agent command: %s\nRun 'cmc agent' for usage.", verb))
+	dieUsage(fmt.Sprintf("unknown agent command: %s\nRun 'spirit agent' for usage.", verb))
 }
 
 // --- Agent help (--agent-help) ---
@@ -229,7 +229,7 @@ func runAgent() {
 // agentHelpText generates the machine-readable reference for --agent-help.
 func agentHelpText() string {
 	var b strings.Builder
-	b.WriteString(`# cmc agent — Machine-Friendly Session Management
+	b.WriteString(`# spirit agent — Machine-Friendly Session Management
 
 CLI for monitoring and controlling Claude Code sessions across tmux panes.
 All commands output JSON to stdout. Errors go to stderr with exit code 1.
@@ -239,16 +239,16 @@ Requires a running daemon (auto-started on first use).
 
 `)
 	for _, cmd := range agentCommands {
-		fmt.Fprintf(&b, "  cmc agent %-42s %s\n", cmd.Name+" "+cmd.Args, cmd.Desc)
+		fmt.Fprintf(&b, "  spirit agent %-42s %s\n", cmd.Name+" "+cmd.Args, cmd.Desc)
 	}
 
 	b.WriteString(`
 ## Orchestration
-  cmc orchestrator register <id>                Exclude session from listings
-  cmc orchestrator unregister <id>              Re-include session
+  spirit orchestrator register <id>                Exclude session from listings
+  spirit orchestrator unregister <id>              Re-include session
 
 ## Escape Hatch
-  cmc eval -e '<lua>'                           Evaluate Lua for advanced queries
+  spirit eval -e '<lua>'                           Evaluate Lua for advanced queries
 
 `)
 	b.WriteString(scripting.LuaScriptingReference)
@@ -258,8 +258,8 @@ Requires a running daemon (auto-started on first use).
 // --- SKILL.md generation ---
 
 const skillFrontmatter = `---
-name: Claude Mission Control (cmc)
-description: Use this skill when asked about Claude Code sessions, when you need to check what coding sessions are running, send messages to sessions, manage session lifecycle, or orchestrate multi-session development work. Triggers on mentions of "sessions", "Claude Code", "cmc", "mission control", "coding agents", "what's running", or when Huy asks you to check on, interact with, or manage his development sessions.
+name: Spirit
+description: Use this skill when asked about Claude Code sessions, when you need to check what coding sessions are running, send messages to sessions, manage session lifecycle, or orchestrate multi-session development work. Triggers on mentions of "sessions", "Claude Code", "spirit", "coding agents", "what's running", or when Huy asks you to check on, interact with, or manage his development sessions.
 ---`
 
 // genSkillMD generates the complete SKILL.md content from the command registry.
@@ -269,11 +269,11 @@ func genSkillMD() string {
 	b.WriteString(skillFrontmatter)
 	b.WriteString("\n\n")
 
-	b.WriteString(`# Claude Mission Control (cmc)
+	b.WriteString(`# Spirit
 
-cmc is a TUI + daemon that monitors and orchestrates Claude Code sessions running in tmux panes. You can interact with it via ` + "`cmc agent <command>`" + ` which talks to the running daemon and returns JSON.
+Spirit is a TUI + daemon that monitors and orchestrates Claude Code sessions running in tmux panes. You can interact with it via ` + "`spirit agent <command>`" + ` which talks to the running daemon and returns JSON.
 
-**Prerequisite:** The cmc daemon must be running. If commands fail with connection errors, tell Huy to start it (` + "`cmc daemon`" + ` or open the TUI).
+**Prerequisite:** The spirit daemon must be running. If commands fail with connection errors, tell Huy to start it (` + "`spirit daemon`" + ` or open the TUI).
 
 ## Commands
 
@@ -285,7 +285,7 @@ cmc is a TUI + daemon that monitors and orchestrates Claude Code sessions runnin
 		fmt.Fprintf(&b, "%s\n\n", cmd.Desc)
 		b.WriteString("```bash\n")
 		for _, ex := range cmd.Examples {
-			fmt.Fprintf(&b, "cmc agent %s\n", ex)
+			fmt.Fprintf(&b, "spirit agent %s\n", ex)
 		}
 		b.WriteString("```\n\n")
 	}
@@ -296,13 +296,13 @@ cmc is a TUI + daemon that monitors and orchestrates Claude Code sessions runnin
 Self-exclude from session listings (for orchestrator patterns):
 
 ` + "```bash" + `
-cmc orchestrator register SESSION_ID
-cmc orchestrator unregister SESSION_ID
+spirit orchestrator register SESSION_ID
+spirit orchestrator unregister SESSION_ID
 ` + "```" + `
 
 ## Session Object Fields
 
-Each session object returned by ` + "`cmc agent sessions`" + ` or ` + "`cmc agent session`" + ` contains:
+Each session object returned by ` + "`spirit agent sessions`" + ` or ` + "`spirit agent session`" + ` contains:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -324,11 +324,11 @@ Each session object returned by ` + "`cmc agent sessions`" + ` or ` + "`cmc agen
 
 ## Important Notes
 
-- Session IDs are UUIDs. Always get them from ` + "`cmc agent sessions`" + ` first.
+- Session IDs are UUIDs. Always get them from ` + "`spirit agent sessions`" + ` first.
 - ` + "`send`" + ` types into the tmux pane — the session must be idle to accept input.
 - ` + "`queue`" + ` is safer for fire-and-forget — it waits for idle automatically.
 - All commands return JSON to stdout.
-- ` + "`cmc eval -e '<lua>'`" + ` remains available as an escape hatch for advanced queries not covered by agent commands.
+- ` + "`spirit eval -e '<lua>'`" + ` remains available as an escape hatch for advanced queries not covered by agent commands.
 `)
 
 	return b.String()
@@ -358,7 +358,7 @@ func runSessions() {
 
 func runSession() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent session <session-id>")
+		dieUsage("usage: spirit agent session <session-id>")
 	}
 	id := os.Args[2]
 
@@ -371,7 +371,7 @@ func runSession() {
 
 func runSend() {
 	if len(os.Args) < 4 {
-		dieUsage("usage: cmc agent send <session-id> <message>")
+		dieUsage("usage: spirit agent send <session-id> <message>")
 	}
 	id := os.Args[2]
 	msg := os.Args[3]
@@ -388,7 +388,7 @@ func runSend() {
 
 func runQueue() {
 	if len(os.Args) < 4 {
-		dieUsage("usage: cmc agent queue <session-id> <message>")
+		dieUsage("usage: spirit agent queue <session-id> <message>")
 	}
 	id := os.Args[2]
 	msg := os.Args[3]
@@ -406,7 +406,7 @@ func runQueue() {
 
 func runSpawn() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent spawn <cwd> [-m <msg>] [--tmux-session <name>]")
+		dieUsage("usage: spirit agent spawn <cwd> [-m <msg>] [--tmux-session <name>]")
 	}
 	cwd := os.Args[2]
 	message := ""
@@ -440,7 +440,7 @@ func runSpawn() {
 
 func runKill() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent kill <session-id>")
+		dieUsage("usage: spirit agent kill <session-id>")
 	}
 	id := os.Args[2]
 
@@ -456,7 +456,7 @@ func runKill() {
 
 func runTranscript() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent transcript <session-id> [--raw]")
+		dieUsage("usage: spirit agent transcript <session-id> [--raw]")
 	}
 	id := os.Args[2]
 	raw := false
@@ -488,7 +488,7 @@ func runTranscript() {
 
 func runDiff() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent diff <session-id> [--hunks]")
+		dieUsage("usage: spirit agent diff <session-id> [--hunks]")
 	}
 	id := os.Args[2]
 	hunks := false
@@ -520,7 +520,7 @@ func runDiff() {
 
 func runSummary() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent summary <session-id>")
+		dieUsage("usage: spirit agent summary <session-id>")
 	}
 	id := os.Args[2]
 
@@ -537,7 +537,7 @@ func runSummary() {
 
 func runSynthesize() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent synthesize <session-id> | cmc agent synthesize --all")
+		dieUsage("usage: spirit agent synthesize <session-id> | spirit agent synthesize --all")
 	}
 
 	client := connectOrDie()
@@ -565,7 +565,7 @@ func runSynthesize() {
 
 func runCommit() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent commit <session-id> [--done]")
+		dieUsage("usage: spirit agent commit <session-id> [--done]")
 	}
 	id := os.Args[2]
 	done := false
@@ -594,7 +594,7 @@ func runCommit() {
 
 func runLater() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent later <session-id> [--kill]")
+		dieUsage("usage: spirit agent later <session-id> [--kill]")
 	}
 	id := os.Args[2]
 	kill := false
@@ -623,7 +623,7 @@ func runLater() {
 
 func runHookEvents() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent hooks <session-id>")
+		dieUsage("usage: spirit agent hooks <session-id>")
 	}
 	id := os.Args[2]
 
@@ -640,7 +640,7 @@ func runHookEvents() {
 
 func runBacklog() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: cmc agent backlog list <cwd> | create <cwd> <body> | update <cwd> <id> <body> | delete <cwd> <id>")
+		dieUsage("usage: spirit agent backlog list <cwd> | create <cwd> <body> | update <cwd> <id> <body> | delete <cwd> <id>")
 	}
 
 	client := connectOrDie()
@@ -650,7 +650,7 @@ func runBacklog() {
 	switch sub {
 	case "list":
 		if len(os.Args) < 4 {
-			dieUsage("usage: cmc agent backlog list <cwd>")
+			dieUsage("usage: spirit agent backlog list <cwd>")
 		}
 		items, err := client.BacklogList(os.Args[3])
 		if err != nil {
@@ -661,7 +661,7 @@ func runBacklog() {
 
 	case "create":
 		if len(os.Args) < 5 {
-			dieUsage("usage: cmc agent backlog create <cwd> <body>")
+			dieUsage("usage: spirit agent backlog create <cwd> <body>")
 		}
 		item, err := client.BacklogCreate(os.Args[3], os.Args[4])
 		if err != nil {
@@ -672,7 +672,7 @@ func runBacklog() {
 
 	case "update":
 		if len(os.Args) < 6 {
-			dieUsage("usage: cmc agent backlog update <cwd> <id> <body>")
+			dieUsage("usage: spirit agent backlog update <cwd> <id> <body>")
 		}
 		item, err := client.BacklogUpdate(os.Args[3], os.Args[4], os.Args[5])
 		if err != nil {
@@ -683,7 +683,7 @@ func runBacklog() {
 
 	case "delete":
 		if len(os.Args) < 5 {
-			dieUsage("usage: cmc agent backlog delete <cwd> <id>")
+			dieUsage("usage: spirit agent backlog delete <cwd> <id>")
 		}
 		if err := client.BacklogDelete(os.Args[3], os.Args[4]); err != nil {
 			fmt.Fprintf(os.Stderr, "backlog delete: %v\n", err)
@@ -692,6 +692,6 @@ func runBacklog() {
 		jsonOut(map[string]string{"status": "ok"})
 
 	default:
-		dieUsage("usage: cmc agent backlog list|create|update|delete ...")
+		dieUsage("usage: spirit agent backlog list|create|update|delete ...")
 	}
 }

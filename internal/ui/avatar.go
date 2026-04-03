@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/huylenq/claude-mission-control/internal/spirit"
+	"github.com/huylenq/spirit/internal/spirit"
 )
 
 // avatarAnimalDef pairs each animal glyph with its human-readable name.

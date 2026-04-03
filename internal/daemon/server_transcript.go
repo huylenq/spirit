@@ -3,7 +3,7 @@ package daemon
 import (
 	"encoding/json"
 
-	"github.com/huylenq/claude-mission-control/internal/claude"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (d *Daemon) handleTranscript(data json.RawMessage) *Response {

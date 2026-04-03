@@ -1,7 +1,7 @@
 .PHONY: generate build clean restart skill
 .DEFAULT_GOAL := restart
 
-BINARY := bin/cmc
+BINARY := bin/spirit
 VERSION ?= dev
 
 generate:
@@ -9,7 +9,7 @@ generate:
 
 build: generate
 	@mkdir -p bin
-	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) ./cmd/cmc
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) ./cmd/spirit
 
 restart: build
 	@$(BINARY) daemon --stop 2>/dev/null || true
@@ -17,10 +17,10 @@ restart: build
 	@echo "daemon restarted"
 
 skill: build
-	@mkdir -p ~/.claude/skills/cmc
-	@$(BINARY) _gen-skill > ~/.claude/skills/cmc/SKILL.md
-	@mkdir -p ~/.cache/cmc/copilot-workspace/skills/cmc
-	@$(BINARY) _gen-skill > ~/.cache/cmc/copilot-workspace/skills/cmc/SKILL.md
+	@mkdir -p ~/.claude/skills/spirit
+	@$(BINARY) _gen-skill > ~/.claude/skills/spirit/SKILL.md
+	@mkdir -p ~/.cache/spirit/copilot-workspace/skills/spirit
+	@$(BINARY) _gen-skill > ~/.cache/spirit/copilot-workspace/skills/spirit/SKILL.md
 	@echo "SKILL.md installed (claude-code + openclaw)"
 
 clean:

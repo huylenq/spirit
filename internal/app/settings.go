@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/huylenq/claude-mission-control/internal/ui"
+	"github.com/huylenq/spirit/internal/ui"
 )
 
 // SettingKind classifies how a setting is displayed and edited.
