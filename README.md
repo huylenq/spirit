@@ -3,27 +3,26 @@
 A TUI for monitoring and switching between Claude Code sessions across tmux panes.
 
 <!-- TODO: replace with actual screenshots -->
-![Spirit TUI overview](docs/screenshots/overview.png)
+![Spirit TUI Popup](docs/screenshots/as-popup.jpeg)
 
-<details>
-<summary>More screenshots</summary>
+![Spirit TUI Fullscreen](docs/screenshots/as-fullscreen.jpeg)
 
-![Session detail view](docs/screenshots/detail.png)
-![Minimap](docs/screenshots/minimap.png)
-![Copilot overlay](docs/screenshots/copilot.png)
+<!-- <details> -->
+<!-- <summary>More screenshots</summary> -->
 
-</details>
+<!-- ![Session detail view](docs/screenshots/detail.png) -->
+<!-- ![Minimap](docs/screenshots/minimap.png) -->
+<!-- ![Copilot overlay](docs/screenshots/copilot.png) -->
 
-## Features
+<!-- </details> -->
 
-- **Hook-based detection** — uses Claude Code's official hooks for accurate status
-- **Live preview** — see pane content and conversation transcript while browsing
-- **Spatial minimap** — visual overview of your tmux window layout with pane status
+## Feature Highlights
+
+- **Tmux minimap** — visual overview of your tmux window layout with pane status
+- **Autojump** — let the spirits carry you to where you should attend
+- **Mark for later** — snooze a session with a countdown timer
 - **Vim navigation** — `j`/`k` to browse, `Enter` to switch, `/` to filter
-- **Defer mode** — snooze a session with a countdown timer
-- **AI summaries** — synthesize sessions via Claude Haiku
-- **Diff stats** — see file change counts per session
-- **Daemon architecture** — background process polls once, multiple TUI clients connect instantly
+- **Meta-synthesis** — automatically name the sessions, extract insights
 
 ## Install
 
