@@ -2,8 +2,7 @@
 
 A TUI for monitoring and switching between Claude Code sessions across tmux panes.
 
-<!-- TODO: replace with actual screenshots -->
-![Spirit TUI Popup](docs/screenshots/as-popup.jpeg)
+<!-- ![Spirit TUI Popup](docs/screenshots/as-popup.jpeg) -->
 
 ![Spirit TUI Fullscreen](docs/screenshots/as-fullscreen.jpeg)
 
