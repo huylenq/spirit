@@ -1,27 +1,60 @@
 # Spirit
 
-A TUI for monitoring and switching between Claude Code sessions across tmux panes.
-
-<!-- ![Spirit TUI Popup](docs/screenshots/as-popup.jpeg) -->
+A TUI for monitoring and orchestrating Claude Code sessions across tmux panes.
 
 ![Spirit TUI Fullscreen](docs/screenshots/as-fullscreen.jpeg)
 
-<!-- <details> -->
-<!-- <summary>More screenshots</summary> -->
+Works as a tmux popup overlay too — one keystroke to summon, one to dismiss:
 
-<!-- ![Session detail view](docs/screenshots/detail.png) -->
-<!-- ![Minimap](docs/screenshots/minimap.png) -->
-<!-- ![Copilot overlay](docs/screenshots/copilot.png) -->
+![Spirit as popup](docs/screenshots/as-popup.jpg)
 
-<!-- </details> -->
+## Features
 
-## Feature Highlights
+### Live session monitoring
+
+Session sidebar with AI-generated titles, status indicators, git diff stats, and last message preview. The detail panel shows the running conversation with syntax-highlighted diffs.
+
+### Transcript & hook event views
+
+Drill into the raw transcript — every tool call, text response, and progress event timestamped and browsable:
+
+![Transcript view](docs/screenshots/transcript-view.jpg)
+
+Or inspect the hook event stream for debugging:
+
+![Hooks view](docs/screenshots/hooks-view.jpg)
+
+### Command palette
+
+Fuzzy-searchable command palette for all actions — switch panes, send messages, queue prompts, spawn sessions, synthesize, and more:
+
+![Command palette](docs/screenshots/command-palette.jpg)
+
+### Spawn new sessions
+
+Launch new Claude Code sessions directly from Spirit with an initial prompt, model selection (Opus / Sonnet / Haiku), and plan or worktree mode toggles:
+
+![Spawn new session](docs/screenshots/spawn-new-session.jpg)
+
+### Queue & relay messages
+
+Queue up prompts to send to sessions. Manage multiple sessions without context-switching out of Spirit:
+
+![Queue view](docs/screenshots/queue-view.jpg)
+
+### Lua scripting
+
+Built-in Lua REPL for automating and extending Spirit on the fly — full API access to sessions, lifecycle, and orchestration:
+
+![Lua binding](docs/screenshots/lua-binding.jpg)
+
+### And more
 
 - **Tmux minimap** — visual overview of your tmux window layout with pane status
 - **Autojump** — let the spirits carry you to where you should attend
 - **Mark for later** — snooze a session with a countdown timer
 - **Vim navigation** — `j`/`k` to browse, `Enter` to switch, `/` to filter
-- **Meta-synthesis** — automatically name the sessions, extract insights
+- **Meta-synthesis** — AI-generated session names and cross-session insights
 
 ## Install
 
