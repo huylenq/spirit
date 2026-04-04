@@ -2,6 +2,18 @@
 
 A TUI for monitoring and switching between Claude Code sessions across tmux panes.
 
+<!-- TODO: replace with actual screenshots -->
+![Spirit TUI overview](docs/screenshots/overview.png)
+
+<details>
+<summary>More screenshots</summary>
+
+![Session detail view](docs/screenshots/detail.png)
+![Minimap](docs/screenshots/minimap.png)
+![Copilot overlay](docs/screenshots/copilot.png)
+
+</details>
+
 ## Features
 
 - **Hook-based detection** — uses Claude Code's official hooks for accurate status

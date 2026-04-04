@@ -64,8 +64,8 @@ Each worktree:
 
 | Binding | Action |
 |---|---|
-| `C-Space` | Open CMC popup, auto-select current pane |
-| `C-Tab` | Open CMC popup, rotate to next YOUR TURN session |
+| `C-Space` | Open Spirit popup, auto-select current pane |
+| `C-Tab` | Open Spirit popup, rotate to next YOUR TURN session |
 | `<prefix> C-Space` | **Dev picker**: fzf over worktrees → launch chosen worktree's TUI |
 | `<prefix> C-Tab` | **Dev picker**: same, rotate-next mode |
 
@@ -82,7 +82,7 @@ feat-macros                      ●  (no binary — run make)
 On selection the picker execs into the chosen worktree's `bin/spirit`, replacing
 itself in the same popup window. The TUI takes over seamlessly.
 
-The picker always appears, even with a single worktree — so Huy always knows which build he's launching against.
+The picker always appears, even with a single worktree — so you always know which build you're launching against.
 
 ## TUI layout debugging
 

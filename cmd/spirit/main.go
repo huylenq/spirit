@@ -496,10 +496,10 @@ func ensureWorktreeBinary(wtPath string) {
 	}
 }
 
-// execWorktreeCMC builds (if needed) then execs into the given worktree's
+// execWorktreeSpirit builds (if needed) then execs into the given worktree's
 // bin/spirit, setting the appropriate env var for select-active or rotate-next mode.
 // This replaces the current process — caller must not return.
-func execWorktreeCMC(wtPath string, selectActive bool) {
+func execWorktreeSpirit(wtPath string, selectActive bool) {
 	ensureWorktreeBinary(wtPath)
 	binPath := filepath.Join(wtPath, "bin", "spirit")
 	env := os.Environ()
@@ -602,7 +602,7 @@ func runDev() {
 	if len(parts) < 2 {
 		return
 	}
-	execWorktreeCMC(strings.TrimSpace(parts[1]), selectActive)
+	execWorktreeSpirit(strings.TrimSpace(parts[1]), selectActive)
 }
 
 func runEval() {

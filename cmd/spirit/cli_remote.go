@@ -259,7 +259,7 @@ Requires a running daemon (auto-started on first use).
 
 const skillFrontmatter = `---
 name: Spirit
-description: Use this skill when asked about Claude Code sessions, when you need to check what coding sessions are running, send messages to sessions, manage session lifecycle, or orchestrate multi-session development work. Triggers on mentions of "sessions", "Claude Code", "spirit", "coding agents", "what's running", or when Huy asks you to check on, interact with, or manage his development sessions.
+description: Use this skill when asked about Claude Code sessions, when you need to check what coding sessions are running, send messages to sessions, manage session lifecycle, or orchestrate multi-session development work. Triggers on mentions of "sessions", "Claude Code", "spirit", "coding agents", "what's running", or when the user asks to check on, interact with, or manage development sessions.
 ---`
 
 // genSkillMD generates the complete SKILL.md content from the command registry.
@@ -273,7 +273,7 @@ func genSkillMD() string {
 
 Spirit is a TUI + daemon that monitors and orchestrates Claude Code sessions running in tmux panes. You can interact with it via ` + "`spirit agent <command>`" + ` which talks to the running daemon and returns JSON.
 
-**Prerequisite:** The spirit daemon must be running. If commands fail with connection errors, tell Huy to start it (` + "`spirit daemon`" + ` or open the TUI).
+**Prerequisite:** The spirit daemon must be running. If commands fail with connection errors, tell the user to start it (` + "`spirit daemon`" + ` or open the TUI).
 
 ## Commands
 

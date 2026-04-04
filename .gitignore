@@ -5,6 +5,9 @@ bin/
 .idea/
 .claude/
 dist/
+researches/
+docs/chat-*.md
+plans/
+/spirit
 
-
-.spirit/backlog/
+.spirit/
