@@ -104,10 +104,22 @@ func (d *Daemon) triggerDigest() {
 }
 
 func (d *Daemon) usageLoop(stop chan struct{}) {
-	// Only fetch immediately if we have no cached data yet.
+	// Hydrate from disk so the bar renders the last-known value immediately
+	// instead of going blank for a few seconds while /usage refetches.
 	if d.currentUsage() == nil {
-		go d.fetchUsage()
+		if cached := claude.LoadCachedUsage(); cached != nil {
+			d.usageMu.Lock()
+			d.usageStats = cached
+			d.usageMu.Unlock()
+			d.mu.Lock()
+			d.version++
+			sessions := d.sessions
+			d.mu.Unlock()
+			d.notifySubscribers(sessions)
+		}
 	}
+
+	go d.fetchUsage()
 
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
@@ -137,6 +149,10 @@ func (d *Daemon) fetchUsage() {
 	d.usageMu.Lock()
 	d.usageStats = stats
 	d.usageMu.Unlock()
+
+	if err := claude.SaveCachedUsage(stats); err != nil {
+		log.Printf("usage cache save: %v", err)
+	}
 
 	// Bump version and notify subscribers so they receive the new usage data,
 	// even if sessions haven't changed.

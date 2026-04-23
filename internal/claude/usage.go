@@ -2,9 +2,11 @@ package claude
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,13 +15,42 @@ import (
 	"github.com/creack/pty"
 )
 
+// usageCachePath is the on-disk location for the last-known UsageStats.
+// Persisting across daemon restarts means the TUI can show the previous
+// bar immediately instead of rendering blank while /usage refetches.
+func usageCachePath() string {
+	return filepath.Join(StatusDir(), "usage.json")
+}
+
+// LoadCachedUsage reads the last persisted UsageStats, or nil if missing/invalid.
+func LoadCachedUsage() *UsageStats {
+	data, err := os.ReadFile(usageCachePath())
+	if err != nil {
+		return nil
+	}
+	var s UsageStats
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil
+	}
+	return &s
+}
+
+// SaveCachedUsage writes UsageStats to disk for next daemon startup.
+func SaveCachedUsage(s *UsageStats) error {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(usageCachePath(), data, 0o644)
+}
+
 // UsageStats holds account-level subscription usage fetched via the /usage TUI command.
 type UsageStats struct {
-	SessionPct      int    // current 5-hour session utilization %
-	SessionResets   string // human-readable reset time, e.g. "6pm (Asia/Saigon)"
-	WeekAllPct      int    // current week usage % (all models)
-	WeekAllResets   string
-	WeekSonnetPct   int    // current week usage % (Sonnet only)
+	SessionPct       int    // current 5-hour session utilization %
+	SessionResets    string // human-readable reset time, e.g. "6pm (Asia/Saigon)"
+	WeekAllPct       int    // current week usage % (all models)
+	WeekAllResets    string
+	WeekSonnetPct    int // current week usage % (Sonnet only)
 	WeekSonnetResets string
 }
 
@@ -27,7 +58,6 @@ var (
 	rePct = regexp.MustCompile(`(\d+)%(?:\s+used)?`)
 	// Tolerates cursor-right ANSI mangling "Resets" → "Rese s" or "Rese ts"
 	reResets = regexp.MustCompile(`Rese\s*t?s\s+(.+)`)
-
 )
 
 // FetchUsageRaw returns the raw ANSI-stripped dialog text for debugging.
