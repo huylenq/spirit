@@ -147,6 +147,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqSetTags:
 		return d.handleSetTags(req.Data)
 
+	case ReqSetNote:
+		return d.handleSetNote(req.Data)
+
 	case ReqBacklogList:
 		return d.handleBacklogList(req.Data)
 

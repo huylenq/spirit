@@ -63,6 +63,35 @@ func (d *Daemon) handleSetTags(data json.RawMessage) *Response {
 	return &r
 }
 
+func (d *Daemon) handleSetNote(data json.RawMessage) *Response {
+	var req SetNoteData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if req.SessionID == "" {
+		r := errResponse("sessionID required")
+		return &r
+	}
+	if err := claude.WriteNote(req.SessionID, req.Note); err != nil {
+		r := errResponse("write note: " + err.Error())
+		return &r
+	}
+	d.mu.Lock()
+	for i := range d.sessions {
+		if d.sessions[i].SessionID == req.SessionID {
+			d.sessions[i].Note = req.Note
+			break
+		}
+	}
+	sessions := d.sessions
+	d.version++
+	d.mu.Unlock()
+	d.notifySubscribers(sessions)
+	r := resultResponse(nil)
+	return &r
+}
+
 func (d *Daemon) handleDigest() *Response {
 	digest := claude.ReadCachedDigest()
 	r := resultResponse(DigestData{Digest: digest})

@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/huylenq/spirit/internal/claude"
 )
 
 // execNoteEdit activates inline editing of the selected session's note.
@@ -37,14 +36,8 @@ func (m Model) handleKeyNoteEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	savedText := strings.TrimSpace(m.detail.NoteValue())
-	if err := claude.WriteNote(s.SessionID, savedText); err != nil {
+	if err := m.client.SetNote(s.SessionID, savedText); err != nil {
 		return m, m.setFlash("save note: "+err.Error(), true, 3*time.Second)
-	}
-	for i := range m.sessions {
-		if m.sessions[i].SessionID == s.SessionID {
-			m.sessions[i].Note = savedText
-			break
-		}
 	}
 	m.detail.SetNote(savedText)
 	m.detail.StopNoteEdit()

@@ -385,6 +385,11 @@ func (c *Client) SetTags(sessionID string, tags []string) error {
 	return c.rpcInto(Request{Type: ReqSetTags, Data: marshalData(SetTagsData{SessionID: sessionID, Tags: tags})}, nil)
 }
 
+// SetNote updates the note for a session (persisted and broadcast to subscribers).
+func (c *Client) SetNote(sessionID, note string) error {
+	return c.rpcInto(Request{Type: ReqSetNote, Data: marshalData(SetNoteData{SessionID: sessionID, Note: note})}, nil)
+}
+
 func (c *Client) BacklogList(cwd string) ([]claude.Backlog, error) {
 	var data BacklogListResultData
 	err := c.rpcInto(Request{Type: ReqBacklogList, Data: marshalData(BacklogListData{CWD: cwd})}, &data)

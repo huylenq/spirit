@@ -60,6 +60,7 @@ const (
 	ReqDigest                 = "digest"
 	ReqApplyTitle             = "apply_title"
 	ReqSetTags                = "set_tags"
+	ReqSetNote                = "set_note"
 
 	ReqBacklogList   = "backlog_list"
 	ReqBacklogCreate = "backlog_create"
@@ -256,6 +257,11 @@ type DigestData struct {
 type SetTagsData struct {
 	SessionID string   `json:"sessionID"`
 	Tags      []string `json:"tags"`
+}
+
+type SetNoteData struct {
+	SessionID string `json:"sessionID"`
+	Note      string `json:"note"`
 }
 
 type BacklogListData struct {
