@@ -295,9 +295,9 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 		return ""
 	}
 
-	// Each line: "<avatar><status> <title>"
-	// Reserve: avatar(2) + status(1) + space(1) = 4 chars before title
-	const prefixCols = 4
+	// Each line: "<avatar> <status> <title>"
+	// Reserve: avatar(2) + space(1) + status(1) + space(1) = 5 chars before title
+	const prefixCols = 5
 
 	lines := make([]string, 0, WorkQueueHeight)
 	for i, s := range m.others {
@@ -329,7 +329,7 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 			title = ""
 		}
 
-		line := styled + indicator + " " + ItemDetailStyle.Render(title)
+		line := styled + " " + indicator + " " + ItemDetailStyle.Render(title)
 		lines = append(lines, line)
 	}
 
