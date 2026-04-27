@@ -11,9 +11,14 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+// EmptyView renders the "no session selected" placeholder at the given size.
+func (m *DetailModel) EmptyView(w, h int) string {
+	return EmptyStyle.Width(w).Height(h).Render("Select a session to preview")
+}
+
 func (m *DetailModel) View() string {
 	if m.session == nil {
-		return EmptyStyle.Width(m.width).Height(m.height).Render("Select a session to preview")
+		return m.EmptyView(m.width, m.height)
 	}
 
 	s := m.session

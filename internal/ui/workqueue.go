@@ -103,6 +103,12 @@ func (m *WorkQueueModel) SelectByPaneID(paneID string) bool {
 	return false
 }
 
+// SelectTop moves the cursor to the first (leftmost/oldest) queue item.
+func (m *WorkQueueModel) SelectTop() {
+	m.cursor = 0
+	m.clampScroll()
+}
+
 // MoveLeft moves the cursor left in the queue.
 func (m *WorkQueueModel) MoveLeft() {
 	if m.cursor > 0 {
