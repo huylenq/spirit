@@ -19,10 +19,12 @@ type WindowPaneInfo struct {
 	IsClaude    bool
 
 	// Claude-specific fields (empty if !IsClaude)
+	CustomTitle      string // user-set via Claude Code's /rename — strongest signal
 	SynthesizedTitle string
-	LastUserMessage string
-	Status          string
-	Project         string
+	FirstMessage     string
+	LastUserMessage  string
+	Status           string
+	Project          string
 }
 
 // GatherWindowPanes collects info about all panes in a tmux window.
@@ -52,7 +54,9 @@ func GatherWindowPanes(sessionName string, windowIndex int, sessions []ClaudeSes
 
 		if cs, ok := sessionByPane[p.PaneID]; ok {
 			info.IsClaude = true
+			info.CustomTitle = cs.CustomTitle
 			info.SynthesizedTitle = cs.SynthesizedTitle
+			info.FirstMessage = cs.FirstMessage
 			info.LastUserMessage = cs.LastUserMessage
 			info.Status = cs.Status.String()
 			info.Project = cs.Project
@@ -101,10 +105,18 @@ func GenerateWindowName(panes []WindowPaneInfo) (string, error) {
 		}
 		if p.IsClaude {
 			fmt.Fprintf(&b, "  running: Claude Code\n")
-			if p.SynthesizedTitle != "" {
+			switch {
+			case p.CustomTitle != "":
+				fmt.Fprintf(&b, "  user-set title: %s\n", p.CustomTitle)
+			case p.SynthesizedTitle != "":
 				fmt.Fprintf(&b, "  task: %s\n", p.SynthesizedTitle)
-			} else if p.LastUserMessage != "" {
-				// Truncate long messages
+			case p.FirstMessage != "":
+				msg := p.FirstMessage
+				if len(msg) > 200 {
+					msg = msg[:200]
+				}
+				fmt.Fprintf(&b, "  task: %s\n", msg)
+			case p.LastUserMessage != "":
 				msg := p.LastUserMessage
 				if len(msg) > 200 {
 					msg = msg[:200]
