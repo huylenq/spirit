@@ -16,6 +16,18 @@ import (
 func (m *SidebarModel) renderItemWithStats(isSelected, isAutoJump bool, s claude.ClaudeSession, dw DiffColWidths, query string) string {
 	content := m.renderItem(isSelected, isAutoJump, s, query)
 	_, padSp := selectionFuncs(isSelected, s.AvatarColorIdx)
+	if isSelected {
+		// Tint renderItem's trailing breathing-room buffer so the selection
+		// highlight reaches the right edge on every row of the item.
+		lines := strings.Split(content, "\n")
+		for i, line := range lines {
+			lineW := lipgloss.Width(line)
+			if lineW < m.width {
+				lines[i] = line + padSp(strings.Repeat(" ", m.width-lineW))
+			}
+		}
+		content = strings.Join(lines, "\n")
+	}
 	statsRight := m.BuildStatsRight(s, dw, isSelected, s.AvatarColorIdx)
 	return PinStatsRight(content, statsRight, m.width, padSp)
 }
