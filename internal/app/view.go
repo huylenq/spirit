@@ -159,6 +159,8 @@ func (m Model) View() string {
 	switch m.state {
 	case StatePromptRelay:
 		m.detail.SetRelayView(m.relay.View())
+	case StateRenamePrompt:
+		m.detail.SetRelayView(m.renamePrompt.View())
 	case StateQueueRelay:
 		m.detail.SetRelayView(m.queueRelay.View())
 	default:

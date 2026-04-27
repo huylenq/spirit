@@ -11,7 +11,7 @@ import (
 func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
-		k.ApplyTitle, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
+		k.ApplyTitle, k.RenamePrompt, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
 		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
 		k.JumpBack, k.Note, k.FocusMode, k.SlotJump, k.SlotBind,
 	}
@@ -22,7 +22,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Enter, k.Search, k.ApplyTitle, k.Quit},
+		{k.Up, k.Enter, k.Search, k.RenamePrompt, k.ApplyTitle, k.Quit},
 		{k.Later, k.LaterKill, k.GroupMode, k.Minimap},
 		{k.Synthesize, k.SynthesizeAll, k.Rename, k.ChatOutline},
 		{k.ScrollDown, k.MsgNext, k.ListShrink, k.SpatialUp},
@@ -42,6 +42,7 @@ type KeyMap struct {
 	BacklogToggle  key.Binding
 	ClaudingToggle key.Binding
 	ApplyTitle     key.Binding
+	RenamePrompt   key.Binding
 	ChatOutline    key.Binding
 	Quit           key.Binding
 	Escape         key.Binding
@@ -286,9 +287,13 @@ var Keys = KeyMap{
 		key.WithKeys("alt+c"),
 		key.WithHelp("alt+c", "toggle clauding"),
 	),
-	ApplyTitle: key.NewBinding(
+	RenamePrompt: key.NewBinding(
 		key.WithKeys("r"),
-		key.WithHelp("r", "apply title"),
+		key.WithHelp("r", "rename"),
+	),
+	ApplyTitle: key.NewBinding(
+		key.WithKeys("alt+r"),
+		key.WithHelp("alt+r", "apply title"),
 	),
 	ChatOutline: key.NewBinding(
 		key.WithKeys("t"),

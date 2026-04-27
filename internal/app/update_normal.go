@@ -667,6 +667,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, Keys.RenamePrompt):
+		return m.execRenamePrompt()
+
 	case key.Matches(msg, Keys.ScrollDown):
 		m.detail.ScrollDown()
 		return m, nil

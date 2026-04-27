@@ -13,6 +13,14 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execRenamePrompt() (Model, tea.Cmd) {
+	if _, ok := m.sidebar.SelectedItem(); ok {
+		m.state = StateRenamePrompt
+		m.renamePrompt.Activate()
+	}
+	return m, nil
+}
+
 func (m Model) execTagRelay() (Model, tea.Cmd) {
 	canTag := false
 	if s, ok := m.sidebar.SelectedItem(); ok && s.SessionID != "" {

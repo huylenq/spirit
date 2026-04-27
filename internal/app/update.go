@@ -747,6 +747,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeySettings(msg)
 	case StatePromptRelay:
 		return m.handleKeyPromptRelay(msg)
+	case StateRenamePrompt:
+		return m.handleKeyRenamePrompt(msg)
 	case StateQueueRelay:
 		return m.handleKeyQueueRelay(msg)
 	case StateTagRelay:

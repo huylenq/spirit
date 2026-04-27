@@ -48,6 +48,40 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) handleKeyRenamePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.renamePrompt.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		val := m.renamePrompt.Confirm()
+		m.state = StateNormal
+		if val == "" {
+			return m, nil
+		}
+		s, ok := m.sidebar.SelectedItem()
+		if !ok {
+			return m, nil
+		}
+		// Optimistically reflect the new name in spirit; the next discover
+		// pass will reconcile from the transcript's custom-title entry.
+		for i := range m.sessions {
+			if m.sessions[i].PaneID == s.PaneID {
+				m.sessions[i].CustomTitle = val
+				break
+			}
+		}
+		// Intentionally no autoJump — rename should not steal focus.
+		return m, sendPromptRelay(s.PaneID, "/rename "+val)
+	default:
+		ti := m.renamePrompt.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		return m, cmd
+	}
+}
+
 func (m Model) handleKeyLaterWait(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, Keys.Escape):

@@ -54,6 +54,7 @@ const (
 	StateCopilotConfirm       // copilot tool confirmation pending
 	StateAdjustCopilot        // copilot overlay resize/reposition mode
 	StateLaterWait            // waiting for optional duration input before marking as later
+	StateRenamePrompt         // text input for /rename to claude session
 	StateDestroyer            // session destroyer easter egg
 )
 
@@ -177,6 +178,7 @@ type Model struct {
 	queueRelay           ui.RelayModel
 	tagRelay             ui.RelayModel
 	laterRelay           ui.RelayModel
+	renamePrompt         ui.RelayModel
 	laterKillMode        bool // true when StateLaterWait was triggered by W (later+kill)
 	minimap              ui.MinimapModel
 	usageBar             ui.UsageBarModel
@@ -293,6 +295,7 @@ func NewModel(client *daemon.Client) Model {
 		queueRelay:        ui.NewQueueRelayModel(),
 		tagRelay:          ui.NewTagRelayModel(),
 		laterRelay:        ui.NewLaterRelayModel(),
+		renamePrompt:      ui.NewRenameRelayModel(),
 		palette:           ui.NewPaletteModel(),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),

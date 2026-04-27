@@ -234,6 +234,10 @@ func (m Model) renderFooter(width int) string {
 		h := ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
+	case StateRenamePrompt:
+		h := ui.FooterKeyStyle.Render("enter") + " /rename  " +
+			ui.FooterKeyStyle.Render("esc") + " cancel"
+		return ui.FooterStyle.Width(width).Render(h)
 	case StateNewSessionPathInput:
 		h := ui.FooterKeyStyle.Render("enter") + " next  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel"

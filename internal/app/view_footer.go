@@ -105,6 +105,7 @@ func (m Model) renderHelpOverlay() string {
 		bhint(Keys.Rename),
 		bhint(Keys.Commit),
 		bhint(Keys.CommitAndDone),
+		bhint(Keys.RenamePrompt),
 		bhint(Keys.ApplyTitle),
 	}, "\n")
 

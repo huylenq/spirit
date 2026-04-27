@@ -57,6 +57,15 @@ func NewPathRelayModel() RelayModel {
 	return RelayModel{input: ti, origPrompt: "  "}
 }
 
+func NewRenameRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = "new session name"
+	ti.Prompt = "✎ "
+	ti.PromptStyle = RelayPromptStyle
+	ti.CharLimit = 128
+	return RelayModel{input: ti, origPrompt: "✎ "}
+}
+
 func NewTagRelayModel() RelayModel {
 	ti := textinput.New()
 	ti.Placeholder = ""
