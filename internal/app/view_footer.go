@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/ui"
@@ -13,23 +14,30 @@ func hint(k, desc string) string {
 	return ui.FooterKeyStyle.Render(k) + " " + desc
 }
 
+// bhint renders a hint sourced from a keymap binding, so footer text always
+// matches the active key + label.
+func bhint(b key.Binding) string {
+	h := b.Help()
+	return hint(h.Key, h.Desc)
+}
+
 // renderNormalFooterHints builds a context-sensitive footer based on the selected session.
 func (m Model) renderNormalFooterHints() string {
 	var parts []string
 
 	// Backlog-specific footer
 	if m.sidebar.IsBacklogSelected() {
-		parts = append(parts, hint("j/k", "nav"))
+		parts = append(parts, bhint(Keys.Up))
 		parts = append(parts, hint("enter", "edit"), hint("a", "submit"), hint("b", "new"), hint("e", "$EDITOR"), hint("d", "delete"))
-		parts = append(parts, hint("?", "help"), hint("q", "quit"))
+		parts = append(parts, bhint(Keys.Help), bhint(Keys.Quit))
 		return strings.Join(parts, "  ")
 	}
 
 	// Project-level footer
 	if m.sidebar.SelectionLevel() == ui.LevelProject {
 		if _, ok := m.sidebar.SelectedProject(); ok {
-			parts = append(parts, hint("j/k", "nav"), hint("b", "new backlog"), hint("l", "enter"))
-			parts = append(parts, hint("?", "help"), hint("q", "quit"))
+			parts = append(parts, bhint(Keys.Up), hint("b", "new backlog"), hint("l", "enter"))
+			parts = append(parts, bhint(Keys.Help), bhint(Keys.Quit))
 			return strings.Join(parts, "  ")
 		}
 	}
@@ -37,14 +45,14 @@ func (m Model) renderNormalFooterHints() string {
 	s, hasSelection := m.sidebar.SelectedItem()
 
 	// Always show nav
-	parts = append(parts, hint("j/k", "nav"))
+	parts = append(parts, bhint(Keys.Up))
 
 	if !hasSelection {
-		parts = append(parts, hint("/", "search"), hint("g", "group"), hint("m", "minimap"), hint("?", "help"), hint("q", "quit"))
+		parts = append(parts, bhint(Keys.Search), bhint(Keys.GroupMode), bhint(Keys.Minimap), bhint(Keys.Help), bhint(Keys.Quit))
 		return strings.Join(parts, "  ")
 	}
 
-	parts = append(parts, hint("enter", "switch"), hint(">", "send"), hint("<", "queue"))
+	parts = append(parts, bhint(Keys.Enter), bhint(Keys.PromptRelay), bhint(Keys.Queue))
 
 	if s.LaterID != "" {
 		parts = append(parts, hint("w", "unlater"))
@@ -52,21 +60,21 @@ func (m Model) renderNormalFooterHints() string {
 		switch s.Status {
 		case claude.StatusUserTurn:
 			if !s.CommitDonePending {
-				parts = append(parts, hint("c", "commit"), hint("C", "commit+done"), hint("D", "commit+simplify+done"))
+				parts = append(parts, bhint(Keys.Commit), bhint(Keys.CommitAndDone), bhint(Keys.CommitSimplifyAndDone))
 			}
-			parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
+			parts = append(parts, bhint(Keys.Later), bhint(Keys.LaterKill))
 		case claude.StatusAgentTurn:
-			parts = append(parts, hint("w", "later"), hint("W", "later+kill"))
+			parts = append(parts, bhint(Keys.Later), bhint(Keys.LaterKill))
 		}
 	}
 
-	parts = append(parts, hint("d", "kill"), hint("b", "new backlog"))
+	parts = append(parts, bhint(Keys.Kill), hint("b", "new backlog"))
 
 	if m.showMinimap {
-		parts = append(parts, hint("H/J/K/L", "spatial"))
+		parts = append(parts, bhint(Keys.SpatialUp))
 	}
 
-	parts = append(parts, hint("?", "help"), hint("q", "quit"))
+	parts = append(parts, bhint(Keys.Help), bhint(Keys.Quit))
 	return strings.Join(parts, "  ")
 }
 
@@ -79,27 +87,27 @@ func (m Model) renderHelpOverlay() string {
 
 	col1 := strings.Join([]string{
 		nav,
-		hint("j/k", "up/down"),
-		hint("enter", "switch to pane"),
-		hint("/", "search"),
-		hint("ctrl+d/u", "scroll preview"),
-		hint("ctrl+j/k", "next/prev message"),
-		hint("alt+h/l", "resize list"),
+		bhint(Keys.Up),
+		bhint(Keys.Enter),
+		bhint(Keys.Search),
+		bhint(Keys.ScrollDown),
+		bhint(Keys.MsgNext),
+		bhint(Keys.ListShrink),
 	}, "\n")
 
 	col2 := strings.Join([]string{
 		actions,
-		hint(">", "send to session"),
-		hint("<", "queue message"),
-		hint("w", "later"),
-		hint("W", "later + kill"),
-		hint("d", "kill + close pane"),
-		hint("s", "synthesize"),
-		hint("S", "synthesize all"),
-		hint("R", "rename window"),
-		hint("c", "commit"),
-		hint("C", "commit + done"),
-		hint("r", "apply title"),
+		bhint(Keys.PromptRelay),
+		bhint(Keys.Queue),
+		bhint(Keys.Later),
+		bhint(Keys.LaterKill),
+		bhint(Keys.Kill),
+		bhint(Keys.Synthesize),
+		bhint(Keys.SynthesizeAll),
+		bhint(Keys.Rename),
+		bhint(Keys.Commit),
+		bhint(Keys.CommitAndDone),
+		bhint(Keys.ApplyTitle),
 	}, "\n")
 
 	chordHints := make([]string, 0, len(Chords))
@@ -111,13 +119,13 @@ func (m Model) renderHelpOverlay() string {
 
 	col3Parts := []string{
 		toggles,
-		hint("m", "minimap"),
-		hint("M", "minimap settings"),
-		hint("P", "preferences"),
-		hint("g", "group by project"),
-		hint("t", "toggle chat outline"),
-		hint("z", "fullscreen toggle"),
-		hint("!", "message log"),
+		bhint(Keys.Minimap),
+		bhint(Keys.MinimapMode),
+		bhint(Keys.Prefs),
+		bhint(Keys.GroupMode),
+		bhint(Keys.ChatOutline),
+		bhint(Keys.Fullscreen),
+		bhint(Keys.MessageLog),
 	}
 	col3Parts = append(col3Parts, chordHints...)
 	col3Parts = append(col3Parts, "", ui.FooterDimStyle.Render("press ? or esc to close"))
