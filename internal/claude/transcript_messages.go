@@ -157,6 +157,7 @@ func ReadLastUserMessage(sessionID string) string {
 // extracted from a single scan of the transcript tail.
 type AssistantInfo struct {
 	Message  string   // last assistant text
+	Recap    string   // most recent away_summary content (system recap)
 	Insights []string // all ★ Insight blocks found (oldest first)
 }
 
@@ -239,12 +240,23 @@ func ReadLastAssistantInfo(sessionID string) AssistantInfo {
 	raw := string(buf[:n])
 	lines := strings.Split(raw, "\n")
 	assistantTag := []byte(`"type":"assistant"`)
-	// Reverse scan: collect last message + all insights
+	awaySummaryTag := []byte(`"away_summary"`)
+	// Reverse scan: collect last message + all insights + most recent recap
 	for i := len(lines) - 1; i >= 0; i-- {
 		if lines[i] == "" {
 			continue
 		}
 		line := []byte(lines[i])
+		if result.Recap == "" && bytes.Contains(line, awaySummaryTag) {
+			var entry struct {
+				Type    string `json:"type"`
+				Subtype string `json:"subtype"`
+				Content string `json:"content"`
+			}
+			if json.Unmarshal(line, &entry) == nil && entry.Type == "system" && entry.Subtype == "away_summary" && entry.Content != "" {
+				result.Recap = entry.Content
+			}
+		}
 		// Cheap pre-filter: skip JSON unmarshal for non-assistant lines
 		if !bytes.Contains(line, assistantTag) {
 			continue

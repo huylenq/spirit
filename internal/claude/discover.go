@@ -265,6 +265,7 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[strin
 		}
 		aInfo := ReadLastAssistantInfo(sessionID)
 		s.LastAssistantMessage = aInfo.Message
+		s.LastRecap = aInfo.Recap
 		s.Insights = aInfo.Insights
 		if cached := ReadCachedSummary(sessionID); cached != nil {
 			s.SynthesizedTitle = cached.SynthesizedTitle

@@ -247,13 +247,16 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, avatar, badge, meta 
 		return content + strings.Repeat(" ", gap) + meta
 	}
 
-	// Non-insight: avatar+badge bubble with last assistant message
+	// Non-insight: avatar+badge bubble with recap (if present) or last assistant message
 	bubblePrefix := avatar + " " + badge + " "
 	prefixWidth := lipgloss.Width(bubblePrefix)
 	overheadFixed := prefixWidth + 8 // leftCap(1) + " "(1) + " "(1) + rightCap(1) + gap(2) + margin(2)
 
 	lastResp := bubblePrefix
-	bubbleMsg := s.LastAssistantMessage
+	bubbleMsg := s.LastRecap
+	if bubbleMsg == "" {
+		bubbleMsg = s.LastAssistantMessage
+	}
 	if bubbleMsg != "" {
 		firstLine, _, multiline := strings.Cut(bubbleMsg, "\n")
 		maxW := m.width - metaWidth - overheadFixed

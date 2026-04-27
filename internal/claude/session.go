@@ -71,6 +71,7 @@ type ClaudeSession struct {
 	FirstMessage         string // first user message in transcript (display name heuristic)
 	LastUserMessage      string
 	LastAssistantMessage string   // last assistant text response
+	LastRecap            string   // most recent away_summary recap (preferred over LastAssistantMessage in footer)
 	Insights             []string // all ★ Insight blocks (oldest first)
 	// Display name priority: CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 	// CustomTitle: set by Claude Code's /rename (written to transcript as custom-title entry).
