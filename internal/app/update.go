@@ -614,6 +614,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				PaneID: msg.PaneID, Captured: true,
 			}
 			if m.tryInitialSelection() {
+				if m.viewMode == ViewWorkQueue {
+					return m, m.reconcileWorkQueueSelection()
+				}
 				if s, ok := m.sidebar.SelectedItem(); ok {
 					return m, tea.Batch(
 						capturePreview(s.PaneID),

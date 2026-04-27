@@ -32,6 +32,17 @@ func (m *Model) syncWorkQueue() {
 	m.workQueue.SetItems(m.sessions, autoJumpID)
 }
 
+// reconcileWorkQueueSelection rebuilds the queue and points the cursor at the
+// sidebar's selection if it's in the queue, else the top of the queue.
+func (m *Model) reconcileWorkQueueSelection() tea.Cmd {
+	m.syncWorkQueue()
+	sel, hasSel := m.sidebar.SelectedItem()
+	if !hasSel || !m.workQueue.SelectByPaneID(sel.PaneID) {
+		m.workQueue.SelectTop()
+	}
+	return m.syncWorkQueueSelection()
+}
+
 // syncWorkQueueSelection syncs the sidebar's selection to the work queue's
 // current cursor position so the detail panel shows the right session.
 func (m *Model) syncWorkQueueSelection() tea.Cmd {
@@ -147,6 +158,8 @@ func (m Model) viewWorkQueueLayout(innerWidth, contentHeight int) string {
 	var detailContent string
 	if m.sidebar.IsAllQuiet() {
 		detailContent = m.detail.ViewAllQuiet(m.allQuietCounts())
+	} else if _, ok := m.workQueue.SelectedItem(); !ok {
+		detailContent = m.detail.EmptyView(detailWidth, detailH)
 	} else {
 		detailContent = m.detail.View()
 	}

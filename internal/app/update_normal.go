@@ -458,19 +458,16 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.setFlash(flashText, false, 2*time.Second), m.syncAllQuietAnim())
 
 	case key.Matches(msg, Keys.ViewMode):
+		var syncCmd tea.Cmd
 		if m.viewMode == ViewSidebar {
 			m.viewMode = ViewWorkQueue
-			m.syncWorkQueue()
-			// Try to select the sidebar's current session in the queue
-			if s, ok := m.sidebar.SelectedItem(); ok {
-				m.workQueue.SelectByPaneID(s.PaneID)
-			}
+			syncCmd = m.reconcileWorkQueueSelection()
 		} else {
 			m.viewMode = ViewSidebar
 		}
 		savePrefString("viewMode", m.viewMode)
 		m.applyLayout()
-		return m, m.setFlash("view: "+m.viewMode, false, 2*time.Second)
+		return m, tea.Batch(syncCmd, m.setFlash("view: "+m.viewMode, false, 2*time.Second))
 
 	case key.Matches(msg, Keys.AutoJumpToggle):
 		newVal := !m.autoJumpOn
