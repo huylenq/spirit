@@ -14,8 +14,6 @@ func hint(k, desc string) string {
 	return ui.FooterKeyStyle.Render(k) + " " + desc
 }
 
-// bhint renders a hint sourced from a keymap binding, so footer text always
-// matches the active key + label.
 func bhint(b key.Binding) string {
 	h := b.Help()
 	return hint(h.Key, h.Desc)
