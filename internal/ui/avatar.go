@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/spirit"
 )
 
@@ -114,6 +115,16 @@ func colorDef(idx int) avatarColorDef {
 // AvatarGlyph returns the animal glyph for the given index.
 func AvatarGlyph(idx int) string {
 	return animalDef(idx).Glyph
+}
+
+// ProjectGlyph returns the animal glyph for a project name.
+// Empty project falls back to animal 0.
+func ProjectGlyph(project string) string {
+	idx := claude.AnimalIdxForProject(project)
+	if idx < 0 {
+		idx = 0
+	}
+	return AvatarGlyph(idx)
 }
 
 // AvatarColor returns the adaptive color for the given index.

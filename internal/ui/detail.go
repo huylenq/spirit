@@ -369,6 +369,13 @@ func (m *DetailModel) ViewportWidth() int {
 	return m.viewport.Width
 }
 
+// RelayWrapWidth returns the width that inline overlays (relay/rename/queue)
+// should wrap to. In overlay mode the right portion is occluded by the
+// outline/note panel, so we subtract that panel's footprint.
+func (m *DetailModel) RelayWrapWidth() int {
+	return m.effectiveDividerWidth(m.viewport.Width)
+}
+
 // ClearSession resets the preview to the empty "Select a session" state.
 func (m *DetailModel) ClearSession() {
 	m.session = nil

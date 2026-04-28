@@ -5,129 +5,163 @@ import (
 	"testing"
 )
 
-func TestPickAvatarPair_EmptyState(t *testing.T) {
-	entries := map[string]Avatar{}
-	activeKeys := map[string]bool{}
-
-	ai, ci := pickAvatarPair(entries, activeKeys)
-	if ai < 0 || ai >= numAvatarAnimals || ci < 0 || ci >= numAvatarColors {
-		t.Fatalf("out of range: animal=%d color=%d", ai, ci)
+func TestAnimalIdxForProject_Deterministic(t *testing.T) {
+	a := AnimalIdxForProject("eir")
+	b := AnimalIdxForProject("eir")
+	if a != b {
+		t.Fatalf("expected deterministic mapping, got %d vs %d", a, b)
+	}
+	if a < 0 || a >= numAvatarAnimals {
+		t.Fatalf("out of range: %d", a)
 	}
 }
 
-func TestPickAvatarPair_Tier1_PrefersUnusedAnimal(t *testing.T) {
-	// One active session using animal 0.
-	entries := map[string]Avatar{
-		"s:a": {AnimalIdx: 0, ColorIdx: 0},
+func TestAnimalIdxForProject_EmptyReturnsSentinel(t *testing.T) {
+	if got := AnimalIdxForProject(""); got != -1 {
+		t.Fatalf("expected -1 sentinel for empty project, got %d", got)
 	}
-	activeKeys := map[string]bool{"s:a": true}
+}
+
+func TestAnimalIdxForProject_DifferentProjectsLikelyDiffer(t *testing.T) {
+	// Not strictly required (23 buckets ⇒ collisions exist), but spot-check
+	// that the hash doesn't collapse common project names to one animal.
+	names := []string{"eir", "spirit", "lifeos", "fisheye-reader", "manim", "tana"}
+	seen := make(map[int]int)
+	for _, n := range names {
+		seen[AnimalIdxForProject(n)]++
+	}
+	if len(seen) < 3 {
+		t.Fatalf("hash distribution too clumpy: %v", seen)
+	}
+}
+
+func TestPickColor_PrefersUnusedAmongSameAnimal(t *testing.T) {
+	// Two active sessions on animal 5, colors 0 and 1.
+	entries := map[string]Avatar{
+		"s:a": {AnimalIdx: 5, ColorIdx: 0},
+		"s:b": {AnimalIdx: 5, ColorIdx: 1},
+	}
+	activeKeys := map[string]bool{"s:a": true, "s:b": true}
 
 	for range 100 {
-		ai, _ := pickAvatarPair(entries, activeKeys)
-		if ai == 0 {
-			t.Fatal("picked animal 0 which is already active — should prefer unused animals (tier 1)")
+		ci := pickColorForAnimal(entries, activeKeys, 5)
+		if ci == 0 || ci == 1 {
+			t.Fatalf("picked color %d already in use on animal 5", ci)
 		}
 	}
 }
 
-func TestPickAvatarPair_Tier2_UnusedPairWithUsedAnimal(t *testing.T) {
-	// All 23 animals used, each with color 0. Unused pairs still exist (e.g. animal 0 + color 1).
+func TestPickColor_IgnoresOtherAnimals(t *testing.T) {
+	// Active sessions on a different animal shouldn't constrain our pick.
+	entries := map[string]Avatar{
+		"s:a": {AnimalIdx: 3, ColorIdx: 0},
+		"s:b": {AnimalIdx: 3, ColorIdx: 1},
+		"s:c": {AnimalIdx: 3, ColorIdx: 2},
+	}
+	activeKeys := map[string]bool{"s:a": true, "s:b": true, "s:c": true}
+
+	// Picking for animal 7 — colors 0/1/2 should be fair game.
+	saw := make(map[int]bool)
+	for range 200 {
+		saw[pickColorForAnimal(entries, activeKeys, 7)] = true
+	}
+	for ci := range numAvatarColors {
+		if !saw[ci] {
+			t.Fatalf("color %d never picked for animal 7 — picker is over-constrained", ci)
+		}
+	}
+}
+
+func TestPickColor_FallbackWhenAllColorsTaken(t *testing.T) {
+	// All 8 colors active on animal 2.
 	entries := make(map[string]Avatar)
 	activeKeys := make(map[string]bool)
-	for i := range numAvatarAnimals {
-		key := fmt.Sprintf("s:%d", i)
-		entries[key] = Avatar{AnimalIdx: i, ColorIdx: 0}
+	for ci := range numAvatarColors {
+		key := fmt.Sprintf("s:%d", ci)
+		entries[key] = Avatar{AnimalIdx: 2, ColorIdx: ci}
 		activeKeys[key] = true
 	}
-
-	for range 100 {
-		ai, ci := pickAvatarPair(entries, activeKeys)
-		if ci == 0 {
-			// The pair (ai, 0) is already active for every animal — should pick a different color.
-			t.Fatalf("picked used pair (%d, 0)", ai)
-		}
-	}
-}
-
-func TestPickAvatarPair_Tier3_AllPairsExhausted(t *testing.T) {
-	// Fill all 184 pairs as active.
-	entries := make(map[string]Avatar)
-	activeKeys := make(map[string]bool)
-	for ai := range numAvatarAnimals {
-		for ci := range numAvatarColors {
-			key := fmt.Sprintf("s:%d-%d", ai, ci)
-			entries[key] = Avatar{AnimalIdx: ai, ColorIdx: ci}
-			activeKeys[key] = true
-		}
-	}
-
-	ai, ci := pickAvatarPair(entries, activeKeys)
-	if ai < 0 || ai >= numAvatarAnimals || ci < 0 || ci >= numAvatarColors {
-		t.Fatalf("out of range: animal=%d color=%d", ai, ci)
-	}
-}
-
-func TestPickAvatarPair_Tier3_LeastAssigned(t *testing.T) {
-	// All pairs active. One pair assigned 5 times, the rest once.
-	// Should never pick the heavily-assigned pair.
-	entries := make(map[string]Avatar)
-	activeKeys := make(map[string]bool)
-	for ai := range numAvatarAnimals {
-		for ci := range numAvatarColors {
-			key := fmt.Sprintf("s:%d-%d", ai, ci)
-			entries[key] = Avatar{AnimalIdx: ai, ColorIdx: ci}
-			activeKeys[key] = true
-		}
-	}
-	// Add 4 extra entries for pair (0,0) — total count 5 vs 1 for others.
+	// Add 4 historical (inactive) entries on (2, 0) so it's the heavy one.
 	for i := range 4 {
-		key := fmt.Sprintf("extra:%d", i)
-		entries[key] = Avatar{AnimalIdx: 0, ColorIdx: 0}
+		key := fmt.Sprintf("hist:%d", i)
+		entries[key] = Avatar{AnimalIdx: 2, ColorIdx: 0}
 	}
 
 	for range 200 {
-		ai, ci := pickAvatarPair(entries, activeKeys)
-		if ai == 0 && ci == 0 {
-			t.Fatal("picked heavily-assigned pair (0,0) — should prefer least-assigned")
+		ci := pickColorForAnimal(entries, activeKeys, 2)
+		if ci == 0 {
+			t.Fatal("fallback picked heavily-assigned color 0 — should prefer least-assigned")
 		}
 	}
 }
 
-func TestPickAvatarPair_NoDuplicatePairs(t *testing.T) {
-	// Assign 20 sessions sequentially, verify no duplicate (animal, color) pairs.
-	entries := make(map[string]Avatar)
-	activeKeys := make(map[string]bool)
-	type pair = [2]int
-	seen := make(map[pair]bool)
+func TestGetOrAssignAvatar_SameProjectSameAnimal(t *testing.T) {
+	resetAvStoreForTest()
+	activeKeys := map[string]bool{"s:1": true, "s:2": true}
 
-	for i := range 20 {
-		key := fmt.Sprintf("s:%d", i)
-		activeKeys[key] = true
-		ai, ci := pickAvatarPair(entries, activeKeys)
-		p := pair{ai, ci}
-		if seen[p] {
-			t.Fatalf("duplicate pair %v at session %d", p, i)
-		}
-		seen[p] = true
-		entries[key] = Avatar{AnimalIdx: ai, ColorIdx: ci}
+	a1 := GetOrAssignAvatar("s:1", "eir", activeKeys)
+	a2 := GetOrAssignAvatar("s:2", "eir", activeKeys)
+
+	if a1.AnimalIdx != a2.AnimalIdx {
+		t.Fatalf("two sessions on project 'eir' should share an animal: %d vs %d", a1.AnimalIdx, a2.AnimalIdx)
+	}
+	if a1.ColorIdx == a2.ColorIdx {
+		t.Fatalf("two active sessions on the same animal should get distinct colors, both got %d", a1.ColorIdx)
 	}
 }
 
-func TestPickAvatarPair_AnimalPriorityOverColor(t *testing.T) {
-	// 3 active sessions each with a distinct animal. A new session should get a 4th animal,
-	// not reuse an existing animal with a different color.
-	entries := map[string]Avatar{
-		"s:0": {AnimalIdx: 0, ColorIdx: 0},
-		"s:1": {AnimalIdx: 1, ColorIdx: 1},
-		"s:2": {AnimalIdx: 2, ColorIdx: 2},
-	}
-	activeKeys := map[string]bool{"s:0": true, "s:1": true, "s:2": true}
+func TestGetOrAssignAvatar_StableAcrossCalls(t *testing.T) {
+	resetAvStoreForTest()
+	activeKeys := map[string]bool{"s:1": true}
 
-	usedAnimals := map[int]bool{0: true, 1: true, 2: true}
-	for range 100 {
-		ai, _ := pickAvatarPair(entries, activeKeys)
-		if usedAnimals[ai] {
-			t.Fatalf("reused active animal %d when unused animals are available", ai)
-		}
+	a1 := GetOrAssignAvatar("s:1", "eir", activeKeys)
+	a2 := GetOrAssignAvatar("s:1", "eir", activeKeys)
+
+	if a1 != a2 {
+		t.Fatalf("repeat lookup should return identical avatar: %+v vs %+v", a1, a2)
 	}
+}
+
+func TestGetOrAssignAvatar_ReassignsColorWhenProjectChanges(t *testing.T) {
+	resetAvStoreForTest()
+	activeKeys := map[string]bool{"s:1": true}
+
+	a1 := GetOrAssignAvatar("s:1", "eir", activeKeys)
+	a2 := GetOrAssignAvatar("s:1", "spirit", activeKeys)
+
+	// Animal must follow the new project.
+	if a2.AnimalIdx != AnimalIdxForProject("spirit") {
+		t.Fatalf("animal should follow new project; got %d, want %d", a2.AnimalIdx, AnimalIdxForProject("spirit"))
+	}
+	// And the old animal shouldn't linger if projects hash differently.
+	if AnimalIdxForProject("eir") != AnimalIdxForProject("spirit") && a1.AnimalIdx == a2.AnimalIdx {
+		t.Fatalf("expected animal to change with project")
+	}
+}
+
+func TestGetOrAssignAvatar_EmptyProjectStableViaKey(t *testing.T) {
+	resetAvStoreForTest()
+	activeKeys := map[string]bool{"s:orphan": true}
+
+	a1 := GetOrAssignAvatar("s:orphan", "", activeKeys)
+	a2 := GetOrAssignAvatar("s:orphan", "", activeKeys)
+
+	if a1.AnimalIdx != a2.AnimalIdx {
+		t.Fatalf("orphan session animal should be stable across calls: %d vs %d", a1.AnimalIdx, a2.AnimalIdx)
+	}
+	if a1.AnimalIdx < 0 || a1.AnimalIdx >= numAvatarAnimals {
+		t.Fatalf("animal index out of range: %d", a1.AnimalIdx)
+	}
+}
+
+// resetAvStoreForTest clears the in-memory store so tests don't leak state.
+// Background saveAvatarStore goroutines may race against the reset, but that
+// only affects the on-disk file — tests read from avStore directly and never
+// re-trigger loadAvatarStore, so in-memory state stays consistent.
+func resetAvStoreForTest() {
+	avStoreMu.Lock()
+	defer avStoreMu.Unlock()
+	avStore = avatarStore{Entries: make(map[string]Avatar)}
+	// Mark loadAvatarStore as already-done so it won't clobber our reset.
+	avStoreOnce.Do(func() {})
 }

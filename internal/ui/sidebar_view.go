@@ -223,9 +223,11 @@ func (m *SidebarModel) View() string {
 	return strings.Join(lines, "\n")
 }
 
-// projectLabel builds the "📁 name [🚩]" string shared by all project headers.
+// projectLabel builds the "🐾 name [🚩]" string shared by all project headers.
+// The leading glyph is the project's spirit animal (deterministic from the
+// project name) — it inherits the caller's foreground color.
 func projectLabel(project string, flagged bool) string {
-	s := IconFolder + " " + project
+	s := ProjectGlyph(project) + " " + project
 	if flagged {
 		s += " " + flagItemStyle.Render(IconFlag)
 	}
