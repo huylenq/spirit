@@ -15,19 +15,32 @@ const (
 	workQueueCardW      = 62 // card width per session (including border)
 	workQueueCardInnerW = 60 // card content width (cardW - 2 for border sides)
 	workQueueCardInnerH = 3  // card content height (height - 2 for border top/bottom)
-	workQueueOthersW    = 26 // width for the compacted "others" section (avatar + status + title)
+	workQueueBenchW     = 26 // width for the compacted "bench" section (avatar + status + title)
 	workQueueCardGap    = 1  // margin between cards
 )
 
 // WorkQueueModel manages the horizontal work queue strip that shows user-turn
-// sessions as a conveyor belt with compacted non-user-turn sessions on the right.
+// sessions as a conveyor belt with bench (non-user-turn) sessions docked on the right.
 type WorkQueueModel struct {
 	queue        []claude.ClaudeSession // user-turn sessions, oldest-first
-	others       []claude.ClaudeSession // non-user-turn sessions
+	bench        []claude.ClaudeSession // non-user-turn sessions (Claude's turn)
 	cursor       int                    // index into queue
 	scrollOffset int                    // first visible card index (horizontal scroll)
 	width        int                    // total available width
 	autoJumpID   string                 // pane ID of the autojump "next" target
+	dino         *DinoGame              // empty-state mini game (lazy-init)
+}
+
+// IsEmpty reports whether the queue has zero user-turn sessions. Used by the
+// app to decide whether to drive the empty-state dino game's tick + keys.
+func (m *WorkQueueModel) IsEmpty() bool { return len(m.queue) == 0 }
+
+// Dino returns the empty-state game model, creating it on first access.
+func (m *WorkQueueModel) Dino() *DinoGame {
+	if m.dino == nil {
+		m.dino = NewDinoGame()
+	}
+	return m.dino
 }
 
 // SetSize sets the total available width for the work queue strip.
@@ -35,7 +48,7 @@ func (m *WorkQueueModel) SetSize(width int) {
 	m.width = width
 }
 
-// SetItems partitions sessions into queue (user-turn, oldest-first) and others.
+// SetItems partitions sessions into queue (user-turn, oldest-first) and bench (non-user-turn).
 // Preserves cursor by PaneID across updates.
 func (m *WorkQueueModel) SetItems(sessions []claude.ClaudeSession, autoJumpTargetID string) {
 	// Save current selection
@@ -45,7 +58,7 @@ func (m *WorkQueueModel) SetItems(sessions []claude.ClaudeSession, autoJumpTarge
 	}
 
 	m.queue = nil
-	m.others = nil
+	m.bench = nil
 	m.autoJumpID = autoJumpTargetID
 
 	for _, s := range sessions {
@@ -55,7 +68,7 @@ func (m *WorkQueueModel) SetItems(sessions []claude.ClaudeSession, autoJumpTarge
 		if s.Status == claude.StatusUserTurn {
 			m.queue = append(m.queue, s)
 		} else {
-			m.others = append(m.others, s)
+			m.bench = append(m.bench, s)
 		}
 	}
 
@@ -153,9 +166,9 @@ func (m *WorkQueueModel) clampScroll() {
 }
 
 // visibleCardCount returns how many cards can fit in the queue area
-// (total width minus the others section).
+// (total width minus the bench section).
 func (m *WorkQueueModel) visibleCardCount() int {
-	othersW := m.othersWidth()
+	othersW := m.benchWidth()
 	queueArea := m.width - othersW
 	if queueArea <= 0 {
 		return 0
@@ -163,13 +176,13 @@ func (m *WorkQueueModel) visibleCardCount() int {
 	return max(queueArea/(workQueueCardW+workQueueCardGap), 1)
 }
 
-// othersWidth returns the width allocated to the compacted "others" section.
-func (m *WorkQueueModel) othersWidth() int {
-	if len(m.others) == 0 {
+// benchWidth returns the width allocated to the compacted bench section.
+func (m *WorkQueueModel) benchWidth() int {
+	if len(m.bench) == 0 {
 		return 0
 	}
 	// Fixed width: enough for "<avatar><status> <title…>"
-	return workQueueOthersW
+	return workQueueBenchW
 }
 
 // View renders the work queue strip. The sidebar parameter is used to render
@@ -181,18 +194,18 @@ func (m *WorkQueueModel) View(sidebar *SidebarModel) string {
 
 	dw := sidebar.ComputeDiffColWidths()
 
-	othersView := m.renderOthers(sidebar)
-	othersW := lipgloss.Width(othersView)
+	benchView := m.renderBench(sidebar)
+	benchW := lipgloss.Width(benchView)
 
-	queueArea := m.width - othersW
+	queueArea := m.width - benchW
 	if queueArea < 0 {
 		queueArea = 0
 	}
 
 	queueView := m.renderQueue(sidebar, dw, queueArea)
 
-	// Join: queue on left, others sticky on right
-	if othersView == "" {
+	// Join: queue on left, bench docked on right
+	if benchView == "" {
 		return queueView
 	}
 
@@ -206,19 +219,15 @@ func (m *WorkQueueModel) View(sidebar *SidebarModel) string {
 	}
 	queueView = strings.Join(queueLines, "\n")
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, queueView, othersView)
+	return lipgloss.JoinHorizontal(lipgloss.Top, queueView, benchView)
 }
 
 // renderQueue renders the scrollable queue cards area.
 func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, areaWidth int) string {
 	if len(m.queue) == 0 {
-		empty := EmptyStyle.Width(areaWidth).Render("No sessions waiting")
-		// Pad to WorkQueueHeight
-		lines := strings.Split(empty, "\n")
-		for len(lines) < WorkQueueHeight {
-			lines = append(lines, strings.Repeat(" ", areaWidth))
-		}
-		return strings.Join(lines[:WorkQueueHeight], "\n")
+		game := m.Dino()
+		game.SetWidth(areaWidth)
+		return game.View(areaWidth)
 	}
 
 	// Determine card width: use workQueueCardW but shrink if only 1 card and lots of space
@@ -294,10 +303,10 @@ func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, ar
 	return result
 }
 
-// renderOthers renders the compacted "others" section (non-user-turn sessions)
+// renderBench renders the compacted bench section (non-user-turn sessions)
 // as one item per line: avatar + status + truncated title.
-func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
-	if len(m.others) == 0 {
+func (m *WorkQueueModel) renderBench(sidebar *SidebarModel) string {
+	if len(m.bench) == 0 {
 		return ""
 	}
 
@@ -306,7 +315,7 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 	const prefixCols = 5
 
 	lines := make([]string, 0, WorkQueueHeight)
-	for i, s := range m.others {
+	for i, s := range m.bench {
 		if i >= WorkQueueHeight {
 			break
 		}
@@ -328,7 +337,7 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 		title = strings.ReplaceAll(title, "\n", " ")
 
 		// Truncate title to fit available width
-		titleW := m.othersWidth() - prefixCols
+		titleW := m.benchWidth() - prefixCols
 		if titleW > 0 {
 			title = ansi.Truncate(title, titleW, "…")
 		} else {
@@ -345,8 +354,8 @@ func (m *WorkQueueModel) renderOthers(sidebar *SidebarModel) string {
 	}
 
 	// Overflow indicator on last line if more items than visible
-	if len(m.others) > WorkQueueHeight {
-		extra := len(m.others) - WorkQueueHeight
+	if len(m.bench) > WorkQueueHeight {
+		extra := len(m.bench) - WorkQueueHeight
 		lines[WorkQueueHeight-1] = ItemDetailStyle.Render(fmt.Sprintf("+%d more", extra))
 	}
 
