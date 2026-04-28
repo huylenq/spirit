@@ -169,6 +169,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newVal := !m.sidebar.FocusMode()
 		m.sidebar.SetFocusMode(newVal)
 		savePrefBool("focusMode", newVal)
+		m.syncWorkQueue()
 		flashText := "FOCUS OFF"
 		if newVal {
 			flashText = fmt.Sprintf("FOCUS ON (%d flagged)", m.sidebar.FocusedCount())
@@ -467,7 +468,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		savePrefString("viewMode", m.viewMode)
 		m.applyLayout()
-		return m, tea.Batch(syncCmd, m.setFlash("view: "+m.viewMode, false, 2*time.Second))
+		return m, tea.Batch(syncCmd, m.syncAllQuietAnim(), m.setFlash("view: "+m.viewMode, false, 2*time.Second))
 
 	case key.Matches(msg, Keys.AutoJumpToggle):
 		newVal := !m.autoJumpOn

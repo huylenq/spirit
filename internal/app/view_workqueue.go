@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/ui"
 )
 
@@ -23,13 +24,23 @@ func (m *Model) selectByPaneID(paneID string) bool {
 }
 
 // syncWorkQueue updates the work queue model with the current session list
-// and autojump target.
+// and autojump target. Respects focus mode by only passing flagged sessions.
 func (m *Model) syncWorkQueue() {
 	autoJumpID := ""
 	if m.autoJumpOn {
 		autoJumpID = m.sidebar.AutoJumpTargetFromCursor()
 	}
-	m.workQueue.SetItems(m.sessions, autoJumpID)
+	sessions := m.sessions
+	if m.sidebar.FocusMode() {
+		filtered := make([]claude.ClaudeSession, 0, len(sessions))
+		for _, s := range sessions {
+			if m.sidebar.IsEffectivelyFlagged(s) {
+				filtered = append(filtered, s)
+			}
+		}
+		sessions = filtered
+	}
+	m.workQueue.SetItems(sessions, autoJumpID)
 }
 
 // reconcileWorkQueueSelection rebuilds the queue and points the cursor at the
@@ -156,10 +167,8 @@ func (m Model) viewWorkQueueLayout(innerWidth, contentHeight int) string {
 	// Detail panel fills the remaining height
 	detailH := contentHeight - ui.WorkQueueHeight
 	var detailContent string
-	if m.sidebar.IsAllQuiet() {
+	if _, ok := m.workQueue.SelectedItem(); !ok {
 		detailContent = m.detail.ViewAllQuiet(m.allQuietCounts())
-	} else if _, ok := m.workQueue.SelectedItem(); !ok {
-		detailContent = m.detail.EmptyView(detailWidth, detailH)
 	} else {
 		detailContent = m.detail.View()
 	}

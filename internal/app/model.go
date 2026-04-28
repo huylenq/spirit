@@ -345,14 +345,27 @@ func NewModel(client *daemon.Client) Model {
 	return m
 }
 
-// syncAllQuietAnim starts or stops the mobile animation based on sidebar state.
+// shouldShowMobile reports whether the current layout would render the mobile
+// scene: either the sidebar is "all quiet", or the work-queue layout is active
+// with an empty queue.
+func (m *Model) shouldShowMobile() bool {
+	if m.sidebar.IsAllQuiet() {
+		return true
+	}
+	return m.viewMode == ViewWorkQueue && m.workQueue.QueueLen() == 0
+}
+
+// syncAllQuietAnim starts or stops the mobile animation based on layout state.
 func (m *Model) syncAllQuietAnim() tea.Cmd {
-	if m.sidebar.IsAllQuiet() && !m.detail.AllQuietAnimActive() {
+	show := m.shouldShowMobile()
+	if show && !m.detail.AllQuietAnimActive() {
 		animCmd := m.detail.StartAllQuietAnim()
-		// Schedule auto-destroyer after pendulums swing a while
+		// Schedule auto-destroyer after pendulums swing a while.
+		// Destroyer only auto-fires from true IsAllQuiet (see AllQuietTickMsg
+		// handler), so an empty work queue won't trigger it.
 		return tea.Batch(animCmd, scheduleDestroyerAutoStart())
 	}
-	if !m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
+	if !show && m.detail.AllQuietAnimActive() {
 		m.detail.StopAllQuietAnim()
 		// Cancel destroyer if sessions became active again
 		if m.state == StateDestroyer {
