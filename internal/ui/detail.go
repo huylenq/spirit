@@ -364,6 +364,11 @@ func (m *DetailModel) ViewportHeight() int {
 	return m.viewport.Height
 }
 
+// ViewportWidth returns the current width of the detail viewport in columns.
+func (m *DetailModel) ViewportWidth() int {
+	return m.viewport.Width
+}
+
 // ClearSession resets the preview to the empty "Select a session" state.
 func (m *DetailModel) ClearSession() {
 	m.session = nil

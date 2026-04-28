@@ -156,13 +156,14 @@ func (m Model) View() string {
 	m.sidebar.SetInlineTagInput(tagSessionID, tagInputView)
 	m.sidebar.SetInlineTagBacklogInput(tagBacklogID, tagInputView)
 
+	vpW := m.detail.ViewportWidth()
 	switch m.state {
 	case StatePromptRelay:
-		m.detail.SetRelayView(m.relay.View())
+		m.detail.SetRelayView(m.relay.ViewWithWidth(vpW))
 	case StateRenamePrompt:
-		m.detail.SetRelayView(m.renamePrompt.View())
+		m.detail.SetRelayView(m.renamePrompt.ViewWithWidth(vpW))
 	case StateQueueRelay:
-		m.detail.SetRelayView(m.queueRelay.View())
+		m.detail.SetRelayView(m.queueRelay.ViewWithWidth(vpW))
 	default:
 		m.detail.SetRelayView("")
 	}

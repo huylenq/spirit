@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 )
 
 // Avatar holds the assigned animal and color indices for a session.
+// AnimalIdx is derived from the session's project name (so all sessions on
+// the same project share an animal). ColorIdx is per-session and chosen to
+// be unique among active sessions sharing the same animal.
 type Avatar struct {
 	AnimalIdx int `json:"animalIdx"`
 	ColorIdx  int `json:"colorIdx"`
@@ -88,84 +92,91 @@ func saveAvatarStore(activeKeys map[string]bool) {
 	}
 	path := avatarFilePath()
 	os.MkdirAll(filepath.Dir(path), 0o755) //nolint:errcheck
-	os.WriteFile(path, data, 0o644)         //nolint:errcheck
+	os.WriteFile(path, data, 0o644)        //nolint:errcheck
 }
 
-// pickAvatarPair selects an (animal, color) pair for avatar assignment.
-// Tier 1: pairs with an unused animal (animal uniqueness prioritized).
-// Tier 2: pairs with a used animal but unused (animal, color) combo.
-// Tier 3: all 184 pairs exhausted — pick from least-assigned pairs across all entries.
-func pickAvatarPair(entries map[string]Avatar, activeKeys map[string]bool) (int, int) {
-	type pair = [2]int
+// hashStr returns an FNV-1a 32-bit hash of s.
+func hashStr(s string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return h.Sum32()
+}
 
-	usedAnimals := make(map[int]bool)
-	usedPairs := make(map[pair]bool)
+// AnimalIdxForProject returns the deterministic animal index for a project.
+// Returns -1 if project is empty so the caller can fall back to a
+// session-stable hash (e.g. session/pane key).
+func AnimalIdxForProject(project string) int {
+	if project == "" {
+		return -1
+	}
+	return int(hashStr(project) % uint32(numAvatarAnimals))
+}
+
+// pickColorForAnimal selects a color for a session whose animal is animalIdx.
+// Prefers a color unused among currently-active sessions sharing the same
+// animal; falls back to the least-assigned color across the entire store
+// when all 8 are taken on this animal.
+func pickColorForAnimal(entries map[string]Avatar, activeKeys map[string]bool, animalIdx int) int {
+	used := make(map[int]bool)
 	for k, a := range entries {
-		if activeKeys[k] {
-			usedAnimals[a.AnimalIdx] = true
-			usedPairs[pair{a.AnimalIdx, a.ColorIdx}] = true
+		if activeKeys[k] && a.AnimalIdx == animalIdx {
+			used[a.ColorIdx] = true
 		}
 	}
-
-	var tier1, tier2 []pair
-	for ai := range numAvatarAnimals {
-		for ci := range numAvatarColors {
-			p := pair{ai, ci}
-			if usedPairs[p] {
-				continue
-			}
-			if !usedAnimals[ai] {
-				tier1 = append(tier1, p)
-			} else {
-				tier2 = append(tier2, p)
-			}
+	var available []int
+	for ci := range numAvatarColors {
+		if !used[ci] {
+			available = append(available, ci)
 		}
 	}
-
-	if len(tier1) > 0 {
-		p := tier1[rand.IntN(len(tier1))]
-		return p[0], p[1]
-	}
-	if len(tier2) > 0 {
-		p := tier2[rand.IntN(len(tier2))]
-		return p[0], p[1]
+	if len(available) > 0 {
+		return available[rand.IntN(len(available))]
 	}
 
-	// All pairs in use — pick from least-assigned across all store entries.
-	counts := make(map[pair]int)
+	// All 8 colors active on this animal — pick least-assigned across all
+	// historical entries (active or not) for this animal.
+	counts := make(map[int]int)
 	for _, a := range entries {
-		counts[pair{a.AnimalIdx, a.ColorIdx}]++
+		if a.AnimalIdx == animalIdx {
+			counts[a.ColorIdx]++
+		}
 	}
 	minCount := -1
-	var subset []pair
-	for ai := range numAvatarAnimals {
-		for ci := range numAvatarColors {
-			c := counts[pair{ai, ci}]
-			if minCount < 0 || c < minCount {
-				minCount = c
-				subset = []pair{{ai, ci}}
-			} else if c == minCount {
-				subset = append(subset, pair{ai, ci})
-			}
+	var subset []int
+	for ci := range numAvatarColors {
+		c := counts[ci]
+		if minCount < 0 || c < minCount {
+			minCount = c
+			subset = []int{ci}
+		} else if c == minCount {
+			subset = append(subset, ci)
 		}
 	}
-	p := subset[rand.IntN(len(subset))]
-	return p[0], p[1]
+	return subset[rand.IntN(len(subset))]
 }
 
-// GetOrAssignAvatar returns the existing avatar for key, or assigns a new one.
-// activeKeys is used to avoid reusing (animal, color) pairs already visible.
-func GetOrAssignAvatar(key string, activeKeys map[string]bool) Avatar {
+// GetOrAssignAvatar returns the avatar for (key, project). The animal is
+// derived from project (deterministic). If a stored entry exists and its
+// animal still matches, its color is reused; otherwise a fresh color is
+// picked, preferring colors unused among active sessions sharing the same
+// animal.
+func GetOrAssignAvatar(key, project string, activeKeys map[string]bool) Avatar {
 	avStoreOnce.Do(loadAvatarStore)
 
 	avStoreMu.Lock()
 	defer avStoreMu.Unlock()
 
-	if a, ok := avStore.Entries[key]; ok {
+	animalIdx := AnimalIdxForProject(project)
+	if animalIdx < 0 {
+		// No project — keep the session's animal stable by hashing its key.
+		animalIdx = int(hashStr(key) % uint32(numAvatarAnimals))
+	}
+
+	if a, ok := avStore.Entries[key]; ok && a.AnimalIdx == animalIdx {
 		return a
 	}
 
-	animalIdx, colorIdx := pickAvatarPair(avStore.Entries, activeKeys)
+	colorIdx := pickColorForAnimal(avStore.Entries, activeKeys, animalIdx)
 
 	a := Avatar{AnimalIdx: animalIdx, ColorIdx: colorIdx, Seq: avStore.Counter}
 	avStore.Counter++
@@ -188,7 +199,7 @@ func AssignAvatars(sessions []ClaudeSession) {
 	}
 	for i := range sessions {
 		key := avatarKey(sessions[i])
-		a := GetOrAssignAvatar(key, activeKeys)
+		a := GetOrAssignAvatar(key, sessions[i].Project, activeKeys)
 		sessions[i].AvatarAnimalIdx = a.AnimalIdx
 		sessions[i].AvatarColorIdx = a.ColorIdx
 	}

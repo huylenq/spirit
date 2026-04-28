@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type RelayModel struct {
@@ -147,6 +148,22 @@ func (m RelayModel) View() string {
 		return ""
 	}
 	return m.input.View()
+}
+
+// ViewWithWidth renders the input and hard-wraps the result to the given width
+// so typed text wraps onto multiple visual lines instead of extruding the
+// container. textinput is single-line; setting its Width would scroll
+// horizontally and hide overflow. Hard-wrapping the rendered output preserves
+// all typed text visibly, mirroring how captured Claude output wraps.
+func (m *RelayModel) ViewWithWidth(w int) string {
+	if !m.active {
+		return ""
+	}
+	v := m.input.View()
+	if w <= 0 {
+		return v
+	}
+	return ansi.Hardwrap(v, w, false)
 }
 
 func (m *RelayModel) TextInput() *textinput.Model {
