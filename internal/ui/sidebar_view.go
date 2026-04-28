@@ -227,7 +227,7 @@ func (m *SidebarModel) View() string {
 // The leading glyph is the project's spirit animal (deterministic from the
 // project name) — it inherits the caller's foreground color.
 func projectLabel(project string, flagged bool) string {
-	s := ProjectGlyph(project) + " " + project
+	s := IconForProject(project) + " " + project
 	if flagged {
 		s += " " + flagItemStyle.Render(IconFlag)
 	}

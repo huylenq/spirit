@@ -8,6 +8,12 @@ import (
 	"github.com/huylenq/spirit/internal/ui"
 )
 
+// projectHeaderLabel renders "<icon> <name>" for project meta lines in
+// overlays, honoring the user's project-icon preference.
+func projectHeaderLabel(project string) string {
+	return ui.IconForProject(project) + " " + project
+}
+
 // formatMessageEntry formats a single message log entry as a styled line.
 func formatMessageEntry(entry MessageLogEntry) string {
 	ts := ui.FooterDimStyle.Render(entry.Time.Format("15:04:05"))
@@ -55,7 +61,7 @@ func (m Model) renderMessageToast() string {
 // where col is right after the "📁 project" label — same positioning for both the
 // new-session and new-backlog overlays.
 func (m Model) overlayPrompt(content, project string, row, innerWidth int) string {
-	col := lipgloss.Width(ui.ProjectGlyph(project)+" "+project) + 3 // 1 left pad + 1 right pad + 1 gap
+	col := lipgloss.Width(projectHeaderLabel(project)) + 3 // 1 left pad + 1 right pad + 1 gap
 	overlayWidth := min(innerWidth-col, 72)
 
 	// Cap textarea height so the overlay fits within available vertical space.
@@ -97,7 +103,7 @@ func (m Model) renderBacklogEditor(project string, width, height int) string {
 	}
 
 	title := ui.BacklogPromptEditorTitleStyle.Render(modeLabel + ": " + project)
-	meta := ui.ItemDetailStyle.Render(ui.ProjectGlyph(project) + " " + project)
+	meta := ui.ItemDetailStyle.Render(projectHeaderLabel(project))
 
 	// header(1) + meta(1) + blank(1) + border-top(1) + border-bottom(1) + blank(1) + hint(1) = 7
 	innerH := height - 7
@@ -126,7 +132,7 @@ func (m Model) renderBacklogEditor(project string, width, height int) string {
 // scroll is the number of lines to skip inside the content box.
 func (m Model) renderBacklogPreview(backlog claude.Backlog, width, height, scroll int) string {
 	title := ui.BacklogPromptEditorTitleStyle.Render(ui.IconBacklog + " " + backlog.DisplayTitle())
-	project := ui.ItemDetailStyle.Render(ui.ProjectGlyph(backlog.Project) + " " + backlog.Project)
+	project := ui.ItemDetailStyle.Render(projectHeaderLabel(backlog.Project))
 	age := ui.ItemDetailStyle.Render("created " + ui.FormatAge(backlog.CreatedAt) + " ago")
 	meta := project + "  " + age
 

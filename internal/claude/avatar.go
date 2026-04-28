@@ -155,6 +155,36 @@ func pickColorForAnimal(entries map[string]Avatar, activeKeys map[string]bool, a
 	return subset[rand.IntN(len(subset))]
 }
 
+// assignAvatarLocked picks the avatar for (key, project). Caller must hold
+// avStoreMu. Returns the avatar and whether the store was mutated.
+func assignAvatarLocked(key, project string, activeKeys map[string]bool) (Avatar, bool) {
+	animalIdx := AnimalIdxForProject(project)
+	if animalIdx < 0 {
+		// No project — keep the session's animal stable by hashing its key.
+		animalIdx = int(hashStr(key) % uint32(numAvatarAnimals))
+	}
+
+	if a, ok := avStore.Entries[key]; ok && a.AnimalIdx == animalIdx {
+		return a, false
+	}
+
+	colorIdx := pickColorForAnimal(avStore.Entries, activeKeys, animalIdx)
+	a := Avatar{AnimalIdx: animalIdx, ColorIdx: colorIdx, Seq: avStore.Counter}
+	avStore.Counter++
+	avStore.Entries[key] = a
+	return a, true
+}
+
+// scheduleSave kicks off a background save with a snapshot of activeKeys.
+// Caller must hold avStoreMu.
+func scheduleSave(activeKeys map[string]bool) {
+	activeKeysCopy := make(map[string]bool, len(activeKeys))
+	for k, v := range activeKeys {
+		activeKeysCopy[k] = v
+	}
+	go saveAvatarStore(activeKeysCopy)
+}
+
 // GetOrAssignAvatar returns the avatar for (key, project). The animal is
 // derived from project (deterministic). If a stored entry exists and its
 // animal still matches, its color is reused; otherwise a fresh color is
@@ -166,42 +196,37 @@ func GetOrAssignAvatar(key, project string, activeKeys map[string]bool) Avatar {
 	avStoreMu.Lock()
 	defer avStoreMu.Unlock()
 
-	animalIdx := AnimalIdxForProject(project)
-	if animalIdx < 0 {
-		// No project — keep the session's animal stable by hashing its key.
-		animalIdx = int(hashStr(key) % uint32(numAvatarAnimals))
+	a, dirty := assignAvatarLocked(key, project, activeKeys)
+	if dirty {
+		scheduleSave(activeKeys)
 	}
-
-	if a, ok := avStore.Entries[key]; ok && a.AnimalIdx == animalIdx {
-		return a
-	}
-
-	colorIdx := pickColorForAnimal(avStore.Entries, activeKeys, animalIdx)
-
-	a := Avatar{AnimalIdx: animalIdx, ColorIdx: colorIdx, Seq: avStore.Counter}
-	avStore.Counter++
-	avStore.Entries[key] = a
-
-	activeKeysCopy := make(map[string]bool, len(activeKeys))
-	for k, v := range activeKeys {
-		activeKeysCopy[k] = v
-	}
-	go saveAvatarStore(activeKeysCopy)
-
 	return a
 }
 
-// AssignAvatars assigns avatar indices to all sessions in-place.
+// AssignAvatars assigns avatar indices to all sessions in-place. Holds the
+// store mutex once across the whole batch and triggers at most one save.
 func AssignAvatars(sessions []ClaudeSession) {
+	avStoreOnce.Do(loadAvatarStore)
+
+	avStoreMu.Lock()
+	defer avStoreMu.Unlock()
+
 	activeKeys := make(map[string]bool, len(sessions))
 	for _, s := range sessions {
 		activeKeys[avatarKey(s)] = true
 	}
+	dirty := false
 	for i := range sessions {
 		key := avatarKey(sessions[i])
-		a := GetOrAssignAvatar(key, sessions[i].Project, activeKeys)
+		a, d := assignAvatarLocked(key, sessions[i].Project, activeKeys)
+		if d {
+			dirty = true
+		}
 		sessions[i].AvatarAnimalIdx = a.AnimalIdx
 		sessions[i].AvatarColorIdx = a.ColorIdx
+	}
+	if dirty {
+		scheduleSave(activeKeys)
 	}
 }
 

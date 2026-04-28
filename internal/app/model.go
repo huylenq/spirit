@@ -328,6 +328,7 @@ func NewModel(client *daemon.Client) Model {
 		autoJumpOn:        autoJump,
 	}
 	ensureSettingDefaults()
+	ui.ProjectIconUseAnimal = Flag("projectAnimalIcon")
 	m.detail.SetChatOutlineMode(m.chatOutlineMode)
 	if w := loadPrefInt("chatOutlineWidth", 0); w > 0 {
 		m.detail.SetChatOutlineWidth(w)

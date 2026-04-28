@@ -117,9 +117,16 @@ func AvatarGlyph(idx int) string {
 	return animalDef(idx).Glyph
 }
 
-// ProjectGlyph returns the animal glyph for a project name.
-// Empty project falls back to animal 0.
-func ProjectGlyph(project string) string {
+// ProjectIconUseAnimal toggles project-header icons between the per-project
+// spirit animal (true) and a generic folder (false). Set by app at startup
+// and on settings-overlay toggles.
+var ProjectIconUseAnimal = true
+
+// IconForProject returns the icon to render before a project name in headers.
+func IconForProject(project string) string {
+	if !ProjectIconUseAnimal {
+		return IconFolder
+	}
 	idx := claude.AnimalIdxForProject(project)
 	if idx < 0 {
 		idx = 0

@@ -39,6 +39,7 @@ var SettingsRegistry = []SettingDef{
 	{Key: "sidebarWidthPct", Label: "Sidebar width %", Kind: SettingInt, Default: "30", Min: 10, Max: 60},
 	{Key: "autoSynthesize", Label: "Auto-synthesize on idle", Kind: SettingBool, Default: "true"},
 	{Key: "autoJump", Label: "Auto-jump after send", Kind: SettingBool, Default: "true"},
+	{Key: "projectAnimalIcon", Label: "Spirit animal as project icon", Kind: SettingBool, Default: "true"},
 }
 
 // Flag returns the current boolean value of a setting.
@@ -139,6 +140,8 @@ func (m *Model) applySettingToModel(key string, prefs map[string]string) {
 		v := prefs[key] == "true"
 		m.autoJumpOn = v
 		m.sidebar.ShowAutoJump = v
+	case "projectAnimalIcon":
+		ui.ProjectIconUseAnimal = prefs[key] == "true"
 	// autoSynthesize: daemon-only (read via readPref on each synthesis attempt), no model state to update
 	}
 	m.applyLayout()
