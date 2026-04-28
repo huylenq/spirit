@@ -546,9 +546,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchSynthesizeAll(latestPaneID)
 
 	case key.Matches(msg, Keys.Rename):
-		if s, ok := m.sidebar.SelectedItem(); ok && !m.renaming {
+		if !m.renaming {
 			m.renaming = true
-			return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
+			return m, m.fetchRenameAllWindows()
 		}
 		return m, nil
 

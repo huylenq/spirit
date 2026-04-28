@@ -133,49 +133,6 @@ func ListPaneGeometry(sessionName string) ([]PaneGeometry, error) {
 	return panes, nil
 }
 
-// ListWindowPanes returns all panes in a specific tmux window.
-func ListWindowPanes(sessionName string, windowIndex int) ([]PaneInfo, error) {
-	target := fmt.Sprintf("%s:%d", sessionName, windowIndex)
-	out, err := exec.Command("tmux", "list-panes", "-t", target, "-F",
-		"#{pane_id}:#{pane_pid}:#{pane_current_path}:#{session_name}:#{window_index}:#{pane_index}:#{pane_created}").Output()
-	if err != nil {
-		return nil, fmt.Errorf("tmux list-panes -t %s: %w", target, err)
-	}
-
-	var panes []PaneInfo
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, ":", 7)
-		if len(parts) != 7 {
-			continue
-		}
-		pid, _ := strconv.Atoi(parts[1])
-		winIdx, _ := strconv.Atoi(parts[4])
-		paneIdx, _ := strconv.Atoi(parts[5])
-		created, _ := strconv.ParseInt(parts[6], 10, 64)
-		paneCreated := time.Unix(created, 0)
-		if created == 0 {
-			// pane_created unavailable (e.g. tmux 3.6+): use pane ID
-			// sequence number (%N) as a monotonic creation-order proxy.
-			if seq, err := strconv.Atoi(strings.TrimPrefix(parts[0], "%")); err == nil {
-				paneCreated = time.Unix(int64(seq), 0)
-			}
-		}
-		panes = append(panes, PaneInfo{
-			PaneID:      parts[0],
-			PanePID:     pid,
-			CurrentPath: parts[2],
-			SessionName: parts[3],
-			WindowIndex: winIdx,
-			PaneIndex:   paneIdx,
-			PaneCreated: paneCreated,
-		})
-	}
-	return panes, nil
-}
-
 // RenameWindow renames a tmux window and disables automatic-rename so the name persists.
 func RenameWindow(sessionName string, windowIndex int, name string) error {
 	target := fmt.Sprintf("%s:%d", sessionName, windowIndex)

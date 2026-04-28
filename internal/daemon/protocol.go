@@ -39,7 +39,7 @@ const (
 	ReqLaterKill          = "later_kill"
 	ReqUnlater            = "unlater"
 	ReqOpenLater          = "open_later"
-	ReqRenameWindow       = "rename_window"
+	ReqRenameAllWindows   = "rename_all_windows"
 	ReqCommitOnly         = "commit_only"
 	ReqCommitDone         = "commit_done"
 	ReqCommitSimplifyDone = "commit_simplify_done"
@@ -130,9 +130,9 @@ type OpenLaterData struct {
 	TmuxSession string `json:"tmuxSession"`
 }
 
-type RenameWindowData struct {
-	SessionName string `json:"sessionName"`
-	WindowIndex int    `json:"windowIndex"`
+type RenameAllResultData struct {
+	Renamed map[string]string `json:"renamed"`
+	Errors  []string          `json:"errors,omitempty"`
 }
 
 type NudgeData struct {
@@ -212,10 +212,6 @@ type AllHookEffectsData struct {
 
 type PaneGeometryData struct {
 	Panes []tmux.PaneGeometry `json:"panes"`
-}
-
-type RenameResultData struct {
-	Name string `json:"name"`
 }
 
 type SynthesizeResultData struct {

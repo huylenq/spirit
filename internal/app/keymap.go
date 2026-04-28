@@ -325,7 +325,7 @@ var Keys = KeyMap{
 	),
 	Rename: key.NewBinding(
 		key.WithKeys("R"),
-		key.WithHelp("R", "rename window"),
+		key.WithHelp("R", "rename all windows"),
 	),
 	SpatialUp: key.NewBinding(
 		key.WithKeys("K", "shift+up"),

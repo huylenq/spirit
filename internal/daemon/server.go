@@ -93,8 +93,8 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqOpenLater:
 		return d.handleOpenLater(req.Data)
 
-	case ReqRenameWindow:
-		return d.handleRenameWindow(req.Data)
+	case ReqRenameAllWindows:
+		return d.handleRenameAllWindows()
 
 	case ReqCommitOnly:
 		return d.handleCommit(req.Data, false, false)

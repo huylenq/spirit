@@ -93,10 +93,12 @@ type MinimapReadyMsg struct {
 	Panes       []tmux.PaneGeometry
 }
 
-// WindowRenameMsg is sent when Haiku finishes generating a window name.
-type WindowRenameMsg struct {
-	Name string
-	Err  error
+// WindowsRenamedMsg is sent when Haiku finishes generating names for all
+// tmux windows containing Claude sessions.
+type WindowsRenamedMsg struct {
+	Renamed map[string]string
+	Errors  []string
+	Err     error
 }
 
 // OriginalPaneCapturedMsg is sent when the initial tmux pane state is captured at startup.

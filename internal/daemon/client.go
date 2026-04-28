@@ -296,11 +296,12 @@ func (c *Client) OpenLater(laterID, cwd, tmuxSession string) error {
 	return c.rpcInto(Request{Type: ReqOpenLater, Data: marshalData(OpenLaterData{LaterID: laterID, CWD: cwd, TmuxSession: tmuxSession})}, nil)
 }
 
-// RenameWindow asks the daemon to generate and apply a window name.
-func (c *Client) RenameWindow(sessionName string, windowIndex int) (string, error) {
-	var data RenameResultData
-	err := c.rpcInto(Request{Type: ReqRenameWindow, Data: marshalData(RenameWindowData{SessionName: sessionName, WindowIndex: windowIndex})}, &data)
-	return data.Name, err
+// RenameAllWindows asks the daemon to generate and apply names for every
+// tmux window that contains a Claude session, in a single LLM call.
+func (c *Client) RenameAllWindows() (RenameAllResultData, error) {
+	var data RenameAllResultData
+	err := c.rpcInto(Request{Type: ReqRenameAllWindows}, &data)
+	return data, err
 }
 
 // CommitOnly sends /commit-commands:commit to the pane (no auto-kill on completion).

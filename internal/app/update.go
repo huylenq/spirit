@@ -566,12 +566,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case WindowRenameMsg:
+	case WindowsRenamedMsg:
 		m.renaming = false
 		if msg.Err != nil {
 			return m, m.setFlash("Rename failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
-		return m, m.setFlash("renamed → "+msg.Name, false, 3*time.Second)
+		n := len(msg.Renamed)
+		if n == 0 && len(msg.Errors) == 0 {
+			return m, m.setFlash("no windows to rename", false, 3*time.Second)
+		}
+		summary := fmt.Sprintf("renamed %d window(s)", n)
+		if len(msg.Errors) > 0 {
+			summary += fmt.Sprintf(" (%d failed)", len(msg.Errors))
+		}
+		return m, m.setFlash(summary, len(msg.Errors) > 0, 3*time.Second)
 
 	case pathValidatedMsg:
 		m.newSessionCWD = msg.cwd

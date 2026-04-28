@@ -145,9 +145,9 @@ func (m Model) spawnNewSession(prompt, model string, planning bool, worktree str
 }
 
 func (m Model) execRename() (Model, tea.Cmd) {
-	if s, ok := m.sidebar.SelectedItem(); ok && !m.renaming {
+	if !m.renaming {
 		m.renaming = true
-		return m, m.fetchRenameWindow(s.TmuxSession, s.TmuxWindow)
+		return m, m.fetchRenameAllWindows()
 	}
 	return m, nil
 }

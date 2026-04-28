@@ -2,35 +2,41 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
 
-func (d *Daemon) handleRenameWindow(data json.RawMessage) *Response {
-	var req RenameWindowData
-	if err := json.Unmarshal(data, &req); err != nil {
-		r := errResponse("bad data: " + err.Error())
+func (d *Daemon) handleRenameAllWindows() *Response {
+	sessions := d.currentSessions()
+	windows, err := claude.GatherAllClaudeWindowPanes(sessions)
+	if err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	if len(windows) == 0 {
+		r := resultResponse(RenameAllResultData{})
 		return &r
 	}
 
-	sessions := d.currentSessions()
-	panes, err := claude.GatherWindowPanes(req.SessionName, req.WindowIndex, sessions)
+	names, err := claude.GenerateAllWindowNames(windows)
 	if err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
-	name, err := claude.GenerateWindowName(panes)
-	if err != nil {
-		r := errResponse(err.Error())
-		return &r
+
+	renamed := make(map[string]string, len(names))
+	var rerrs []string
+	for k, name := range names {
+		if err := tmux.RenameWindow(k.Session, k.WindowIndex, name); err != nil {
+			rerrs = append(rerrs, fmt.Sprintf("%s: %v", k.String(), err))
+			continue
+		}
+		renamed[k.String()] = name
 	}
-	if err := tmux.RenameWindow(req.SessionName, req.WindowIndex, name); err != nil {
-		r := errResponse(err.Error())
-		return &r
-	}
-	r := resultResponse(RenameResultData{Name: name})
+	r := resultResponse(RenameAllResultData{Renamed: renamed, Errors: rerrs})
 	return &r
 }
 

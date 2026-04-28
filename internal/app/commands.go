@@ -47,8 +47,7 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSynthesize() },
 		},
 		{
-			Name: "Rename window", Hotkey: "R",
-			Enabled: hasSelection,
+			Name: "Rename all windows", Hotkey: "R",
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRename() },
 		},
 		{

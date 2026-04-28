@@ -892,9 +892,9 @@ func (m Model) discoverBacklogs(sessions []claude.ClaudeSession) tea.Cmd {
 	}
 }
 
-func (m Model) fetchRenameWindow(sessionName string, windowIndex int) tea.Cmd {
+func (m Model) fetchRenameAllWindows() tea.Cmd {
 	return func() tea.Msg {
-		name, err := m.client.RenameWindow(sessionName, windowIndex)
-		return WindowRenameMsg{Name: name, Err: err}
+		data, err := m.client.RenameAllWindows()
+		return WindowsRenamedMsg{Renamed: data.Renamed, Errors: data.Errors, Err: err}
 	}
 }
