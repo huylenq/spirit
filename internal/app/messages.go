@@ -96,7 +96,7 @@ type MinimapReadyMsg struct {
 // WindowsRenamedMsg is sent when Haiku finishes generating names for all
 // tmux windows containing Claude sessions.
 type WindowsRenamedMsg struct {
-	Renamed map[string]string
+	Renamed int
 	Errors  []string
 	Err     error
 }

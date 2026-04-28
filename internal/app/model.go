@@ -17,10 +17,13 @@ import (
 )
 
 // MessageLogEntry is a recorded flash message for the message log.
+// A non-empty ID marks the entry as a pinned toast: it ignores the FIFO
+// timer and is removed only by unpinToast (or the auto-unpin safety net).
 type MessageLogEntry struct {
 	Text    string
 	IsError bool
 	Time    time.Time
+	ID      string
 }
 
 const maxMessageLog = 50
@@ -385,6 +388,36 @@ func (m *Model) toast(text string, isError bool) tea.Cmd {
 		Time:    time.Now(),
 	})
 	return tea.Tick(messageToastTTL, func(time.Time) tea.Msg { return ClearToastMsg{} })
+}
+
+// pinnedToast enqueues a toast that survives FIFO timer pops. It stays
+// visible until unpinToast is called with the same id. Re-pinning the same
+// id replaces the existing entry's text so callers can update progress in
+// place.
+func (m *Model) pinnedToast(id, text string, isError bool) {
+	for i, e := range m.toastQueue {
+		if e.ID == id {
+			m.toastQueue[i].Text = text
+			m.toastQueue[i].IsError = isError
+			return
+		}
+	}
+	m.toastQueue = append(m.toastQueue, MessageLogEntry{
+		Text:    text,
+		IsError: isError,
+		Time:    time.Now(),
+		ID:      id,
+	})
+}
+
+// unpinToast removes the pinned toast with the given id, if present.
+func (m *Model) unpinToast(id string) {
+	for i, e := range m.toastQueue {
+		if e.ID == id {
+			m.toastQueue = append(m.toastQueue[:i], m.toastQueue[i+1:]...)
+			return
+		}
+	}
 }
 
 // appendMessageLog appends an entry to the message log, trims to maxMessageLog, and persists.

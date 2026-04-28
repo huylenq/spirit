@@ -14,14 +14,20 @@ func projectHeaderLabel(project string) string {
 	return ui.IconForProject(project) + " " + project
 }
 
-// formatMessageEntry formats a single message log entry as a styled line.
-func formatMessageEntry(entry MessageLogEntry) string {
-	ts := ui.FooterDimStyle.Render(entry.Time.Format("15:04:05"))
+// formatMessageEntryWithPrefix renders an entry as "<prefix> <styled text>".
+// Caller picks the prefix — timestamp for the message log, spinner frame
+// for pinned toasts.
+func formatMessageEntryWithPrefix(prefix string, entry MessageLogEntry) string {
 	style := ui.FlashInfoStyle
 	if entry.IsError {
 		style = ui.FlashErrorStyle
 	}
-	return ts + " " + style.Render(entry.Text)
+	return prefix + " " + style.Render(entry.Text)
+}
+
+// formatMessageEntry formats a single message log entry with a timestamp prefix.
+func formatMessageEntry(entry MessageLogEntry) string {
+	return formatMessageEntryWithPrefix(ui.FooterDimStyle.Render(entry.Time.Format("15:04:05")), entry)
 }
 
 // renderMessageLog returns the full message history overlay.
@@ -50,8 +56,13 @@ func (m Model) renderMessageToast() string {
 	if len(m.toastQueue) == 0 {
 		return ""
 	}
+	spinnerFrame := m.spinner.View()
 	var lines []string
 	for _, entry := range m.toastQueue {
+		if entry.ID != "" {
+			lines = append(lines, formatMessageEntryWithPrefix(spinnerFrame, entry))
+			continue
+		}
 		lines = append(lines, formatMessageEntry(entry))
 	}
 	return ui.ToastStyle.Render(strings.Join(lines, "\n"))
@@ -318,11 +329,7 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " close"
 		return ui.FooterStyle.Width(width).Render(h)
 	default:
-		hints := m.renderNormalFooterHints()
-		if m.renaming {
-			hints += "  " + ui.SummaryStyle.Render("renaming…")
-		}
-		return ui.FooterStyle.Width(width).Render(hints)
+		return ui.FooterStyle.Width(width).Render(m.renderNormalFooterHints())
 	}
 }
 

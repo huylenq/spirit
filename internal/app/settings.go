@@ -40,6 +40,7 @@ var SettingsRegistry = []SettingDef{
 	{Key: "autoSynthesize", Label: "Auto-synthesize on idle", Kind: SettingBool, Default: "true"},
 	{Key: "autoJump", Label: "Auto-jump after send", Kind: SettingBool, Default: "true"},
 	{Key: "projectAnimalIcon", Label: "Spirit animal as project icon", Kind: SettingBool, Default: "true"},
+	{Key: "lightweightBackend", Label: "Lightweight inference", Kind: SettingEnum, Default: "auto", Options: []string{"auto", "local", "claude"}},
 }
 
 // Flag returns the current boolean value of a setting.

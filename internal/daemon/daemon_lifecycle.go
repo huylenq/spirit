@@ -6,9 +6,10 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
+
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (d *Daemon) releaseLock() {
@@ -65,18 +66,6 @@ func Stop(info DaemonInfo) error {
 }
 
 // readPref reads a single preference value from the prefs file.
-// Duplicates the parsePrefsText logic to avoid import cycles with app package.
 func (d *Daemon) readPref(key string) string {
-	home, _ := os.UserHomeDir()
-	data, err := os.ReadFile(home + "/.cache/spirit/prefs")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		k, v, ok := strings.Cut(line, "=")
-		if ok && strings.TrimSpace(k) == key {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
+	return claude.ReadPref(key)
 }

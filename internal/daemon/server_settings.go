@@ -2,8 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
+	"sync"
 
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
@@ -16,27 +16,35 @@ func (d *Daemon) handleRenameAllWindows() *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
-	if len(windows) == 0 {
-		r := resultResponse(RenameAllResultData{})
-		return &r
-	}
-
 	names, err := claude.GenerateAllWindowNames(windows)
 	if err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
 
-	renamed := make(map[string]string, len(names))
-	var rerrs []string
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		ok   int
+		errs []string
+	)
 	for k, name := range names {
-		if err := tmux.RenameWindow(k.Session, k.WindowIndex, name); err != nil {
-			rerrs = append(rerrs, fmt.Sprintf("%s: %v", k.String(), err))
-			continue
-		}
-		renamed[k.String()] = name
+		wg.Add(1)
+		go func(k claude.WindowKey, name string) {
+			defer wg.Done()
+			err := tmux.RenameWindow(k.Session, k.WindowIndex, name)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, err.Error())
+				return
+			}
+			ok++
+		}(k, name)
 	}
-	r := resultResponse(RenameAllResultData{Renamed: renamed, Errors: rerrs})
+	wg.Wait()
+
+	r := resultResponse(RenameAllResultData{Renamed: ok, Errors: errs})
 	return &r
 }
 

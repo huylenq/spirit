@@ -147,6 +147,7 @@ func (m Model) spawnNewSession(prompt, model string, planning bool, worktree str
 func (m Model) execRename() (Model, tea.Cmd) {
 	if !m.renaming {
 		m.renaming = true
+		m.pinnedToast("rename-all", "renaming windows…", false)
 		return m, m.fetchRenameAllWindows()
 	}
 	return m, nil

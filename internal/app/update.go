@@ -547,8 +547,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.setFlash(string(msg), true, 5*time.Second)
 
 	case ClearToastMsg:
-		if len(m.toastQueue) > 0 {
-			m.toastQueue = m.toastQueue[1:]
+		const stalePinAge = 5 * time.Minute
+		now := time.Now()
+		for i, e := range m.toastQueue {
+			if e.ID != "" && now.Sub(e.Time) < stalePinAge {
+				continue
+			}
+			m.toastQueue = append(m.toastQueue[:i], m.toastQueue[i+1:]...)
+			break
 		}
 		return m, nil
 
@@ -568,18 +574,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case WindowsRenamedMsg:
 		m.renaming = false
+		m.unpinToast("rename-all")
 		if msg.Err != nil {
-			return m, m.setFlash("Rename failed: "+msg.Err.Error(), true, 5*time.Second)
+			text := "Rename failed: " + msg.Err.Error()
+			m.appendMessageLog(text, true)
+			return m, m.toast(text, true)
 		}
-		n := len(msg.Renamed)
-		if n == 0 && len(msg.Errors) == 0 {
-			return m, m.setFlash("no windows to rename", false, 3*time.Second)
+		var text string
+		isError := false
+		switch {
+		case msg.Renamed == 0 && len(msg.Errors) == 0:
+			text = "no windows to rename"
+		case len(msg.Errors) > 0:
+			text = fmt.Sprintf("renamed %d window(s) (%d failed)", msg.Renamed, len(msg.Errors))
+			isError = true
+		default:
+			text = fmt.Sprintf("renamed %d window(s)", msg.Renamed)
 		}
-		summary := fmt.Sprintf("renamed %d window(s)", n)
-		if len(msg.Errors) > 0 {
-			summary += fmt.Sprintf(" (%d failed)", len(msg.Errors))
-		}
-		return m, m.setFlash(summary, len(msg.Errors) > 0, 3*time.Second)
+		m.appendMessageLog(text, isError)
+		return m, m.toast(text, isError)
 
 	case pathValidatedMsg:
 		m.newSessionCWD = msg.cwd

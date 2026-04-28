@@ -114,19 +114,12 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 		`{"objective":"<what the user is trying to build/fix/accomplish, 1-2 lines max>","status":"<what is currently happening or last completed, 1 line max>","problem_type":"<one of: bug, feature, refactoring, chore, docs, test, exploration, debug, performance>","headline":"` + titleInstruction + `"}` +
 		"\n\n" + input
 
-	cmd := newLightweightClaude("Output ONLY valid JSON. No markdown, no explanation.", prompt)
-	out, err := cmd.Output()
+	out, err := LightweightJSON("Output ONLY valid JSON. No markdown, no explanation.", prompt)
 	if err != nil {
-		return nil, false, fmt.Errorf("claude CLI: %w", err)
+		return nil, false, fmt.Errorf("lightweight infer: %w", err)
 	}
 
-	raw := strings.TrimSpace(string(out))
-	// Strip markdown fences haiku occasionally adds despite being told not to
-	if start := strings.Index(raw, "{"); start > 0 {
-		if end := strings.LastIndex(raw, "}"); end > start {
-			raw = raw[start : end+1]
-		}
-	}
+	raw := extractJSONObject(out)
 	var summary SessionSummary
 	if err := json.Unmarshal([]byte(raw), &summary); err != nil {
 		summary = SessionSummary{Objective: raw}
@@ -155,15 +148,24 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 	return &summary, false, nil
 }
 
-// filterEnv returns env vars excluding any whose key starts with prefix.
-// newLightweightClaude builds a claude CLI command for quick, isolated prompts.
+// newLightweightClaude builds a `claude` CLI command for quick, isolated
+// prompts. Flags strip everything claude can skip while still using OAuth
+// auth: settings sources, hooks, MCP, plugins, slash commands, chrome,
+// session persistence. cwd is set to a no-CLAUDE.md location so auto-
+// discovery doesn't traverse the project tree.
 func newLightweightClaude(systemPrompt, input string) *exec.Cmd {
 	cmd := exec.Command("claude", "--model", "haiku", "-p",
-		"--no-session-persistence", "--tools", "", "--effort", "low",
+		"--no-session-persistence",
+		"--tools", "",
+		"--effort", "low",
 		"--setting-sources", "",
+		"--disable-slash-commands",
+		"--no-chrome",
+		"--strict-mcp-config",
 		"--system-prompt", systemPrompt,
 		input)
 	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
+	cmd.Dir = os.TempDir()
 	return cmd
 }
 

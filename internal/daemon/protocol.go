@@ -131,8 +131,8 @@ type OpenLaterData struct {
 }
 
 type RenameAllResultData struct {
-	Renamed map[string]string `json:"renamed"`
-	Errors  []string          `json:"errors,omitempty"`
+	Renamed int      `json:"renamed"`
+	Errors  []string `json:"errors,omitempty"`
 }
 
 type NudgeData struct {
