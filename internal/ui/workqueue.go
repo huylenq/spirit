@@ -15,7 +15,7 @@ const (
 	workQueueCardW      = 62 // card width per session (including border)
 	workQueueCardInnerW = 60 // card content width (cardW - 2 for border sides)
 	workQueueCardInnerH = 3  // card content height (height - 2 for border top/bottom)
-	workQueueBenchW     = 26 // width for the compacted "bench" section (avatar + status + title)
+	workQueueBenchW     = 36 // width for the compacted "bench" section (avatar + status + title)
 	workQueueCardGap    = 1  // margin between cards
 )
 
@@ -29,11 +29,26 @@ type WorkQueueModel struct {
 	width        int                    // total available width
 	autoJumpID   string                 // pane ID of the autojump "next" target
 	dino         *DinoGame              // empty-state mini game (lazy-init)
+	dinoForce    bool                   // explicit override: show game even when queue non-empty (gxd toggle)
 }
 
-// IsEmpty reports whether the queue has zero user-turn sessions. Used by the
-// app to decide whether to drive the empty-state dino game's tick + keys.
+// IsEmpty reports whether the queue has zero user-turn sessions.
 func (m *WorkQueueModel) IsEmpty() bool { return len(m.queue) == 0 }
+
+// IsGameVisible reports whether the dino game is currently rendered into the
+// queue area — true when the queue is empty (auto-show) or the user has
+// explicitly forced it on via the gxd toggle.
+func (m *WorkQueueModel) IsGameVisible() bool {
+	return m.dinoForce || len(m.queue) == 0
+}
+
+// ToggleDinoForce flips the explicit show-game override. Returns the new value.
+func (m *WorkQueueModel) ToggleDinoForce() bool {
+	m.dinoForce = !m.dinoForce
+	return m.dinoForce
+}
+
+func (m *WorkQueueModel) DinoForce() bool { return m.dinoForce }
 
 // Dino returns the empty-state game model, creating it on first access.
 func (m *WorkQueueModel) Dino() *DinoGame {
@@ -224,7 +239,7 @@ func (m *WorkQueueModel) View(sidebar *SidebarModel) string {
 
 // renderQueue renders the scrollable queue cards area.
 func (m *WorkQueueModel) renderQueue(sidebar *SidebarModel, dw DiffColWidths, areaWidth int) string {
-	if len(m.queue) == 0 {
+	if m.IsGameVisible() {
 		game := m.Dino()
 		game.SetWidth(areaWidth)
 		return game.View(areaWidth)

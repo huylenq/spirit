@@ -93,7 +93,7 @@ func (m Model) handleKeyLaterWait(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = StateNormal
 		// Validate duration if non-empty
 		if wait != "" {
-			if _, err := time.ParseDuration(wait); err != nil {
+			if _, err := claude.ParseWaitDuration(wait); err != nil {
 				return m, m.setFlash("invalid duration: "+wait, true, 3*time.Second)
 			}
 		}
