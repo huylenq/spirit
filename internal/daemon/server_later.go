@@ -3,6 +3,8 @@ package daemon
 import (
 	"encoding/json"
 	"log"
+	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -56,12 +58,22 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 	return &r
 }
 
+var dayRe = regexp.MustCompile(`(\d+)d`)
+
+// expandDays replaces Nd with N*24h so time.ParseDuration can handle it.
+func expandDays(s string) string {
+	return dayRe.ReplaceAllStringFunc(s, func(m string) string {
+		n, _ := strconv.Atoi(dayRe.FindStringSubmatch(m)[1])
+		return strconv.Itoa(n*24) + "h"
+	})
+}
+
 // applyWait parses a duration string and sets WakeAt on the Later record.
 func applyWait(bm *claude.LaterRecord, wait string) {
 	if wait == "" {
 		return
 	}
-	d, err := time.ParseDuration(wait)
+	d, err := time.ParseDuration(expandDays(wait))
 	if err != nil || d <= 0 {
 		return
 	}
