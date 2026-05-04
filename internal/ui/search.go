@@ -12,10 +12,10 @@ type SearchModel struct {
 
 func NewSearchModel() SearchModel {
 	ti := textinput.New()
-	ti.Placeholder = "search by title, summary, messages..."
+	ti.Placeholder = "search… (`p <name>` filters by project)"
 	ti.Prompt = "/ "
 	ti.PromptStyle = SearchPromptStyle
-	ti.CharLimit = 64
+	ti.CharLimit = 96
 	return SearchModel{input: ti}
 }
 

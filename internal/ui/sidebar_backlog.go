@@ -64,18 +64,24 @@ func (m *SidebarModel) applyNarrowBacklog() {
 		m.filteredBacklog = nil
 		return
 	}
-	if m.narrow == "" {
+	projectFilter, textQuery := parseSearchQuery(m.narrow)
+	if projectFilter == "" && textQuery == "" {
 		m.filteredBacklog = make([]claude.Backlog, len(m.backlogs))
 		copy(m.filteredBacklog, m.backlogs)
 	} else {
-		f := strings.ToLower(m.narrow)
 		m.filteredBacklog = nil
 		for _, backlog := range m.backlogs {
-			title := strings.ToLower(backlog.DisplayTitle())
-			body := strings.ToLower(backlog.Body)
-			if strings.Contains(title, f) || strings.Contains(body, f) {
-				m.filteredBacklog = append(m.filteredBacklog, backlog)
+			if projectFilter != "" && !strings.Contains(strings.ToLower(backlog.Project), projectFilter) {
+				continue
 			}
+			if textQuery != "" {
+				title := strings.ToLower(backlog.DisplayTitle())
+				body := strings.ToLower(backlog.Body)
+				if !strings.Contains(title, textQuery) && !strings.Contains(body, textQuery) {
+					continue
+				}
+			}
+			m.filteredBacklog = append(m.filteredBacklog, backlog)
 		}
 	}
 	sort.SliceStable(m.filteredBacklog, func(i, j int) bool {

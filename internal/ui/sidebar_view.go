@@ -38,7 +38,7 @@ func (m *SidebarModel) View() string {
 	}
 
 	dw := m.computeDiffColWidths()
-	query := strings.ToLower(m.narrow)
+	query := m.searchTextQuery()
 
 	// Determine selected PaneID for cursor tracking across the full list
 	var selectedPaneID string
@@ -59,7 +59,7 @@ func (m *SidebarModel) View() string {
 	m.selectedProjectRow = -1
 	m.selectedItemRow = -1
 
-	if m.narrow != "" {
+	if query != "" {
 		// Search mode: render from m.filtered directly (score-sorted, flat)
 		for _, s := range m.filtered {
 			isSelected := s.PaneID == selectedPaneID && !m.deselected
@@ -397,10 +397,10 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 		return ""
 	}
 
-	query := strings.ToLower(m.narrow)
+	query := m.searchTextQuery()
 	currentLine := 0
 
-	if m.narrow != "" {
+	if query != "" {
 		// Search mode: flat list from m.filtered (score-sorted)
 		for _, s := range m.filtered {
 			lineCount := m.itemLineCount(s, query)
@@ -493,11 +493,11 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		return ""
 	}
 
-	query := strings.ToLower(m.narrow)
+	query := m.searchTextQuery()
 	currentLine := 0
 
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
-	if m.narrow != "" {
+	if query != "" {
 		for _, s := range m.filtered {
 			currentLine += m.itemLineCount(s, query)
 		}
