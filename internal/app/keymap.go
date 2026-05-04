@@ -147,9 +147,19 @@ type KeyMap struct {
 	// Focus mode (show only flagged sessions)
 	FocusMode key.Binding
 
+	// Toggle flag on selected session/project/backlog
+	Flag key.Binding
+
+	// Jump to and rotate through effectively-flagged sessions
+	JumpFlagged key.Binding
+
 	// Number slot jump/bind (video-game style)
 	SlotJump key.Binding
 	SlotBind key.Binding
+
+	// Copilot overlay
+	Copilot     key.Binding
+	CopilotMode key.Binding
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -202,8 +212,10 @@ var Chords = []Chord{
 	{Keys: "gt", Help: "transcript json"},
 	{Keys: "gc", Help: "copilot"},
 	{Keys: "gg", Help: "top"},
-	{Keys: "gs", Help: "spirit animal"},
-	{Keys: "gx", Help: "destroyer"},
+	// gx* — fun / easter-egg namespace
+	{Keys: "gxd", Help: "dino game"},
+	{Keys: "gxs", Help: "spirit animal"},
+	{Keys: "gxx", Help: "destroyer"},
 }
 
 func init() {
@@ -214,9 +226,10 @@ func init() {
 		"gd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
 		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
 		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
-		"gg": func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
-		"gs": func(m *Model) (Model, tea.Cmd) { return m.execShowSpiritAnimal() },
-		"gx": func(m *Model) (Model, tea.Cmd) { return m.execDestroyer() },
+		"gg":  func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
+		"gxd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDinoGame() },
+		"gxs": func(m *Model) (Model, tea.Cmd) { return m.execShowSpiritAnimal() },
+		"gxx": func(m *Model) (Model, tea.Cmd) { return m.execDestroyer() },
 	}
 	for i := range Chords {
 		Chords[i].Execute = executors[Chords[i].Keys]
@@ -224,6 +237,23 @@ func init() {
 			panic(fmt.Sprintf("chord %q has no executor wired in init()", Chords[i].Keys))
 		}
 	}
+}
+
+// formatChordKeys turns "ys" into "y s" for human-readable display.
+func formatChordKeys(seq string) string {
+	return strings.Join(strings.Split(seq, ""), " ")
+}
+
+// chord returns a pointer to the registered Chord with the given key sequence.
+// Panics if the chord is not registered — callers wire palette entries at startup,
+// so a missing chord is a programmer error, not a runtime condition.
+func chord(keys string) *Chord {
+	for i := range Chords {
+		if Chords[i].Keys == keys {
+			return &Chords[i]
+		}
+	}
+	panic("unknown chord: " + keys)
 }
 
 // ChordsWithPrefix returns chords whose key sequence starts with prefix.
@@ -411,7 +441,8 @@ var Keys = KeyMap{
 		key.WithHelp("D", "commit+simplify+done"),
 	),
 	Debug: key.NewBinding(
-		key.WithKeys("ctrl+shift+d"),
+		key.WithKeys("alt+d"),
+		key.WithHelp("alt+d", "debug"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -475,6 +506,14 @@ var Keys = KeyMap{
 		key.WithKeys("F"),
 		key.WithHelp("F", "focus mode"),
 	),
+	Flag: key.NewBinding(
+		key.WithKeys("alt+f"),
+		key.WithHelp("alt+f", "flag"),
+	),
+	JumpFlagged: key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "next flagged"),
+	),
 	SlotJump: key.NewBinding(
 		key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"),
 		key.WithHelp("1-9", "jump to slot"),
@@ -482,5 +521,13 @@ var Keys = KeyMap{
 	SlotBind: key.NewBinding(
 		key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"),
 		key.WithHelp("alt+1-9", "bind slot"),
+	),
+	Copilot: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "copilot"),
+	),
+	CopilotMode: key.NewBinding(
+		key.WithKeys("shift+tab"),
+		key.WithHelp("⇧tab", "copilot mode"),
 	),
 }

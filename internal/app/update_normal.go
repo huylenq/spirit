@@ -41,6 +41,15 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Dino game in the work queue strip: intercept jump/restart keys when the
+	// game is showing (empty queue or forced-on via gxd).
+	if m.viewMode == ViewWorkQueue && m.workQueue.IsGameVisible() {
+		game := m.workQueue.Dino()
+		if game.HandleKey(msg.String()) {
+			return m, m.startDinoTickIfNeeded()
+		}
+	}
+
 	// Handle multi-key chord sequences
 	if m.pendingChord != "" {
 		seq := m.pendingChord + msg.String()
@@ -122,7 +131,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
-	case msg.String() == "tab":
+	case key.Matches(msg, Keys.Copilot):
 		return execOpenCopilot(&m)
 
 	case key.Matches(msg, Keys.Macro):
@@ -138,7 +147,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			items[i] = ui.PaletteItem{
 				Name:    cmd.Name,
-				Hotkey:  cmd.Hotkey,
+				Hotkey:  cmd.HotkeyDisplay(),
 				Enabled: enabled,
 				Index:   i,
 			}
@@ -160,10 +169,18 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail.CycleHookFilter()
 		return m, nil
 
-	case msg.String() == "f":
+	case key.Matches(msg, Keys.Flag):
 		m.sidebar.ToggleFlagSelected()
 		saveSidebarState(m.sidebar.ExportState())
 		return m, nil
+
+	case key.Matches(msg, Keys.JumpFlagged):
+		target := m.sidebar.NextFlaggedPaneID()
+		if target == "" {
+			return m, m.setFlash("no flagged sessions", false, 2*time.Second)
+		}
+		m.recordJump()
+		return m.doJump(target)
 
 	case key.Matches(msg, Keys.FocusMode):
 		newVal := !m.sidebar.FocusMode()
@@ -468,7 +485,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		savePrefString("viewMode", m.viewMode)
 		m.applyLayout()
-		return m, tea.Batch(syncCmd, m.syncAllQuietAnim(), m.setFlash("view: "+m.viewMode, false, 2*time.Second))
+		return m, tea.Batch(syncCmd, m.syncAllQuietAnim(), m.startDinoTickIfNeeded(), m.setFlash("view: "+m.viewMode, false, 2*time.Second))
 
 	case key.Matches(msg, Keys.AutoJumpToggle):
 		newVal := !m.autoJumpOn

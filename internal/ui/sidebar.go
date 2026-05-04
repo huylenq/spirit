@@ -330,6 +330,38 @@ func (m *SidebarModel) SetNarrow(f string) {
 	m.cursor = 0
 }
 
+// parseSearchQuery splits a narrow string into a project-name filter (from
+// `p:<term>` tokens) and the remaining free-text query. Both returned values
+// are lowercased. Multiple `p:` tokens are joined with spaces.
+//
+// Shortcut: if the first token is a single `p` followed by a space
+// (e.g. "p myproject"), it's rewritten as "p:myproject".
+func parseSearchQuery(s string) (project, text string) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "", ""
+	}
+	if len(s) >= 2 && s[0] == 'p' && s[1] == ' ' {
+		s = "p:" + s[2:]
+	}
+	var projParts, textParts []string
+	for _, tok := range strings.Fields(s) {
+		if rest, ok := strings.CutPrefix(tok, "p:"); ok {
+			if rest != "" {
+				projParts = append(projParts, rest)
+			}
+			continue
+		}
+		textParts = append(textParts, tok)
+	}
+	return strings.Join(projParts, " "), strings.Join(textParts, " ")
+}
+
+func (m SidebarModel) searchTextQuery() string {
+	_, t := parseSearchQuery(m.narrow)
+	return t
+}
+
 func (m *SidebarModel) ClearNarrow() {
 	m.narrow = ""
 	m.applyNarrow()
@@ -411,6 +443,24 @@ func (m *SidebarModel) ToggleFlagSelected() {
 // IsEffectivelyFlagged returns true if a session is flagged directly or via its project.
 func (m SidebarModel) IsEffectivelyFlagged(s claude.ClaudeSession) bool {
 	return m.flaggedSessions[s.PaneID] || m.flaggedProjects[s.Project]
+}
+
+// NextFlaggedPaneID returns the paneID of the next effectively-flagged session
+// in sidebar order, starting one position after the current cursor and wrapping
+// around. Returns "" if no flagged session is currently navigable.
+func (m SidebarModel) NextFlaggedPaneID() string {
+	n := len(m.filtered)
+	if n == 0 {
+		return ""
+	}
+	start := m.cursor + 1
+	for i := 0; i < n; i++ {
+		s := m.filtered[(start+i)%n]
+		if m.IsEffectivelyFlagged(s) {
+			return s.PaneID
+		}
+	}
+	return ""
 }
 
 // IsProjectFlagged returns true if the given project name is flagged.
@@ -566,35 +616,45 @@ func (m *SidebarModel) applyNarrow() {
 	m.allSorted = make([]claude.ClaudeSession, len(m.items))
 	copy(m.allSorted, m.items)
 
-	if m.narrow == "" {
+	projectFilter, textQuery := parseSearchQuery(m.narrow)
+	if projectFilter == "" && textQuery == "" {
 		m.filtered = make([]claude.ClaudeSession, len(m.items))
 		copy(m.filtered, m.items)
 		m.matchSet = nil // nil = all match
 		m.matchScores = nil
 	} else {
-		f := strings.ToLower(m.narrow)
 		m.filtered = nil
 		m.matchSet = make(map[string]bool)
 		m.matchScores = make(map[string]int)
 		for _, s := range m.items {
-			best := bestNarrowScore(s, f)
-			if best >= 0 {
-				m.filtered = append(m.filtered, s)
-				m.matchSet[s.PaneID] = true
-				m.matchScores[s.PaneID] = best
+			if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+				continue
 			}
+			best := 0
+			if textQuery != "" {
+				best = bestNarrowScore(s, textQuery)
+				if best < 0 {
+					continue
+				}
+			}
+			m.filtered = append(m.filtered, s)
+			m.matchSet[s.PaneID] = true
+			m.matchScores[s.PaneID] = best
 		}
-		sort.SliceStable(m.filtered, func(i, j int) bool {
-			return m.matchScores[m.filtered[i].PaneID] > m.matchScores[m.filtered[j].PaneID]
-		})
+		if textQuery != "" {
+			sort.SliceStable(m.filtered, func(i, j int) bool {
+				return m.matchScores[m.filtered[i].PaneID] > m.matchScores[m.filtered[j].PaneID]
+			})
+		}
 	}
 	if m.groupByProject {
 		sortByProject(m.allSorted)
 	} else {
 		sortByStatus(m.allSorted)
 	}
-	// When not searching, sort filtered same as allSorted
-	if m.narrow == "" {
+	// When there's no fuzzy text query, sort filtered same as allSorted so
+	// project-only filters (e.g. `p:foo`) keep the grouped layout.
+	if textQuery == "" {
 		if m.groupByProject {
 			sortByProject(m.filtered)
 		} else {
