@@ -92,7 +92,7 @@ func (m *SidebarModel) View() string {
 					currentOrder = OrderLater
 					currentProject = "" // reset to force project sub-header
 					if len(lines) > 0 {
-						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+						lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 					}
 					lines = append(lines, renderStatusGroupHeader(OrderLater))
 				}
@@ -108,7 +108,7 @@ func (m *SidebarModel) View() string {
 						}
 					} else {
 						if len(lines) > 0 {
-							lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+							lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 						}
 						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
 							m.selectedProjectRow = len(lines)
@@ -124,7 +124,7 @@ func (m *SidebarModel) View() string {
 					currentOrder = order
 					currentProject = "" // reset project tracking for new status group
 					if len(lines) > 0 {
-						lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+						lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 					}
 					lines = append(lines, renderStatusGroupHeader(order))
 				}
@@ -156,7 +156,7 @@ func (m *SidebarModel) View() string {
 	// Render backlog section (after sessions)
 	if len(m.filteredBacklog) > 0 {
 		if len(lines) > 0 {
-			lines = append(lines, SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+			lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
 		}
 		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
 
@@ -299,7 +299,7 @@ func (m *SidebarModel) pulseBlock() []string {
 	}
 	body := bodyStyle.Render(summary)
 	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
-	out := []string{separator, header}
+	out := []string{"", separator, header}
 	out = append(out, strings.Split(body, "\n")...)
 	return out
 }
@@ -331,7 +331,7 @@ func (m *SidebarModel) collapsedBadgesBlock() []string {
 		parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
 	}
 	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
-	return []string{separator, strings.Join(parts, " ")}
+	return []string{"", separator, strings.Join(parts, " ")}
 }
 
 // projectLabel builds the "🐾 name [🚩]" string shared by all project headers.
@@ -548,7 +548,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				currentOrder = OrderLater
 				currentProject = "" // reset to force project sub-header
 				if anyLinesEmitted {
-					currentLine++ // separator
+					currentLine += 2 // blank line + separator
 				}
 				anyLinesEmitted = true
 				currentLine++ // LATER status group header
@@ -559,7 +559,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 					currentLine++ // project sub-header (no separator within Later)
 				} else {
 					if anyLinesEmitted {
-						currentLine++ // separator
+						currentLine += 2 // blank line + separator
 					}
 					anyLinesEmitted = true
 					currentLine++ // group header
@@ -570,7 +570,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				currentOrder = order
 				currentProject = ""
 				if anyLinesEmitted {
-					currentLine++ // separator
+					currentLine += 2 // blank line + separator
 				}
 				anyLinesEmitted = true
 				currentLine++ // status group header
@@ -637,7 +637,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					currentOrder = OrderLater
 					currentProject = "" // reset to force project sub-header
 					if anyLinesEmitted {
-						currentLine++ // separator
+						currentLine += 2 // blank line + separator
 					}
 					anyLinesEmitted = true
 					currentLine++ // LATER status group header
@@ -648,7 +648,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 						currentLine++ // project sub-header (no separator within Later)
 					} else {
 						if anyLinesEmitted {
-							currentLine++ // separator
+							currentLine += 2 // blank line + separator
 						}
 						anyLinesEmitted = true
 						currentLine++ // group header
@@ -659,7 +659,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					currentOrder = order
 					currentProject = ""
 					if anyLinesEmitted {
-						currentLine++ // separator
+						currentLine += 2 // blank line + separator
 					}
 					anyLinesEmitted = true
 					currentLine++ // status group header
@@ -676,9 +676,9 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		}
 	}
 
-	// Backlog section: separator (if sessions exist) + group header.
+	// Backlog section: blank line + separator (if sessions exist) + group header.
 	if currentLine > 0 {
-		currentLine++ // "─────" separator
+		currentLine += 2 // blank line + "─────" separator
 	}
 	currentLine++ // "BACKLOG" group header
 
