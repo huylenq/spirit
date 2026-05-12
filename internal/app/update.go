@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/spirit/internal/claude"
@@ -735,7 +736,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Shift+tab: switch copilot mode (float ↔ docked) from relevant states.
-	if msg.String() == "shift+tab" {
+	if key.Matches(msg, Keys.CopilotMode) {
 		switch m.state {
 		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
 			return execSwitchCopilotMode(&m)
@@ -745,7 +746,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Double-tab detection: hide copilot if two tabs within threshold.
 	// Only track lastTabTime within copilot-relevant states to avoid false
 	// double-taps when tab is pressed in unrelated states (search, palette, etc.).
-	if msg.String() == "tab" {
+	if key.Matches(msg, Keys.Copilot) {
 		switch m.state {
 		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
 			now := time.Now()

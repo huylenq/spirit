@@ -111,9 +111,7 @@ func (m Model) renderHelpOverlay() string {
 
 	chordHints := make([]string, 0, len(Chords))
 	for _, c := range Chords {
-		// Format "ys" as "y s" for readability
-		keys := strings.Join(strings.Split(c.Keys, ""), " ")
-		chordHints = append(chordHints, hint(keys, c.Help))
+		chordHints = append(chordHints, hint(formatChordKeys(c.Keys), c.Help))
 	}
 
 	col3Parts := []string{

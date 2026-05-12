@@ -4,59 +4,59 @@ import tea "github.com/charmbracelet/bubbletea"
 
 // buildCommands returns all palette-worthy commands grouped by category.
 func buildCommands() []Command {
-	return []Command{
+	cmds := []Command{
 		// --- Session actions ---
 		{
-			Name: "Switch to pane", Hotkey: "enter",
+			Name: "Switch to pane", Binding: &Keys.Enter,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSwitchPane() },
 		},
 		{
-			Name: "Send to session", Hotkey: ">",
+			Name: "Send to session", Binding: &Keys.PromptRelay,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execPromptRelay() },
 		},
 		{
-			Name: "Tag session", Hotkey: "#",
+			Name: "Tag session", Binding: &Keys.PromptTag,
 			Enabled: hasSessionID,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execTagRelay() },
 		},
 		{
-			Name: "Queue message", Hotkey: "<",
+			Name: "Queue message", Binding: &Keys.Queue,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execQueue() },
 		},
 		{
-			Name: "Later", Hotkey: "w",
+			Name: "Later", Binding: &Keys.Later,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execLater() },
 		},
 		{
-			Name: "Later + kill", Hotkey: "W",
+			Name: "Later + kill", Binding: &Keys.LaterKill,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execLaterKill() },
 		},
 		{
-			Name: "Kill + close", Hotkey: "d",
+			Name: "Kill + close", Binding: &Keys.Kill,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execKill() },
 		},
 		{
-			Name: "Synthesize", Hotkey: "s",
+			Name: "Synthesize", Binding: &Keys.Synthesize,
 			Enabled: hasSessionID,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSynthesize() },
 		},
 		{
-			Name: "Rename all windows", Hotkey: "R",
+			Name: "Rename all windows", Binding: &Keys.Rename,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRename() },
 		},
 		{
-			Name: "Rename", Hotkey: "r",
+			Name: "Rename", Binding: &Keys.RenamePrompt,
 			Enabled: hasSelection,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRenamePrompt() },
 		},
 		{
-			Name: "Apply title", Hotkey: "alt+r",
+			Name: "Apply title", Binding: &Keys.ApplyTitle,
 			Enabled: func(m *Model) bool {
 				s, ok := m.sidebar.SelectedItem()
 				return ok && s.TitleDrift
@@ -64,23 +64,23 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execApplyTitle() },
 		},
 		{
-			Name: "Commit", Hotkey: "c",
+			Name: "Commit", Binding: &Keys.Commit,
 			Enabled: canCommit,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommit() },
 		},
 		{
-			Name: "Commit + done", Hotkey: "C",
+			Name: "Commit + done", Binding: &Keys.CommitAndDone,
 			Enabled: canCommit,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitAndDone() },
 		},
 		{
-			Name: "Commit + simplify + done", Hotkey: "D",
+			Name: "Commit + simplify + done", Binding: &Keys.CommitSimplifyAndDone,
 			Enabled: canCommit,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitSimplifyAndDone() },
 		},
 
 		{
-			Name: "New session", Hotkey: "a",
+			Name: "New session", Binding: &Keys.NewSession,
 			Enabled: func(m *Model) bool {
 				_, ok := m.sidebar.SelectedProject()
 				return ok
@@ -88,19 +88,19 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSession() },
 		},
 		{
-			Name: "New session at path", Hotkey: "A",
+			Name: "New session at path", Binding: &Keys.NewSessionAtPath,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execNewSessionAtPath() },
 		},
 
 		// --- Copilot ---
 		{
-			Name: "Copilot", Hotkey: "tab",
+			Name: "Copilot", Binding: &Keys.Copilot,
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				return execOpenCopilot(m)
 			},
 		},
 		{
-			Name: "Copilot mode (float/docked)", Hotkey: "⇧tab",
+			Name: "Copilot mode (float/docked)", Binding: &Keys.CopilotMode,
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				return execSwitchCopilotMode(m)
 			},
@@ -108,46 +108,44 @@ func buildCommands() []Command {
 
 		// --- Global actions ---
 		{
-			Name: "Search", Hotkey: "/",
+			Name: "Search", Binding: &Keys.Search,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSearch() },
 		},
 		{
-			Name: "Synthesize all", Hotkey: "S",
+			Name: "Synthesize all", Binding: &Keys.SynthesizeAll,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSynthesizeAll() },
 		},
 		{
-			Name: "Fullscreen toggle", Hotkey: "z",
+			Name: "Fullscreen toggle", Binding: &Keys.Fullscreen,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execFullscreen() },
 		},
 
 		// --- Toggles ---
 		{
-			Name: "Group by project", Hotkey: "g",
+			Name: "Group by project", Binding: &Keys.GroupMode,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execGroupMode() },
 		},
 		{
-			Name: "Minimap", Hotkey: "m",
+			Name: "Minimap", Binding: &Keys.Minimap,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execMinimap() },
 		},
 		{
-			Name: "Toggle chat outline", Hotkey: "t",
+			Name: "Toggle chat outline", Binding: &Keys.ChatOutline,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execChatOutline() },
 		},
 		{
-			Name: "Toggle diffs", Hotkey: "g d",
+			Name: "Toggle diffs", Chord: chord("gd"),
 			Enabled: hasSessionID,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
 		},
 		{
-			Name: "Toggle hooks", Hotkey: "g h",
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
+			Name: "Toggle hooks", Chord: chord("gh"),
 		},
 		{
-			Name: "Debug overlay", Hotkey: "D",
+			Name: "Debug overlay", Binding: &Keys.Debug,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execDebug() },
 		},
 		{
-			Name: "Settings", Hotkey: "P",
+			Name: "Settings", Binding: &Keys.Prefs,
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				m.state = StatePrefsEditor
 				m.settingsCursor = 0
@@ -155,19 +153,24 @@ func buildCommands() []Command {
 			},
 		},
 		{
-			Name: "Help", Hotkey: "?",
+			Name: "Help", Binding: &Keys.Help,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execHelp() },
 		},
 
 		// --- Copy ---
 		{
-			Name: "Copy session ID", Hotkey: "y s",
+			Name: "Copy session ID", Chord: chord("ys"),
 			Enabled: hasSessionID,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCopySessionID() },
 		},
 		{
-			Name: "Capture view", Hotkey: "y c",
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCaptureView() },
+			Name: "Capture view", Chord: chord("yc"),
 		},
 	}
+	// Chord-bound entries inherit their executor from the chord registry.
+	for i := range cmds {
+		if cmds[i].Chord != nil && cmds[i].Execute == nil {
+			cmds[i].Execute = cmds[i].Chord.Execute
+		}
+	}
+	return cmds
 }
