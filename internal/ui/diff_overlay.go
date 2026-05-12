@@ -131,15 +131,14 @@ func (m *DetailModel) diffVisLines() int {
 }
 
 // buildDiffAllLines builds the full list of rendered diff lines for the overlay.
-// Pulled out of renderDiffOverlay so scrollDown can compute the max scroll position.
-func (m DetailModel) buildDiffAllLines(width int) []string {
+func (m DetailModel) buildDiffAllLines() []string {
 	if len(m.diffHunkFiles) == 0 {
 		return nil
 	}
 	simThreshold := m.diffSimThreshold
 
-	innerWidth := width - 6    // outer border(2) + outer padding(2) + reserved(2)
-	contentW := innerWidth - 4 // │ _ content _ │
+	innerWidth := (m.width - 4) - 6 // outer border(2) + outer padding(2) + reserved(2)
+	contentW := innerWidth - 4      // │ _ content _ │
 
 	borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
 	hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
@@ -374,7 +373,7 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 	if fileCount == 0 {
 		lines = append(lines, DetailMetaStyle.Render("No file changes"))
 	} else {
-		allLines := m.buildDiffAllLines(width)
+		allLines := m.buildDiffAllLines()
 
 		// Line-based scroll
 		scrollIdx := m.diffScroll

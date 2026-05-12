@@ -12,8 +12,7 @@ func (m *DetailModel) scrollDown(n int) {
 		m.diffScroll += n
 		// Clamp so repeated ctrl+f past the end doesn't inflate diffScroll,
 		// which would otherwise force many ctrl+u/ctrl+b presses to come back.
-		total := len(m.buildDiffAllLines(m.width - 4))
-		maxScroll := total - m.diffVisLines()
+		maxScroll := len(m.buildDiffAllLines()) - m.diffVisLines()
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
