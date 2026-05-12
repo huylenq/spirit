@@ -107,21 +107,33 @@ func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 		r := errResponse("cwd is required")
 		return &r
 	}
-	tmuxSession := req.TmuxSession
-	if tmuxSession == "" {
-		// Use first available tmux session
-		panes, err := tmux.ListAllPanes()
-		if err != nil || len(panes) == 0 {
-			r := errResponse("no tmux sessions available")
+	var paneID string
+	if req.SplitFromPane != "" {
+		// Split a new pane next to the caller's pane in the same window.
+		p, err := tmux.SplitWindow(req.SplitFromPane, req.CWD)
+		if err != nil {
+			r := errResponse("split window: " + err.Error())
 			return &r
 		}
-		tmuxSession = panes[0].SessionName
-	}
+		paneID = p
+	} else {
+		tmuxSession := req.TmuxSession
+		if tmuxSession == "" {
+			// Use first available tmux session
+			panes, err := tmux.ListAllPanes()
+			if err != nil || len(panes) == 0 {
+				r := errResponse("no tmux sessions available")
+				return &r
+			}
+			tmuxSession = panes[0].SessionName
+		}
 
-	paneID, err := tmux.NewWindow(tmuxSession, req.CWD)
-	if err != nil {
-		r := errResponse("new window: " + err.Error())
-		return &r
+		p, err := tmux.NewWindow(tmuxSession, req.CWD)
+		if err != nil {
+			r := errResponse("new window: " + err.Error())
+			return &r
+		}
+		paneID = p
 	}
 
 	// Launch claude in the new pane

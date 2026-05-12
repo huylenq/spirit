@@ -156,6 +156,18 @@ func NewWindow(sessionName, cwd string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// SplitWindow splits the window containing originPane and creates a new pane
+// next to it (horizontal split, side-by-side), starting in cwd. Returns the
+// new pane's ID.
+func SplitWindow(originPane, cwd string) (string, error) {
+	out, err := exec.Command("tmux", "split-window", "-h", "-t", originPane,
+		"-c", cwd, "-P", "-F", "#{pane_id}").Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux split-window -t %s: %w", originPane, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // KillPane closes a tmux pane by ID.
 func KillPane(paneID string) error {
 	return exec.Command("tmux", "kill-pane", "-t", paneID).Run()

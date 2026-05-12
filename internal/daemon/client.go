@@ -346,10 +346,21 @@ func (c *Client) Send(sessionID, message string) error {
 	return c.rpcInto(Request{Type: ReqSend, Data: marshalData(SendData{SessionID: sessionID, Message: message})}, nil)
 }
 
-// Spawn creates a new tmux window, launches claude, and waits for session registration.
-func (c *Client) Spawn(cwd, tmuxSession, message string) (SpawnResultData, error) {
+// Spawn launches a new claude session and waits for it to register.
+// If splitFromPane is non-empty (e.g. "%145"), the new pane is split next to
+// that pane in the same tmux window. Otherwise a new window is created in
+// tmuxSession (or the first available session if tmuxSession is empty).
+func (c *Client) Spawn(cwd, tmuxSession, message, splitFromPane string) (SpawnResultData, error) {
 	var data SpawnResultData
-	err := c.rpcInto(Request{Type: ReqSpawn, Data: marshalData(SpawnData{CWD: cwd, TmuxSession: tmuxSession, Message: message})}, &data)
+	err := c.rpcInto(Request{
+		Type: ReqSpawn,
+		Data: marshalData(SpawnData{
+			CWD:           cwd,
+			TmuxSession:   tmuxSession,
+			Message:       message,
+			SplitFromPane: splitFromPane,
+		}),
+	}, &data)
 	return data, err
 }
 

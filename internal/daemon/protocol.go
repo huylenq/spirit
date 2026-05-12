@@ -239,6 +239,10 @@ type SpawnData struct {
 	CWD         string `json:"cwd"`
 	TmuxSession string `json:"tmuxSession"`
 	Message     string `json:"message,omitempty"`
+	// SplitFromPane, if set, makes spawn split a new pane in the same window
+	// as the given pane (e.g. "%145") instead of opening a new tmux window.
+	// Takes precedence over TmuxSession when both are set.
+	SplitFromPane string `json:"splitFromPane,omitempty"`
 }
 
 type SpawnResultData struct {

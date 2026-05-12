@@ -63,11 +63,12 @@ var agentCommands = []agentCommand{
 		Handler: runQueue,
 	},
 	{
-		Name: "spawn", Args: "<cwd> [-m <msg>] [--tmux-session <name>]",
-		Desc: "Spawn new Claude Code session",
+		Name: "spawn", Args: "<cwd> [-m <msg>] [--new-window | --tmux-session <name>]",
+		Desc: "Spawn new Claude Code session (defaults to splitting the caller's tmux pane)",
 		Examples: []string{
 			"spawn /path/to/project",
 			`spawn /path/to/project -m "fix the failing tests"`,
+			"spawn /path/to/project --new-window",
 		},
 		Handler: runSpawn,
 	},
@@ -406,11 +407,12 @@ func runQueue() {
 
 func runSpawn() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: spirit agent spawn <cwd> [-m <msg>] [--tmux-session <name>]")
+		dieUsage("usage: spirit agent spawn <cwd> [-m <msg>] [--new-window | --tmux-session <name>]")
 	}
 	cwd := os.Args[2]
 	message := ""
 	tmuxSession := ""
+	forceNewWindow := false
 
 	for i := 3; i < len(os.Args); i++ {
 		switch os.Args[i] {
@@ -424,13 +426,23 @@ func runSpawn() {
 				tmuxSession = os.Args[i+1]
 				i++
 			}
+		case "--new-window":
+			forceNewWindow = true
 		}
+	}
+
+	// Default: if the caller is inside a tmux pane, split that pane so the new
+	// session lands next to its orchestrator. --new-window or --tmux-session
+	// opts out of split behavior.
+	splitFromPane := ""
+	if !forceNewWindow && tmuxSession == "" {
+		splitFromPane = os.Getenv("TMUX_PANE")
 	}
 
 	client := connectOrDie()
 	defer client.Close()
 
-	result, err := client.Spawn(cwd, tmuxSession, message)
+	result, err := client.Spawn(cwd, tmuxSession, message, splitFromPane)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "spawn: %v\n", err)
 		os.Exit(1)

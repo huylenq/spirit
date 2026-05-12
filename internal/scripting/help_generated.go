@@ -36,8 +36,10 @@ send(id, msg, [{wait, timeout}])
 kill(id)
   Send SIGTERM to session and clean up.
 
-spawn(cwd, [{tmux_session, message}]) -> {session_id, pane_id}
+spawn(cwd, [{tmux_session, message, split_from_pane}]) -> {session_id, pane_id}
   Spawn a new Claude session in the given directory. Blocks up to 30s.
+  If split_from_pane is set (e.g. "%145"), the new pane is split next to it
+  in the same tmux window; otherwise a new window is created.
 
 ### Orchestrator
 

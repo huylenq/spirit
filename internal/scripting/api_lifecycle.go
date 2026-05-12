@@ -4,14 +4,17 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// spawn(cwd, [{tmux_session, message}]) -> {session_id, pane_id}
+// spawn(cwd, [{tmux_session, message, split_from_pane}]) -> {session_id, pane_id}
 // Category: Lifecycle
 // Spawn a new Claude session in the given directory. Blocks up to 30s.
+// If split_from_pane is set (e.g. "%145"), the new pane is split next to it
+// in the same tmux window; otherwise a new window is created.
 func luaSpawn(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		cwd := L.CheckString(1)
 		tmuxSession := ""
 		message := ""
+		splitFromPane := ""
 
 		if L.GetTop() >= 2 {
 			opts := L.CheckTable(2)
@@ -21,9 +24,12 @@ func luaSpawn(deps Deps) lua.LGFunction {
 			if m := opts.RawGetString("message"); m != lua.LNil {
 				message = m.String()
 			}
+			if p := opts.RawGetString("split_from_pane"); p != lua.LNil {
+				splitFromPane = p.String()
+			}
 		}
 
-		result, err := deps.Client.Spawn(cwd, tmuxSession, message)
+		result, err := deps.Client.Spawn(cwd, tmuxSession, message, splitFromPane)
 		if err != nil {
 			L.RaiseError("spawn: %v", err)
 			return 0
