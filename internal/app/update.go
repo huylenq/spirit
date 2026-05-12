@@ -254,7 +254,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.applyLayout()
-		return m, nil
+		return m, m.startDinoTickIfNeeded()
+
+	case DinoTickMsg:
+		return m.handleDinoTick()
 
 	case DaemonDisconnectedMsg:
 		m.err = msg.Err
@@ -373,6 +376,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessions = msg.Sessions
 		m.refreshSessions()
+		if cmd := m.startDinoTickIfNeeded(); cmd != nil {
+			autoSynthCmds = append(autoSynthCmds, cmd)
+		}
 		m.tryInitialSelection()
 		if !m.initialSelectionDone && !m.selectActive && !m.rotateNext && len(m.sessions) > 0 {
 			m.initialSelectionDone = true

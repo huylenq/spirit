@@ -272,6 +272,7 @@ type Model struct {
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
 	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
 	workQueue            ui.WorkQueueModel
+	dinoTicking          bool             // empty work-queue dino game tick scheduled
 }
 
 func NewModel(client *daemon.Client) Model {
