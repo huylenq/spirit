@@ -364,11 +364,6 @@ func (m *DetailModel) ViewportHeight() int {
 	return m.viewport.Height
 }
 
-// ViewportWidth returns the current width of the detail viewport in columns.
-func (m *DetailModel) ViewportWidth() int {
-	return m.viewport.Width
-}
-
 // RelayWrapWidth returns the width that inline overlays (relay/rename/queue)
 // should wrap to. In overlay mode the right portion is occluded by the
 // outline/note panel, so we subtract that panel's footprint.

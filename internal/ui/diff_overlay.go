@@ -130,6 +130,114 @@ func (m *DetailModel) diffVisLines() int {
 	return avail
 }
 
+// buildDiffAllLines builds the full list of rendered diff lines for the overlay.
+// Pulled out of renderDiffOverlay so scrollDown can compute the max scroll position.
+func (m DetailModel) buildDiffAllLines(width int) []string {
+	if len(m.diffHunkFiles) == 0 {
+		return nil
+	}
+	simThreshold := m.diffSimThreshold
+
+	innerWidth := width - 6    // outer border(2) + outer padding(2) + reserved(2)
+	contentW := innerWidth - 4 // │ _ content _ │
+
+	borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
+	hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
+	rowSt := lipgloss.NewStyle().Width(contentW)
+
+	hunkSep := strings.Repeat("- ", contentW/2) + strings.Repeat("-", contentW%2)
+	hunkSepLine := borderSt.Render("│") + " " + hunkSepSt.Render(hunkSep) + " " + borderSt.Render("│")
+	bottomBorder := borderSt.Render("╰" + strings.Repeat("─", innerWidth-2) + "╯")
+
+	var allLines []string
+	for _, f := range m.diffHunkFiles {
+		icon := IconModified
+		if f.isNewFile {
+			icon = IconNewFile
+		}
+		addStr := DiffAddedStyle.Render(fmt.Sprintf("+%d", f.added))
+		rmStr := StatWorkingStyle.Render(fmt.Sprintf("-%d", f.removed))
+
+		titleRaw := fmt.Sprintf("%s %s  %s %s", icon, f.name, addStr, rmStr)
+		titleVisLen := ansi.StringWidth(titleRaw)
+		fill := innerWidth - titleVisLen - 5
+		if fill < 0 {
+			fill = 0
+		}
+		topBorder := borderSt.Render("╭─") + " " + titleRaw + " " + borderSt.Render(strings.Repeat("─", fill)+"╮")
+		allLines = append(allLines, topBorder)
+
+		gutterW := 4
+		gutterSt := lipgloss.NewStyle().Foreground(ColorMuted)
+
+		wrapLine := func(dl string) string {
+			return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
+		}
+		addSym := DiffAddBg.Inherit(DiffAddSymbol).Render("+ ")
+		delSym := DiffDelBg.Inherit(DiffDelSymbol).Render("- ")
+		bodyW := contentW - 2 - gutterW
+
+		wrapTyped := func(dl diffLine) string {
+			gutter := gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
+			switch dl.kind {
+			case '+':
+				body := DiffAddBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
+				return borderSt.Render("│") + " " + gutter + addSym + body + " " + borderSt.Render("│")
+			case '-':
+				body := DiffDelBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
+				return borderSt.Render("│") + " " + gutter + delSym + body + " " + borderSt.Render("│")
+			default:
+				gutter = gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
+				return wrapLine(gutter + dl.text)
+			}
+		}
+
+		for hi, h := range f.hunks {
+			if hi > 0 {
+				allLines = append(allLines, hunkSepLine)
+			}
+			hl := f.highlights[hi]
+			if h.IsWrite {
+				rawLines := strings.Split(h.NewString, "\n")
+				lineNum := 1
+				for i, line := range hl.new {
+					raw := ""
+					if i < len(rawLines) {
+						raw = rawLines[i]
+					}
+					if strings.TrimSpace(raw) == "" {
+						lineNum++
+						continue
+					}
+					allLines = append(allLines, wrapTyped(diffLine{text: line, kind: '+', lineNum: lineNum}))
+					lineNum++
+				}
+			} else {
+				dls := renderInlineDiff(h.OldString, h.NewString, contentW-gutterW, simThreshold)
+				for i, dl := range dls {
+					switch dl.kind {
+					case '-':
+						if dl.lineNum > 0 && dl.lineNum-1 < len(hl.old) {
+							dls[i].text = hl.old[dl.lineNum-1]
+						}
+					case '+':
+						if dl.lineNum > 0 && dl.lineNum-1 < len(hl.new) {
+							dls[i].text = hl.new[dl.lineNum-1]
+						}
+					}
+				}
+				for _, dl := range dls {
+					allLines = append(allLines, wrapTyped(dl))
+				}
+			}
+		}
+
+		allLines = append(allLines, bottomBorder)
+		allLines = append(allLines, "")
+	}
+	return allLines
+}
+
 // maxHunkDisplayLines caps how many output lines a single hunk can produce.
 const maxHunkDisplayLines = 30
 
@@ -266,110 +374,7 @@ func (m DetailModel) renderDiffOverlay(width, height int) string {
 	if fileCount == 0 {
 		lines = append(lines, DetailMetaStyle.Render("No file changes"))
 	} else {
-		// innerWidth = total visual width of each file box line
-		innerWidth := width - 6    // outer border(2) + outer padding(2) + reserved(2)
-		contentW := innerWidth - 4 // │ _ content _ │
-
-		borderSt := lipgloss.NewStyle().Foreground(ColorBorder)
-		hunkSepSt := lipgloss.NewStyle().Foreground(ColorBorder)
-		rowSt := lipgloss.NewStyle().Width(contentW)
-
-		// Dashed separator: exactly contentW chars so the line matches innerWidth.
-		hunkSep := strings.Repeat("- ", contentW/2) + strings.Repeat("-", contentW%2)
-		hunkSepLine := borderSt.Render("│") + " " + hunkSepSt.Render(hunkSep) + " " + borderSt.Render("│")
-
-		bottomBorder := borderSt.Render("╰" + strings.Repeat("─", innerWidth-2) + "╯")
-
-		var allLines []string
-
-		for _, f := range m.diffHunkFiles {
-			icon := IconModified
-			if f.isNewFile {
-				icon = IconNewFile
-			}
-			addStr := DiffAddedStyle.Render(fmt.Sprintf("+%d", f.added))
-			rmStr := StatWorkingStyle.Render(fmt.Sprintf("-%d", f.removed))
-
-			// Top border with embedded filename + stats
-			titleRaw := fmt.Sprintf("%s %s  %s %s", icon, f.name, addStr, rmStr)
-			titleVisLen := ansi.StringWidth(titleRaw)
-			fill := innerWidth - titleVisLen - 5
-			if fill < 0 {
-				fill = 0
-			}
-			topBorder := borderSt.Render("╭─") + " " + titleRaw + " " + borderSt.Render(strings.Repeat("─", fill)+"╮")
-			allLines = append(allLines, topBorder)
-
-			gutterW := 4 // "123 " = 3 digits + 1 space
-			gutterSt := lipgloss.NewStyle().Foreground(ColorMuted)
-
-			wrapLine := func(dl string) string {
-				return borderSt.Render("│") + " " + rowSt.Render(dl) + " " + borderSt.Render("│")
-			}
-			// Symbols rendered with bg+fg combined so the full line bg doesn't get
-			// killed by the symbol's ANSI reset mid-line.
-			addSym := DiffAddBg.Inherit(DiffAddSymbol).Render("+ ")
-			delSym := DiffDelBg.Inherit(DiffDelSymbol).Render("- ")
-			bodyW := contentW - 2 - gutterW // symbol(2) + gutter
-
-			wrapTyped := func(dl diffLine) string {
-				gutter := gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
-				switch dl.kind {
-				case '+':
-					body := DiffAddBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
-					return borderSt.Render("│") + " " + gutter + addSym + body + " " + borderSt.Render("│")
-				case '-':
-					body := DiffDelBg.Width(bodyW).Render(ansi.Truncate(dl.text, bodyW, "…"))
-					return borderSt.Render("│") + " " + gutter + delSym + body + " " + borderSt.Render("│")
-				default:
-					gutter = gutterSt.Render(fmt.Sprintf("%3d ", dl.lineNum))
-					return wrapLine(gutter + dl.text)
-				}
-			}
-
-			for hi, h := range f.hunks {
-				if hi > 0 {
-					allLines = append(allLines, hunkSepLine)
-				}
-				hl := f.highlights[hi]
-				if h.IsWrite {
-					rawLines := strings.Split(h.NewString, "\n")
-					lineNum := 1
-					for i, line := range hl.new {
-						raw := ""
-						if i < len(rawLines) {
-							raw = rawLines[i]
-						}
-						if strings.TrimSpace(raw) == "" {
-							lineNum++
-							continue
-						}
-						allLines = append(allLines, wrapTyped(diffLine{text: line, kind: '+', lineNum: lineNum}))
-						lineNum++
-					}
-				} else {
-					dls := renderInlineDiff(h.OldString, h.NewString, contentW-gutterW, simThreshold)
-					for i, dl := range dls {
-						switch dl.kind {
-						case '-':
-							if dl.lineNum > 0 && dl.lineNum-1 < len(hl.old) {
-								dls[i].text = hl.old[dl.lineNum-1]
-							}
-						case '+':
-							if dl.lineNum > 0 && dl.lineNum-1 < len(hl.new) {
-								dls[i].text = hl.new[dl.lineNum-1]
-							}
-						}
-					}
-					for _, dl := range dls {
-						allLines = append(allLines, wrapTyped(dl))
-					}
-				}
-			}
-
-			allLines = append(allLines, bottomBorder)
-			allLines = append(allLines, "")
-		}
+		allLines := m.buildDiffAllLines(width)
 
 		// Line-based scroll
 		scrollIdx := m.diffScroll
