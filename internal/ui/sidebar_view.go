@@ -6,6 +6,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -183,36 +184,54 @@ func (m *SidebarModel) View() string {
 		lines = append(lines, ItemDetailStyle.Render("    All clear"))
 	}
 
-	// Pin collapsed section badges at the bottom (clauding, later, and/or backlog when hidden)
-	claudingCount := m.claudingCount // cached by applyNarrow; non-zero only when !claudingExpanded
-	laterCount := m.laterCount       // cached by applyNarrow; non-zero only when !laterExpanded
-	backlogCount := 0
-	if !m.backlogExpanded {
-		backlogCount = len(m.backlogs)
-	}
-	if (claudingCount > 0 || laterCount > 0 || backlogCount > 0) && m.height > 0 {
-		var parts []string
-		if claudingCount > 0 {
-			parts = append(parts, GroupHeaderWorkingStyle.Render(fmt.Sprintf("%s CLAUDING (%d)", IconWand, claudingCount)))
+	// Compose the bottom-pinned region: pulse (if cached) above the collapsed
+	// section badges (if any). Badges have higher priority than the pulse body
+	// — if the sidebar is too short to fit both, the pulse tail is sacrificed
+	// first so the badges stay visible at the floor. All accounting is in
+	// visual rows (lipgloss.Height) because a single session entry can render
+	// as multiple terminal lines via wrapped subtitles.
+	pulseRows := m.pulseBlock()
+	badgesRows := m.collapsedBadgesBlock()
+
+	if m.height > 0 && (len(pulseRows) > 0 || len(badgesRows) > 0) {
+		badgesH := visualHeight(badgesRows)
+		pulseRoom := m.height - badgesH
+		if pulseRoom < 0 {
+			pulseRoom = 0
 		}
-		if laterCount > 0 {
-			parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconLater, laterCount)))
+		// Truncate pulse rows by visual height, not entry count.
+		pulseRows = truncateToVisualBudget(pulseRows, pulseRoom)
+
+		pinned := append([]string{}, pulseRows...)
+		pinned = append(pinned, badgesRows...)
+
+		pinnedH := visualHeight(pinned)
+		upperBudget := m.height - pinnedH
+		if upperBudget < 0 {
+			upperBudget = 0
 		}
-		if backlogCount > 0 {
-			parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
+
+		// Walk session lines in entry order, keeping them while visual budget
+		// holds; drop the rest from the bottom so pinned content stays on screen.
+		visual := 0
+		cutAt := len(lines)
+		for i, l := range lines {
+			h := lipgloss.Height(l)
+			if visual+h > upperBudget {
+				cutAt = i
+				break
+			}
+			visual += h
 		}
-		separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
-		collapsedHeader := strings.Join(parts, " ")
-		needed := 2 // separator + header line
-		visualLines := 0
-		for _, line := range lines {
-			visualLines += lipgloss.Height(line)
-		}
-		for visualLines < m.height-needed {
+		lines = lines[:cutAt]
+
+		// Pad blank lines until the pinned region floats to the floor.
+		for visual < upperBudget {
 			lines = append(lines, "")
-			visualLines++
+			visual++
 		}
-		lines = append(lines, separator, collapsedHeader)
+
+		lines = append(lines, pinned...)
 	}
 
 	// Truncate to fit available height
@@ -221,6 +240,98 @@ func (m *SidebarModel) View() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// visualHeight sums lipgloss.Height across a slice of rendered lines. A single
+// entry may span multiple terminal rows (e.g. a session row with a wrapped
+// subtitle), so entry count is not the same as visual height.
+func visualHeight(rows []string) int {
+	total := 0
+	for _, r := range rows {
+		total += lipgloss.Height(r)
+	}
+	return total
+}
+
+// truncateToVisualBudget drops trailing entries until the cumulative visual
+// height fits within budget. An entry that doesn't fit at all is dropped
+// whole — partial-entry truncation would corrupt styling.
+func truncateToVisualBudget(rows []string, budget int) []string {
+	if budget <= 0 {
+		return nil
+	}
+	visual := 0
+	for i, r := range rows {
+		h := lipgloss.Height(r)
+		if visual+h > budget {
+			return rows[:i]
+		}
+		visual += h
+	}
+	return rows
+}
+
+// pulseBlock returns the pulse rows to pin near the bottom of the sidebar: a
+// separator, a dim "pulse · <age>" header, and the prose summary wrapped to
+// sidebar width. Returns nil when no pulse is cached. The summary text is
+// italicized once the pulse is older than an hour so stale state is visually
+// demoted without disappearing.
+func (m *SidebarModel) pulseBlock() []string {
+	if m.width <= 0 || m.height <= 0 {
+		return nil
+	}
+	pulse := claude.ReadCachedPulse()
+	if pulse == nil {
+		return nil
+	}
+	summary := strings.TrimSpace(pulse.Summary)
+	if summary == "" {
+		return nil
+	}
+	age := time.Since(pulse.GeneratedAt)
+	label := PulseHeaderStyle.Render(IconPulse + " pulse")
+	timestamp := ItemDetailStyle.Render(" · " + FormatAge(pulse.GeneratedAt) + " ago")
+	header := " " + label + timestamp
+
+	bodyStyle := ItemDetailStyle.Width(m.width).PaddingLeft(1)
+	if age > time.Hour {
+		bodyStyle = bodyStyle.Italic(true)
+	}
+	body := bodyStyle.Render(summary)
+	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
+	out := []string{separator, header}
+	out = append(out, strings.Split(body, "\n")...)
+	return out
+}
+
+// collapsedBadgesBlock returns the inline "CLAUDING / LATER / BACKLOG (n)"
+// badges to pin to the floor of the sidebar. Returns nil when no sections
+// are collapsed.
+func (m *SidebarModel) collapsedBadgesBlock() []string {
+	if m.height <= 0 {
+		return nil
+	}
+	claudingCount := m.claudingCount
+	laterCount := m.laterCount
+	backlogCount := 0
+	if !m.backlogExpanded {
+		backlogCount = len(m.backlogs)
+	}
+	if claudingCount == 0 && laterCount == 0 && backlogCount == 0 {
+		return nil
+	}
+	var parts []string
+	if claudingCount > 0 {
+		parts = append(parts, GroupHeaderWorkingStyle.Render(fmt.Sprintf("%s CLAUDING (%d)", IconWand, claudingCount)))
+	}
+	if laterCount > 0 {
+		parts = append(parts, GroupHeaderLaterStyle.Render(fmt.Sprintf("%s LATER (%d)", IconLater, laterCount)))
+	}
+	if backlogCount > 0 {
+		parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
+	}
+	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
+	return []string{separator, strings.Join(parts, " ")}
 }
 
 // projectLabel builds the "🐾 name [🚩]" string shared by all project headers.

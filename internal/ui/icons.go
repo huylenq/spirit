@@ -5,6 +5,7 @@ const (
 	IconBolt        = "\U000f0242" // nf-md-flash_auto — autojump ON
 	IconBoltOutline = "\U000f06d5" // nf-md-flash_outline — autojump OFF
 	IconWand        = "\uf0d0"     // nf-fa-magic — agent-turn (clauding)
+	IconPulse       = "\uf21e"     // nf-fa-heartbeat — pulse header
 	IconFlag        = "\uf024"     // flag — item flag marker
 	IconHandRaise   = "\uf256"     // nf-fa-hand_o_up — user-turn / needs attention
 	IconLater       = "\uf02e"     // nf-fa-bookmark — later

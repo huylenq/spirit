@@ -13,7 +13,7 @@ import (
 
 const (
 	SynthKindSummary = "summary"
-	SynthKindDigest  = "digest"
+	SynthKindPulse   = "pulse"
 )
 
 // SynthCall is a single synthesizer invocation record, written to the usage log.

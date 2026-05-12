@@ -70,8 +70,8 @@ type Daemon struct {
 	overlaps     []claude.FileOverlap
 	overlapPanes map[string]bool // paneIDs involved in any file overlap
 
-	digestMu       sync.Mutex
-	lastDigestTime time.Time
+	pulseMu       sync.Mutex
+	lastPulseTime time.Time
 
 	orchestratorMu  sync.RWMutex
 	orchestratorIDs map[string]bool // session IDs to exclude from eval sessions()

@@ -50,12 +50,29 @@ func readLightweightConfig() lightweightConfig {
 // backend (local Ollama or claude CLI). In "auto" mode, prefers local when
 // reachable and silently falls through to claude on any local error.
 func LightweightJSON(systemPrompt, userPrompt string) (string, error) {
+	return lightweightCall(systemPrompt, userPrompt, true)
+}
+
+// LightweightText is the plaintext counterpart of LightweightJSON. The local
+// backend skips Ollama's format:"json" constraint; the claude CLI fallback is
+// unchanged (the system prompt alone steers output shape there).
+func LightweightText(systemPrompt, userPrompt string) (string, error) {
+	return lightweightCall(systemPrompt, userPrompt, false)
+}
+
+func lightweightCall(systemPrompt, userPrompt string, jsonMode bool) (string, error) {
 	cfg := readLightweightConfig()
 	useLocal := cfg.Backend == "local" ||
 		(cfg.Backend != "claude" && localBackendReachable(cfg.LocalURL))
 
 	if useLocal {
-		out, err := localGenerateJSON(cfg.LocalURL, cfg.LocalModel, systemPrompt, userPrompt)
+		var out string
+		var err error
+		if jsonMode {
+			out, err = localGenerateJSON(cfg.LocalURL, cfg.LocalModel, systemPrompt, userPrompt)
+		} else {
+			out, err = localGenerateText(cfg.LocalURL, cfg.LocalModel, systemPrompt, userPrompt)
+		}
 		if err == nil {
 			return out, nil
 		}

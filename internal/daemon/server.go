@@ -138,8 +138,8 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqKill:
 		return d.handleKill(req.Data)
 
-	case ReqDigest:
-		return d.handleDigest()
+	case ReqPulse:
+		return d.handlePulse()
 
 	case ReqApplyTitle:
 		return d.handleApplyTitle(req.Data)

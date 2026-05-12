@@ -39,6 +39,7 @@ var (
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
 	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#eab308"} // yellow — file overlap warning
 	ColorAutoJump    = lipgloss.AdaptiveColor{Light: "#a16207", Dark: "#fde047"} // yellow — autojump active
+	ColorPulse       = lipgloss.AdaptiveColor{Light: "#e11d48", Dark: "#fb7185"} // rose — pulse / heartbeat
 
 	// Border frame (custom TUI outline)
 	BorderCharStyle  = lipgloss.NewStyle().Foreground(ColorBorder)
@@ -78,6 +79,7 @@ var (
 	GroupHeaderLaterStyle   = GroupHeaderStyle.Foreground(ColorLater)
 	GroupHeaderBacklogStyle = GroupHeaderStyle.Foreground(ColorBacklog)
 	GroupHeaderProjectStyle = GroupHeaderStyle.Foreground(ColorMuted)
+	PulseHeaderStyle        = lipgloss.NewStyle().Foreground(ColorPulse).Bold(true)
 	ProjectSubHeaderStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
 	// List items

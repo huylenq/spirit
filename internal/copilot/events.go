@@ -17,7 +17,7 @@ const (
 	EventGitCommit          CopilotEventType = "git_commit"
 	EventFileOverlap        CopilotEventType = "file_overlap"
 	EventSynthesized        CopilotEventType = "synthesized"
-	EventDigestGenerated    CopilotEventType = "digest_generated"
+	EventPulseGenerated     CopilotEventType = "pulse_generated"
 	EventSkillInvoked       CopilotEventType = "skill_invoked"
 	EventSessionMarkedLater CopilotEventType = "session_marked_later"
 	EventHeartbeat          CopilotEventType = "heartbeat"

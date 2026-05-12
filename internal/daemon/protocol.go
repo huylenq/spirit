@@ -57,7 +57,7 @@ const (
 	ReqSend                   = "send"
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
-	ReqDigest                 = "digest"
+	ReqPulse                  = "pulse"
 	ReqApplyTitle             = "apply_title"
 	ReqSetTags                = "set_tags"
 	ReqSetNote                = "set_note"
@@ -250,8 +250,8 @@ type SpawnResultData struct {
 	PaneID    string `json:"paneID"`
 }
 
-type DigestData struct {
-	Digest *claude.WorkspaceDigest `json:"digest"`
+type PulseData struct {
+	Pulse *claude.Pulse `json:"pulse"`
 }
 
 type SetTagsData struct {

@@ -106,9 +106,9 @@ func (d *Daemon) handleSetNote(data json.RawMessage) *Response {
 	return &r
 }
 
-func (d *Daemon) handleDigest() *Response {
-	digest := claude.ReadCachedDigest()
-	r := resultResponse(DigestData{Digest: digest})
+func (d *Daemon) handlePulse() *Response {
+	pulse := claude.ReadCachedPulse()
+	r := resultResponse(PulseData{Pulse: pulse})
 	return &r
 }
 

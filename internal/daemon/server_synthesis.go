@@ -116,8 +116,8 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 	}
 	wg.Wait()
 
-	// Trigger digest after batch synthesis
-	go d.triggerDigest()
+	// Trigger pulse after batch synthesis
+	go d.triggerPulse()
 
 	r := resultResponse(SynthesizeAllResultData{Results: results})
 	return &r

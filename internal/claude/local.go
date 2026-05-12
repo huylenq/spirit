@@ -37,10 +37,28 @@ type localChatResponse struct {
 // timeouts come from request contexts.
 var localHTTP = &http.Client{}
 
+// Ollama /api/chat `format` values. Empty string means unconstrained output
+// (free-form prose); "json" forces parseable JSON. Kept as named constants so
+// call sites don't litter magic strings.
+const (
+	localFormatText = ""
+	localFormatJSON = "json"
+)
+
 // localGenerateJSON sends a JSON-mode chat request to a local Ollama-compatible
 // endpoint and returns the assistant content. Uses /api/chat with think:false
 // and format:"json" so Qwen3-family models skip reasoning and emit parseable JSON.
 func localGenerateJSON(url, model, systemPrompt, userPrompt string) (string, error) {
+	return localGenerate(url, model, systemPrompt, userPrompt, localFormatJSON)
+}
+
+// localGenerateText is the plain-text counterpart of localGenerateJSON — same
+// chat endpoint, no format constraint, so the model emits free-form prose.
+func localGenerateText(url, model, systemPrompt, userPrompt string) (string, error) {
+	return localGenerate(url, model, systemPrompt, userPrompt, localFormatText)
+}
+
+func localGenerate(url, model, systemPrompt, userPrompt, format string) (string, error) {
 	req := localChatRequest{
 		Model: model,
 		Messages: []localChatMessage{
@@ -49,7 +67,7 @@ func localGenerateJSON(url, model, systemPrompt, userPrompt string) (string, err
 		},
 		Stream:  false,
 		Think:   false,
-		Format:  "json",
+		Format:  format,
 		Options: map[string]interface{}{"temperature": 0.3},
 	}
 	body, err := json.Marshal(req)

@@ -385,11 +385,11 @@ func (c *Client) UnregisterOrchestrator(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqUnregisterOrchestrator, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
 }
 
-// Digest fetches the cached workspace digest.
-func (c *Client) Digest() (*claude.WorkspaceDigest, error) {
-	var data DigestData
-	err := c.rpcInto(Request{Type: ReqDigest}, &data)
-	return data.Digest, err
+// Pulse fetches the cached pulse — a snapshot summary across all sessions.
+func (c *Client) Pulse() (*claude.Pulse, error) {
+	var data PulseData
+	err := c.rpcInto(Request{Type: ReqPulse}, &data)
+	return data.Pulse, err
 }
 
 // SetTags updates the tags for a session (persisted and broadcast to subscribers).

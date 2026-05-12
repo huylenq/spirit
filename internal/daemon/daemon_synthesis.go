@@ -70,32 +70,32 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 	// the user's input buffer. The SynthesizedTitle will appear in the TUI on the
 	// next poll cycle via DiscoverSessions → ReadCachedSummary.
 
-	// Trigger digest regeneration after synthesis
-	go d.triggerDigest()
+	// Trigger pulse regeneration after synthesis
+	go d.triggerPulse()
 }
 
-// triggerDigest regenerates the workspace digest after synthesis.
+// triggerPulse regenerates the workspace pulse after synthesis.
 // Uses TryLock to prevent overlap.
-func (d *Daemon) triggerDigest() {
-	if !d.digestMu.TryLock() {
+func (d *Daemon) triggerPulse() {
+	if !d.pulseMu.TryLock() {
 		return
 	}
-	defer d.digestMu.Unlock()
+	defer d.pulseMu.Unlock()
 
-	// Debounce: skip if last digest was < 60s ago
-	if time.Since(d.lastDigestTime) < 60*time.Second {
+	// Debounce: skip if last pulse was < 60s ago
+	if time.Since(d.lastPulseTime) < 60*time.Second {
 		return
 	}
 
 	sessions := d.currentSessions()
-	_, err := claude.GenerateDigest(sessions)
+	_, err := claude.GeneratePulse(sessions)
 	if err != nil {
-		log.Printf("digest: %v", err)
+		log.Printf("pulse: %v", err)
 		return
 	}
-	d.lastDigestTime = time.Now()
+	d.lastPulseTime = time.Now()
 
-	// Bump version so subscribers receive digest update
+	// Bump version so subscribers receive pulse update
 	d.mu.Lock()
 	d.version++
 	s := d.sessions

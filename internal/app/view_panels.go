@@ -147,16 +147,16 @@ func (m Model) renderSynthesizeDebugPanel() string {
 	}
 	lines = append(lines, line("AutoSynth", autoSynth))
 
-	// Digest cache
-	digest := claude.ReadCachedDigest()
-	if digest != nil {
-		lines = append(lines, line("DigestAt", digest.GeneratedAt.Format("15:04:05")))
-		lines = append(lines, line("DigestSessions", fmt.Sprintf("%d", digest.SessionCount)))
-		lines = append(lines, line("DigestFiles", fmt.Sprintf("%d", digest.FileCount)))
-		summary := debugTruncate(digest.Summary, 50)
-		lines = append(lines, line("Digest", summary))
+	// Pulse cache
+	pulse := claude.ReadCachedPulse()
+	if pulse != nil {
+		lines = append(lines, line("PulseAt", pulse.GeneratedAt.Format("15:04:05")))
+		lines = append(lines, line("PulseSessions", fmt.Sprintf("%d", pulse.SessionCount)))
+		lines = append(lines, line("PulseFiles", fmt.Sprintf("%d", pulse.FileCount)))
+		summary := debugTruncate(pulse.Summary, 50)
+		lines = append(lines, line("Pulse", summary))
 	} else {
-		lines = append(lines, line("Digest", "(none)"))
+		lines = append(lines, line("Pulse", "(none)"))
 	}
 
 	// Synthesizer usage stats
