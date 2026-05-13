@@ -14,37 +14,26 @@ import (
 // commitCmd is the slash command sent to Claude Code to trigger a git commit.
 const commitCmd = "/commit-commands:commit your changes, constraint to involved files on this session"
 
-func (d *Daemon) handleCommit(data json.RawMessage, killOnDone, runSimplify bool) *Response {
+func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	var req CommitDoneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
-	var firstCmd string
-	var tag string
-	if runSimplify {
-		// simplify → commit → kill: send /simplify first
-		firstCmd = "/simplify"
-		tag = "simplify-commit-done"
-	} else {
-		firstCmd = commitCmd
-		if killOnDone {
-			tag = "commit-done"
-		} else {
-			tag = "commit"
-		}
+	tag := "commit"
+	if killOnDone {
+		tag = "commit-done"
 	}
-	if err := tmux.SendKeysLiteral(req.PaneID, firstCmd); err != nil {
+	if err := tmux.SendKeysLiteral(req.PaneID, commitCmd); err != nil {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
 	d.commitDoneMu.Lock()
 	d.commitDonePanes[req.SessionID] = commitDoneEntry{
-		PaneID:        req.PaneID,
-		PID:           req.PID,
-		KillOnDone:    killOnDone,
-		SimplifyPhase: runSimplify, // true = waiting for /simplify; false = waiting for commit
-		CreatedAt:     time.Now(),
+		PaneID:     req.PaneID,
+		PID:        req.PID,
+		KillOnDone: killOnDone,
+		CreatedAt:  time.Now(),
 	}
 	d.commitDoneMu.Unlock()
 	d.nudge()

@@ -12,7 +12,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	bindings := []key.Binding{
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.RenamePrompt, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
-		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit, k.CommitAndDone, k.CommitSimplifyAndDone,
+		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit,
 		k.JumpBack, k.Note, k.FocusMode, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
@@ -35,7 +35,10 @@ type KeyMap struct {
 	Down           key.Binding
 	Enter          key.Binding
 	CtrlEnter      key.Binding
-	Search         key.Binding
+	Search            key.Binding
+	SearchProject     key.Binding
+	ProjectCycleNext  key.Binding
+	ProjectCyclePrev  key.Binding
 	Later          key.Binding
 	LaterKill      key.Binding
 	LaterToggle    key.Binding
@@ -95,12 +98,6 @@ type KeyMap struct {
 
 	// Commit only (send /commit, wait, no kill)
 	Commit key.Binding
-
-	// Commit and done (send /commit, wait, verify, kill)
-	CommitAndDone key.Binding
-
-	// Commit, simplify, and done (send /commit, then /simplify, then kill)
-	CommitSimplifyAndDone key.Binding
 
 	// Debug overlay toggle
 	Debug key.Binding
@@ -297,6 +294,18 @@ var Keys = KeyMap{
 		key.WithKeys("/"),
 		key.WithHelp("/", "search"),
 	),
+	SearchProject: key.NewBinding(
+		key.WithKeys("p"),
+		key.WithHelp("p", "filter project"),
+	),
+	ProjectCycleNext: key.NewBinding(
+		key.WithKeys("alt+]"),
+		key.WithHelp("alt+]", "next project"),
+	),
+	ProjectCyclePrev: key.NewBinding(
+		key.WithKeys("alt+["),
+		key.WithHelp("alt+[", "prev project"),
+	),
 	Later: key.NewBinding(
 		key.WithKeys("w"),
 		key.WithHelp("w", "later"),
@@ -431,14 +440,6 @@ var Keys = KeyMap{
 	Commit: key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "commit"),
-	),
-	CommitAndDone: key.NewBinding(
-		key.WithKeys("C"),
-		key.WithHelp("C", "commit+done"),
-	),
-	CommitSimplifyAndDone: key.NewBinding(
-		key.WithKeys("D"),
-		key.WithHelp("D", "commit+simplify+done"),
 	),
 	Debug: key.NewBinding(
 		key.WithKeys("alt+d"),

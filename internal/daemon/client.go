@@ -314,11 +314,6 @@ func (c *Client) CommitAndDone(paneID, sessionID string, pid int) error {
 	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
 }
 
-// CommitSimplifyAndDone sends /commit, then /simplify, then kills the pane when both finish.
-func (c *Client) CommitSimplifyAndDone(paneID, sessionID string, pid int) error {
-	return c.rpcInto(Request{Type: ReqCommitSimplifyDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
-}
-
 // CancelCommitDone removes the pending commit-and-done registration for a session.
 func (c *Client) CancelCommitDone(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)

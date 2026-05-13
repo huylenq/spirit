@@ -34,6 +34,7 @@ func registerAllAPIs(L *lua.LState, deps Deps) {
 	L.SetGlobal("backlog_list", L.NewFunction(luaBacklogList(deps)))
 	L.SetGlobal("backlog_update", L.NewFunction(luaBacklogUpdate(deps)))
 	L.SetGlobal("selected", L.NewFunction(luaSelected(deps)))
+	L.SetGlobal("auto_jump", L.NewFunction(luaAutoJump(deps)))
 	L.SetGlobal("flash", L.NewFunction(luaFlash(deps)))
 	L.SetGlobal("log", L.NewFunction(luaLog(deps)))
 	L.SetGlobal("sleep", L.NewFunction(luaSleep(deps)))

@@ -16,6 +16,8 @@ make clean    # remove bin/
 
 **Always run `make` (not `make build`) after code changes** — it builds AND restarts the daemon so changes take effect.
 
+`make` output is short (≤4 lines on success). Do not pipe through `tail -N` for any N≥4 — the pipe blocks waiting for more lines that never arrive and the command hangs. Just run `make` plainly and read the full output.
+
 Binary output: `bin/spirit`
 
 ## Subcommands

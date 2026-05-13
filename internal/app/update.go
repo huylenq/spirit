@@ -285,9 +285,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, t := range msg.Msgs.Toasts {
 			cmds = append(cmds, m.toast(t, false))
 		}
+		if msg.Msgs.AutoJumpSkipPane != "" {
+			cmds = append(cmds, m.autoJump(msg.Msgs.AutoJumpSkipPane)...)
+		}
 		if msg.Err != nil {
 			cmds = append(cmds, m.setFlash("lua: "+msg.Err.Error(), true, 10*time.Second))
-		} else {
+		} else if len(msg.Msgs.Flashes) == 0 && len(msg.Msgs.Toasts) == 0 {
+			// Suppress the default "lua: <result>" notice when the script already
+			// emitted its own flash/toast — a generic "ok" would just drown them.
 			result := msg.Result
 			if result == "" {
 				result = "ok"

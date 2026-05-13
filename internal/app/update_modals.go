@@ -12,8 +12,21 @@ import (
 
 func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
+	case msg.Type == tea.KeyTab:
+		m.search.SetCandidates(m.orderedProjectCandidates())
+		m.search.PopoverAdvance(+1)
+		m.sidebar.SetNarrow(m.search.Value())
+		return m, nil
+	case msg.Type == tea.KeyShiftTab:
+		m.search.SetCandidates(m.orderedProjectCandidates())
+		m.search.PopoverAdvance(-1)
+		m.sidebar.SetNarrow(m.search.Value())
+		return m, nil
 	case key.Matches(msg, Keys.Escape), key.Matches(msg, Keys.Enter):
-		m.search.Confirm()
+		raw := m.search.Confirm()
+		if name := extractProjectFilter(raw); name != "" {
+			m.recordProjectFilter(name)
+		}
 		m.state = StateNormal
 		// Remember selection, clear filter, re-select (search & jump)
 		ref := m.sidebar.CursorRef()
@@ -43,6 +56,8 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ti := m.search.TextInput()
 		newTI, cmd := ti.Update(msg)
 		*ti = newTI
+		m.search.NoteTyped()
+		m.search.SetCandidates(m.orderedProjectCandidates())
 		m.sidebar.SetNarrow(m.search.Value())
 		// Update preview for new selection
 		if s, ok := m.sidebar.SelectedItem(); ok {

@@ -432,6 +432,26 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.state = StateSearching
 		m.search.Activate()
+		m.search.SetCandidates(m.orderedProjectCandidates())
+		return m, nil
+
+	case key.Matches(msg, Keys.SearchProject):
+		m.recordJump()
+		if m.sidebar.SelectionLevel() == ui.LevelProject {
+			m.sidebar.EnterSessionLevel()
+		}
+		m.state = StateSearching
+		m.search.ActivateWith("p:")
+		m.search.NoteTyped()
+		m.search.SetCandidates(m.orderedProjectCandidates())
+		return m, nil
+
+	case key.Matches(msg, Keys.ProjectCycleNext):
+		m.cycleActiveProjectFilter(+1)
+		return m, nil
+
+	case key.Matches(msg, Keys.ProjectCyclePrev):
+		m.cycleActiveProjectFilter(-1)
 		return m, nil
 
 	case key.Matches(msg, Keys.Later):
@@ -605,46 +625,6 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return flashErrorMsg("commit failed: " + err.Error())
 				}
 				return flashInfoMsg("commit started")
-			}}
-			cmds = append(cmds, m.autoJump(s.PaneID)...)
-			return m, tea.Batch(cmds...)
-		}
-		return m, nil
-
-	case key.Matches(msg, Keys.CommitAndDone):
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			if s.Status != claude.StatusUserTurn {
-				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-			}
-			if s.CommitDonePending {
-				return m, func() tea.Msg { return flashInfoMsg("commit+done already pending") }
-			}
-			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-			cmds := []tea.Cmd{func() tea.Msg {
-				if err := m.client.CommitAndDone(paneID, sessionID, pid); err != nil {
-					return flashErrorMsg("commit+done failed: " + err.Error())
-				}
-				return flashInfoMsg("commit+done started")
-			}}
-			cmds = append(cmds, m.autoJump(s.PaneID)...)
-			return m, tea.Batch(cmds...)
-		}
-		return m, nil
-
-	case key.Matches(msg, Keys.CommitSimplifyAndDone):
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			if s.Status != claude.StatusUserTurn {
-				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-			}
-			if s.CommitDonePending {
-				return m, func() tea.Msg { return flashInfoMsg("commit+simplify+done already pending") }
-			}
-			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-			cmds := []tea.Cmd{func() tea.Msg {
-				if err := m.client.CommitSimplifyAndDone(paneID, sessionID, pid); err != nil {
-					return flashErrorMsg("commit+simplify+done failed: " + err.Error())
-				}
-				return flashInfoMsg("commit+simplify+done started")
 			}}
 			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)

@@ -1,13 +1,17 @@
 package scripting
 
 import (
+	"fmt"
+
 	"github.com/huylenq/spirit/internal/claude"
 	lua "github.com/yuin/gopher-lua"
 )
 
 // send(id, msg, [{wait, timeout}])
 // Category: Send & Wait
-// Send message to session's tmux pane. Options: wait="idle"|"working", timeout=N.
+// Send message to session's tmux pane. Options: wait="idle"|"working"|"cycle", timeout=N.
+// "cycle" waits until the session enters working then returns to idle (guards against
+// pre-work false-idle right after sending a slash command).
 func luaSend(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
@@ -28,18 +32,7 @@ func luaSend(deps Deps) lua.LGFunction {
 					timeout = int(lua.LVAsNumber(t))
 				}
 
-				var target claude.Status
-				switch waitFor.String() {
-				case "idle":
-					target = claude.StatusUserTurn
-				case "working":
-					target = claude.StatusAgentTurn
-				default:
-					L.RaiseError("send: invalid wait value %q (expected \"idle\" or \"working\")", waitFor.String())
-					return 0
-				}
-
-				s, err := pollUntilStatus(deps.Client, id, target, timeout)
+				s, err := waitForMode(deps, id, waitFor.String(), timeout)
 				if err != nil {
 					L.RaiseError("send wait: %v", err)
 					return 0
@@ -50,6 +43,26 @@ func luaSend(deps Deps) lua.LGFunction {
 		}
 
 		return 0
+	}
+}
+
+// Wait modes accepted by send()/wait() — the Lua-visible vocabulary.
+const (
+	waitModeIdle    = "idle"
+	waitModeWorking = "working"
+	waitModeCycle   = "cycle"
+)
+
+func waitForMode(deps Deps, sessionID, mode string, timeoutSecs int) (*claude.ClaudeSession, error) {
+	switch mode {
+	case waitModeIdle:
+		return pollUntilStatus(deps.Client, sessionID, claude.StatusUserTurn, timeoutSecs)
+	case waitModeWorking:
+		return pollUntilStatus(deps.Client, sessionID, claude.StatusAgentTurn, timeoutSecs)
+	case waitModeCycle:
+		return pollUntilCycle(deps.Client, sessionID, timeoutSecs)
+	default:
+		return nil, fmt.Errorf("invalid wait value %q (expected %q, %q, or %q)", mode, waitModeIdle, waitModeWorking, waitModeCycle)
 	}
 }
 

@@ -1,11 +1,54 @@
 package claude
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
+
+//go:embed builtin_macros/*.lua
+var builtinMacroFS embed.FS
+
+var (
+	builtinMacrosOnce   sync.Once
+	builtinMacrosCached []Macro
+)
+
+// BuiltinMacros returns the macros embedded in the binary at build time.
+// Filename stem (e.g. "C" for "C.lua") is used as the key fallback if the
+// "-- key:" header is missing. Result is computed once and cached.
+func BuiltinMacros() []Macro {
+	builtinMacrosOnce.Do(func() {
+		entries, err := builtinMacroFS.ReadDir("builtin_macros")
+		if err != nil {
+			return
+		}
+		out := make([]Macro, 0, len(entries))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".lua") {
+				continue
+			}
+			data, err := builtinMacroFS.ReadFile("builtin_macros/" + e.Name())
+			if err != nil {
+				continue
+			}
+			script := string(data)
+			key, name, _ := ParseMacroHeader(script)
+			if key == "" {
+				key = strings.TrimSuffix(e.Name(), ".lua")
+			}
+			if name == "" {
+				name = key
+			}
+			out = append(out, Macro{Key: key, Name: name, Script: script, BuiltIn: true})
+		}
+		builtinMacrosCached = out
+	})
+	return builtinMacrosCached
+}
 
 // Macro represents a runnable Lua macro with a single-key trigger.
 type Macro struct {
@@ -27,7 +70,11 @@ func MacroFilePath(key string) string {
 
 // LoadMacros reads user macros from disk and merges with built-ins.
 // User macros override built-ins with the same key.
+// If builtins is nil, the embedded built-in macros are used.
 func LoadMacros(builtins []Macro) []Macro {
+	if builtins == nil {
+		builtins = BuiltinMacros()
+	}
 	byKey := make(map[string]Macro)
 	for _, m := range builtins {
 		byKey[m.Key] = m

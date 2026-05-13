@@ -13,6 +13,18 @@ func promptEditorTitle(color lipgloss.TerminalColor) lipgloss.Style {
 	return lipgloss.NewStyle().Bold(true).Foreground(color)
 }
 
+// mutedColor returns an inactive variant of an adaptive section color by
+// blending each channel ~60% toward the border-gray tone. The hue stays
+// recognizable but the chroma drops far enough that the muted variant reads
+// as "this section is not active" next to its full-color sibling.
+func mutedColor(c lipgloss.AdaptiveColor) lipgloss.AdaptiveColor {
+	const t = 0.6
+	return lipgloss.AdaptiveColor{
+		Light: blendHex(c.Light, ColorBorder.Light, t),
+		Dark:  blendHex(c.Dark, ColorBorder.Dark, t),
+	}
+}
+
 func copilotDocked(color lipgloss.TerminalColor) lipgloss.Style {
 	return lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
@@ -61,11 +73,9 @@ var (
 	OverlapStyle      = lipgloss.NewStyle().Foreground(ColorOverlap)
 	DriftStyle        = lipgloss.NewStyle().Foreground(ColorWorking) // amber — title needs /rename
 
-	// Sidebar panel
-	SidebarPanelStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderRight(true).
-				BorderForeground(ColorBorder)
+	// Sidebar panel — the right-edge separator is drawn as a per-row colored
+	// gutter inside sidebar.View(), so the panel itself has no border.
+	SidebarPanelStyle = lipgloss.NewStyle()
 
 	// Group headers in list
 	GroupHeaderStyle = lipgloss.NewStyle().
@@ -73,6 +83,15 @@ var (
 				Padding(0, 1)
 
 	ColorBacklog = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — backlog
+
+	// Muted section variants — blended ~60% toward ColorBorder so the section's
+	// hue is still recognizable but obviously inactive. Use these for outline
+	// (gutter + corners + section dashes) of sections that don't contain the
+	// currently-selected item.
+	ColorWorkingMuted = mutedColor(ColorWorking)
+	ColorDoneMuted    = mutedColor(ColorDone)
+	ColorLaterMuted   = mutedColor(ColorLater)
+	ColorBacklogMuted = mutedColor(ColorBacklog)
 
 	GroupHeaderWorkingStyle = GroupHeaderStyle.Foreground(ColorWorking)
 	GroupHeaderDoneStyle    = GroupHeaderStyle.Foreground(ColorDone)
@@ -126,6 +145,33 @@ var (
 	SearchPromptStyle = lipgloss.NewStyle().
 				Foreground(ColorAccent).
 				Bold(true)
+
+	// Search directive syntax highlighting (e.g. `p:lexicon`)
+	SearchDirectiveKeyStyle = lipgloss.NewStyle().
+				Foreground(ColorPulse).
+				Bold(true)
+	// Underline emitted manually as raw CSI 4:4 (dashed) in search.go;
+	// kept here as an identity style so the renderer's style-lookup stays uniform.
+	SearchDirectiveValStyle = lipgloss.NewStyle()
+
+	// Ghost autocompletion suffix in the search field (dim, faint).
+	SearchGhostStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Faint(true)
+
+	// IDE-style autocompletion popover for project search (borderless;
+	// background tint differentiates active vs. inactive rows).
+	SearchPopoverRowStyle = lipgloss.NewStyle().
+				Background(ColorSelectionBg)
+	SearchPopoverActiveRowStyle = lipgloss.NewStyle().
+					Background(ColorPulse).
+					Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"}).
+					Bold(true)
+	SearchPopoverDimStyle = lipgloss.NewStyle().
+				Background(ColorSelectionBg).
+				Foreground(ColorMuted).
+				Faint(true).
+				Align(lipgloss.Center)
 
 	// Relay (prompt relay input)
 	RelayPromptStyle = lipgloss.NewStyle().

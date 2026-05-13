@@ -177,6 +177,7 @@ type Model struct {
 	sidebar              ui.SidebarModel
 	detail               ui.DetailModel
 	search               ui.SearchModel
+	projectMRU           []string // recent project-filter values, most-recent first (cap 16)
 	relay                ui.RelayModel
 	queueRelay           ui.RelayModel
 	tagRelay             ui.RelayModel

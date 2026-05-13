@@ -330,6 +330,10 @@ func (m *SidebarModel) SetNarrow(f string) {
 	m.cursor = 0
 }
 
+func (m SidebarModel) Narrow() string {
+	return m.narrow
+}
+
 // parseSearchQuery splits a narrow string into a project-name filter (from
 // `p:<term>` tokens) and the remaining free-text query. Both returned values
 // are lowercased. Multiple `p:` tokens are joined with spaces.
@@ -360,6 +364,26 @@ func parseSearchQuery(s string) (project, text string) {
 func (m SidebarModel) searchTextQuery() string {
 	_, t := parseSearchQuery(m.narrow)
 	return t
+}
+
+func (m SidebarModel) searchProjectFilter() string {
+	p, _ := parseSearchQuery(m.narrow)
+	return p
+}
+
+// AllProjectNames returns unique project names across all sessions (preserves
+// first-seen order in m.items so the list is stable across renders).
+func (m SidebarModel) AllProjectNames() []string {
+	seen := make(map[string]bool, len(m.items))
+	out := make([]string, 0, len(m.items))
+	for _, s := range m.items {
+		if s.Project == "" || seen[s.Project] {
+			continue
+		}
+		seen[s.Project] = true
+		out = append(out, s.Project)
+	}
+	return out
 }
 
 func (m *SidebarModel) ClearNarrow() {

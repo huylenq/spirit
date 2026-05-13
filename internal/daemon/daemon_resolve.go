@@ -58,20 +58,6 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			}
 			continue
 		}
-		if entry.SimplifyPhase {
-			// /simplify just finished — now send commit and wait for it
-			log.Printf("simplify-commit-done: session %s simplify complete, sending commit", sessionID)
-			if err := tmux.SendKeysLiteral(s.PaneID, commitCmd); err != nil {
-				log.Printf("simplify-commit-done: commit send failed: %v, aborting", err)
-				delete(d.commitDonePanes, sessionID)
-				continue
-			}
-			entry.SimplifyPhase = false
-			entry.SawWorking = false
-			entry.CreatedAt = time.Now()
-			d.commitDonePanes[sessionID] = entry
-			continue
-		}
 		shouldKill := false
 		if s.LastActionCommit && entry.KillOnDone {
 			log.Printf("commit-done: session %s committed, killing pane %s", sessionID, s.PaneID)

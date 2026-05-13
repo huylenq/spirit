@@ -7,10 +7,12 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// Msgs carries messages emitted by flash() and toast() during Lua script execution.
+// Msgs carries messages emitted during Lua script execution that the TUI
+// applies after the script completes.
 type Msgs struct {
-	Flashes []string // each becomes a TUI footer flash (setFlash); CLI prints to stderr
-	Toasts  []string // each becomes a TUI toast overlay entry; CLI prints to stderr
+	Flashes          []string // each becomes a TUI footer flash (setFlash); CLI prints to stderr
+	Toasts           []string // each becomes a TUI toast overlay entry; CLI prints to stderr
+	AutoJumpSkipPane string   // if non-empty, TUI will autoJump past this pane ID
 }
 
 // sleep(seconds)
@@ -59,6 +61,19 @@ func luaToast(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		msg := L.CheckString(1)
 		deps.Msgs.Toasts = append(deps.Msgs.Toasts, msg)
+		return 0
+	}
+}
+
+// auto_jump(id)
+// Category: Utilities
+// Advance TUI selection past the given session (to the next idle/oldest).
+// Honors the autoJump pref. Takes effect after the script returns.
+func luaAutoJump(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
+		id := L.CheckString(1)
+		s := resolveSession(L, deps.Client, id)
+		deps.Msgs.AutoJumpSkipPane = s.PaneID
 		return 0
 	}
 }

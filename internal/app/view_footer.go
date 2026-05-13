@@ -58,7 +58,7 @@ func (m Model) renderNormalFooterHints() string {
 		switch s.Status {
 		case claude.StatusUserTurn:
 			if !s.CommitDonePending {
-				parts = append(parts, bhint(Keys.Commit), bhint(Keys.CommitAndDone), bhint(Keys.CommitSimplifyAndDone))
+				parts = append(parts, bhint(Keys.Commit))
 			}
 			parts = append(parts, bhint(Keys.Later), bhint(Keys.LaterKill))
 		case claude.StatusAgentTurn:
@@ -104,7 +104,6 @@ func (m Model) renderHelpOverlay() string {
 		bhint(Keys.SynthesizeAll),
 		bhint(Keys.Rename),
 		bhint(Keys.Commit),
-		bhint(Keys.CommitAndDone),
 		bhint(Keys.RenamePrompt),
 		bhint(Keys.ApplyTitle),
 	}, "\n")

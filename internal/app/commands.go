@@ -68,16 +68,6 @@ func buildCommands() []Command {
 			Enabled: canCommit,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommit() },
 		},
-		{
-			Name: "Commit + done", Binding: &Keys.CommitAndDone,
-			Enabled: canCommit,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitAndDone() },
-		},
-		{
-			Name: "Commit + simplify + done", Binding: &Keys.CommitSimplifyAndDone,
-			Enabled: canCommit,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommitSimplifyAndDone() },
-		},
 
 		{
 			Name: "New session", Binding: &Keys.NewSession,

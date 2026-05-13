@@ -17,8 +17,10 @@ session(id) -> session|nil
 sessions([{status}]) -> []session
   List active sessions. Optional filter: status="idle"|"working".
 
-wait(id, [{timeout}]) -> session
-  Block until session becomes idle. Default timeout 300s.
+wait(id, [{mode, timeout}]) -> session
+  Block until session reaches a state. mode="idle" (default), "working", or "cycle"
+  (waits for working then idle — useful right after sending a slash command).
+  Default timeout 300s.
 
 ### Send & Wait
 
@@ -29,7 +31,9 @@ queue(id, msg)
   Queue message for delivery when session becomes idle.
 
 send(id, msg, [{wait, timeout}])
-  Send message to session's tmux pane. Options: wait="idle"|"working", timeout=N.
+  Send message to session's tmux pane. Options: wait="idle"|"working"|"cycle", timeout=N.
+  "cycle" waits until the session enters working then returns to idle (guards against
+  pre-work false-idle right after sending a slash command).
 
 ### Lifecycle
 
@@ -113,6 +117,10 @@ selected() -> string|nil
   Return session ID currently selected in TUI. Returns nil from CLI.
 
 ### Utilities
+
+auto_jump(id)
+  Advance TUI selection past the given session (to the next idle/oldest).
+  Honors the autoJump pref. Takes effect after the script returns.
 
 flash(msg)
   Set TUI footer flash message. In CLI, prints to stderr.

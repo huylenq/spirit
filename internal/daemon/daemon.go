@@ -25,12 +25,11 @@ type subscriber struct {
 
 // commitDoneEntry tracks a pending commit operation (commit-only or commit-and-done).
 type commitDoneEntry struct {
-	PaneID        string
-	PID           int
-	SawWorking    bool      // true once the session has transitioned to agent-turn
-	KillOnDone    bool      // true for C/D (commit+done), false for c (commit only)
-	SimplifyPhase bool      // true while waiting for /simplify to finish (D flow); false = waiting for commit
-	CreatedAt     time.Time // when the entry was registered; used to expire stuck entries
+	PaneID     string
+	PID        int
+	SawWorking bool      // true once the session has transitioned to agent-turn
+	KillOnDone bool      // true for commit+done, false for commit-only
+	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
 }
 
 // pendingPromptEntry tracks a prompt to deliver to a newly spawned session.
