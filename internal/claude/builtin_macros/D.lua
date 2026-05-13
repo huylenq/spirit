@@ -1,5 +1,5 @@
 -- key: d
--- name: commit+simplify+done
+-- name: simplify+commit+done
 local id = selected()
 if not id or id == "" then
   flash("no session selected")
@@ -15,10 +15,10 @@ if s.status ~= "idle" then
   return
 end
 if s.commit_done_pending then
-  flash("commit+simplify+done already pending")
+  flash("simplify+commit+done already pending")
   return
 end
 auto_jump(id)
-flash("commit+simplify+done started")
+flash("simplify+commit+done started")
 send(id, "/simplify", { wait = "cycle" })
 commit_done(id)
