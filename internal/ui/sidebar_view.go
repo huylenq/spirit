@@ -40,6 +40,7 @@ func (m *SidebarModel) View() string {
 
 	dw := m.computeDiffColWidths()
 	query := m.searchTextQuery()
+	projectFilter := m.searchProjectFilter()
 
 	// Determine selected PaneID for cursor tracking across the full list
 	var selectedPaneID string
@@ -56,20 +57,81 @@ func (m *SidebarModel) View() string {
 	// Project-level selection
 	selectedProject, atProjectLevel := m.SelectedProject()
 
+	// activeOrder is the section that owns the current selection — its outline
+	// stays at full color; every other section's outline gets muted. -1 means
+	// nothing is selected, so no muting is applied.
+	//
+	// activeProject identifies the project header that should be drawn in the
+	// active variant (the project that contains the selected session/backlog).
+	// Zero value (Name=="") means no project-level highlight — also the case
+	// at project-level nav, where the cursor highlight already marks the row.
+	activeOrder := -1
+	var activeProject projectEntry
+	if !m.deselected {
+		if s, ok := m.SelectedItem(); ok {
+			activeOrder = sessionOrder(s)
+			if !atProjectLevel {
+				statusOrder := activeOrder
+				if m.groupByProject && statusOrder != OrderLater {
+					statusOrder = -1
+				}
+				activeProject = projectEntry{Name: s.Project, StatusOrder: statusOrder}
+			}
+		} else if b, ok := m.SelectedBacklog(); ok {
+			activeOrder = OrderBacklog
+			if !atProjectLevel {
+				activeProject = projectEntry{Name: b.Project, StatusOrder: OrderBacklog}
+			}
+		}
+	}
+
 	var lines []string
+	var kinds []gutterInfo
+	add := func(line string, g gutterInfo) {
+		lines = append(lines, line)
+		kinds = append(kinds, g)
+	}
+	mutedFor := func(order int) bool {
+		return activeOrder != -1 && order != -1 && order != activeOrder
+	}
+	addSeparator := func(order int) {
+		muted := mutedFor(order)
+		add(sectionSeparator(order, m.width, muted), gutterInfo{order: order, kind: kindBottom, muted: muted})
+	}
+	// Defensive: never emit the same section's top-border twice per render.
+	// If we ever do, it's a logic bug elsewhere (the loop's order-transition
+	// guard should already prevent re-entering a section) — but the symptom
+	// is a stacked duplicate header at the top of the sidebar that's visually
+	// catastrophic, so we hard-block it here.
+	emittedHeader := map[int]bool{}
+	addHeader := func(order int) {
+		if emittedHeader[order] {
+			return
+		}
+		emittedHeader[order] = true
+		muted := mutedFor(order)
+		add(renderStatusGroupHeader(order, m.width, muted), gutterInfo{order: order, kind: kindTop, muted: muted})
+	}
+	sectionGutter := func(order int) gutterInfo {
+		return gutterInfo{order: order, muted: mutedFor(order)}
+	}
 	m.selectedProjectRow = -1
 	m.selectedItemRow = -1
+
+	// currentOrder tracks the most recent section order emitted into lines.
+	// Carried out of the loop so the backlog separator can color itself with
+	// the section it follows.
+	currentOrder := -1
 
 	if query != "" {
 		// Search mode: render from m.filtered directly (score-sorted, flat)
 		for _, s := range m.filtered {
 			isSelected := s.PaneID == selectedPaneID && !m.deselected
 			isAutoJump := !isSelected && s.PaneID == autoJumpTargetID
-			lines = append(lines, m.renderItemWithStats(isSelected, isAutoJump, s, dw, query))
+			add(m.renderItemWithStats(isSelected, isAutoJump, s, dw, query), sectionGutter(sessionOrder(s)))
 		}
 	} else {
 		currentProject := ""
-		currentOrder := -1
 
 		for _, s := range m.allSorted {
 			// When Clauding is collapsed, skip Clauding items entirely (header rendered at bottom)
@@ -84,57 +146,68 @@ func (m *SidebarModel) View() string {
 			if m.focusMode && !m.IsEffectivelyFlagged(s) {
 				continue
 			}
+			// Project filter (`p:foo`): drop non-matching projects entirely so
+			// their group headers disappear along with their items.
+			if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+				continue
+			}
 			// Group headers — always rendered for spatial stability during narrowing
 			if m.groupByProject {
 				order := sessionOrder(s)
 				// Emit LATER header when entering the Later zone
 				if order == OrderLater && currentOrder != OrderLater {
+					if len(lines) > 0 {
+						addSeparator(currentOrder)
+					}
 					currentOrder = OrderLater
 					currentProject = "" // reset to force project sub-header
-					if len(lines) > 0 {
-						lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-					}
-					lines = append(lines, renderStatusGroupHeader(OrderLater))
+					addHeader(OrderLater)
 				}
 				if s.Project != currentProject {
 					currentProject = s.Project
 					if currentOrder == OrderLater {
+						pe := projectEntry{Name: s.Project, StatusOrder: OrderLater}
 						// Project sub-header within Later section
-						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == OrderLater {
+						if atProjectLevel && pe == selectedProject {
 							m.selectedProjectRow = len(lines)
-							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
+							add(renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
+						} else if pe == activeProject {
+							add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
 						} else {
-							lines = append(lines, renderProjectSubHeader(s.Project, m.flaggedProjects[s.Project]))
+							add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
 						}
 					} else {
-						if len(lines) > 0 {
-							lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-						}
-						if atProjectLevel && currentProject == selectedProject.Name && selectedProject.StatusOrder == -1 {
+						pe := projectEntry{Name: s.Project, StatusOrder: -1}
+						if atProjectLevel && pe == selectedProject {
 							m.selectedProjectRow = len(lines)
-							lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
+							add(renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]), gutterInfo{order: -1})
+						} else if pe == activeProject {
+							add(renderActiveGroupHeader(s.Project, m.width, m.flaggedProjects[s.Project]), gutterInfo{order: -1})
 						} else {
-							lines = append(lines, renderGroupHeader(s.Project, m.flaggedProjects[s.Project]))
+							add(renderGroupHeader(s.Project, m.width, m.flaggedProjects[s.Project]), gutterInfo{order: -1})
 						}
 					}
 				}
 			} else {
 				order := sessionOrder(s)
 				if order != currentOrder {
+					if len(lines) > 0 {
+						addSeparator(currentOrder)
+					}
 					currentOrder = order
 					currentProject = "" // reset project tracking for new status group
-					if len(lines) > 0 {
-						lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
-					}
-					lines = append(lines, renderStatusGroupHeader(order))
+					addHeader(order)
 				}
 				if s.Project != currentProject {
 					currentProject = s.Project
-					if atProjectLevel && currentProject == selectedProject.Name && currentOrder == selectedProject.StatusOrder {
+					pe := projectEntry{Name: s.Project, StatusOrder: currentOrder}
+					if atProjectLevel && pe == selectedProject {
 						m.selectedProjectRow = len(lines)
-						lines = append(lines, renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]))
+						add(renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
+					} else if pe == activeProject {
+						add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
 					} else {
-						lines = append(lines, renderProjectSubHeader(s.Project, m.flaggedProjects[s.Project]))
+						add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
 					}
 				}
 			}
@@ -149,16 +222,16 @@ func (m *SidebarModel) View() string {
 			if isSelected {
 				m.selectedItemRow = len(lines)
 			}
-			lines = append(lines, m.renderItemWithStats(isSelected, isAutoJump, s, dw, query))
+			add(m.renderItemWithStats(isSelected, isAutoJump, s, dw, query), sectionGutter(sessionOrder(s)))
 		}
 	}
 
 	// Render backlog section (after sessions)
 	if len(m.filteredBacklog) > 0 {
 		if len(lines) > 0 {
-			lines = append(lines, "", SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width)))
+			addSeparator(currentOrder)
 		}
-		lines = append(lines, renderStatusGroupHeader(OrderBacklog))
+		addHeader(OrderBacklog)
 
 		currentBacklogProject := ""
 		for i, backlog := range m.filteredBacklog {
@@ -167,21 +240,30 @@ func (m *SidebarModel) View() string {
 				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
 				if atProjectLevel && selectedProject == backlogPE {
 					m.selectedProjectRow = len(lines)
-					lines = append(lines, renderSelectedProjectHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]))
+					add(renderSelectedProjectHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
+				} else if backlogPE == activeProject {
+					add(renderActiveProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
 				} else {
-					lines = append(lines, renderProjectSubHeader(backlog.Project, m.flaggedProjects[backlog.Project]))
+					add(renderProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
 				}
 			}
 			backlogCursor := len(m.filtered) + i
 			isSelected := backlogCursor == m.cursor && !m.deselected && !atProjectLevel
-			lines = append(lines, m.renderBacklogItem(isSelected, backlog))
+			add(m.renderBacklogItem(isSelected, backlog), sectionGutter(OrderBacklog))
 		}
+		currentOrder = OrderBacklog
+	}
+
+	// Every section must close with a ┛ corner so its outline is symmetric
+	// with the ┓ on its header row.
+	if currentOrder != -1 {
+		addSeparator(currentOrder)
 	}
 
 	// Skeleton placeholder when all sections are collapsed
 	if len(lines) == 0 && m.IsAllQuiet() {
-		lines = append(lines, "")
-		lines = append(lines, ItemDetailStyle.Render("    All clear"))
+		add("", gutterInfo{order: -1})
+		add(ItemDetailStyle.Render("    All clear"), gutterInfo{order: -1})
 	}
 
 	// Compose the bottom-pinned region: pulse (if cached) above the collapsed
@@ -224,22 +306,158 @@ func (m *SidebarModel) View() string {
 			visual += h
 		}
 		lines = lines[:cutAt]
+		kinds = kinds[:cutAt]
 
 		// Pad blank lines until the pinned region floats to the floor.
 		for visual < upperBudget {
 			lines = append(lines, "")
+			kinds = append(kinds, gutterInfo{order: -1})
 			visual++
 		}
 
-		lines = append(lines, pinned...)
+		// Pulse + badges are aggregates, not section content → dim gutter.
+		for _, row := range pinned {
+			lines = append(lines, row)
+			kinds = append(kinds, gutterInfo{order: -1})
+		}
 	}
 
 	// Truncate to fit available height
 	if m.height > 0 && len(lines) > m.height {
 		lines = lines[:m.height]
+		kinds = kinds[:m.height]
 	}
 
-	return strings.Join(lines, "\n")
+	return strings.Join(m.applyGutters(lines, kinds), "\n")
+}
+
+// gutterKind selects which glyph the gutter uses for a row.
+type gutterKind uint8
+
+const (
+	kindBody   gutterKind = iota // ┃ — the continuous side of the section
+	kindTop                      // ┓ — top-right corner, on the section's title row
+	kindBottom                   // ┛ — bottom-right corner, on the closing separator
+)
+
+// gutterInfo describes how to render the right-edge gutter for one entry.
+// muted swaps the section's color for its muted variant — used for sections
+// that don't contain the currently-selected item.
+type gutterInfo struct {
+	order int
+	kind  gutterKind
+	muted bool
+}
+
+// sectionPalette is the single source of truth for section-semantic colors and
+// header labels. Indexed by Order constant. OrderOther (3) is intentionally
+// blank — sessions in that state never render section chrome.
+var sectionPalette = [5]struct {
+	color, mutedColor lipgloss.AdaptiveColor
+	headerStyle       lipgloss.Style
+	label             string
+}{
+	OrderUserTurn:  {ColorDone, ColorDoneMuted, GroupHeaderDoneStyle, IconHandRaise + " YOUR TURN"},
+	OrderAgentTurn: {ColorWorking, ColorWorkingMuted, GroupHeaderWorkingStyle, IconWand + " CLAUDING"},
+	OrderLater:     {ColorLater, ColorLaterMuted, GroupHeaderLaterStyle, IconLater + " LATER"},
+	OrderBacklog:   {ColorBacklog, ColorBacklogMuted, GroupHeaderBacklogStyle, IconBacklog + " BACKLOG"},
+}
+
+// gutterGlyphs[order][kind][muted] holds the pre-rendered string for every
+// possible section gutter cell. Built once at init so renderGutter is a
+// constant-time lookup with zero per-frame allocs.
+var gutterGlyphs = func() [5][3][2]string {
+	var table [5][3][2]string
+	glyphs := [3]string{kindBody: "┃", kindTop: "┓", kindBottom: "┛"}
+	for ord, entry := range sectionPalette {
+		if entry.label == "" {
+			continue // OrderOther — skip
+		}
+		for k := range glyphs {
+			table[ord][k][0] = lipgloss.NewStyle().Foreground(entry.color).Render(glyphs[k])
+			table[ord][k][1] = lipgloss.NewStyle().Foreground(entry.mutedColor).Render(glyphs[k])
+		}
+	}
+	return table
+}()
+
+// Dim fallbacks for non-section rows (orders outside the palette).
+var (
+	gutterDim = lipgloss.NewStyle().Foreground(ColorBorder).Render("│")
+	gutterTee = lipgloss.NewStyle().Foreground(ColorBorder).Render("┤")
+)
+
+func renderGutter(g gutterInfo) string {
+	if g.order >= 0 && g.order < len(sectionPalette) && sectionPalette[g.order].label != "" {
+		mi := 0
+		if g.muted {
+			mi = 1
+		}
+		return gutterGlyphs[g.order][g.kind][mi]
+	}
+	if g.kind == kindBottom {
+		return gutterTee
+	}
+	return gutterDim
+}
+
+// sectionColor returns the foreground color for a section's outline, picking
+// the muted variant when requested. Returns nil for non-section orders so
+// callers can fall back to the dim border style.
+func sectionColor(order int, muted bool) lipgloss.TerminalColor {
+	if order < 0 || order >= len(sectionPalette) || sectionPalette[order].label == "" {
+		return nil
+	}
+	if muted {
+		return sectionPalette[order].mutedColor
+	}
+	return sectionPalette[order].color
+}
+
+// sectionSeparator renders the horizontal rule that caps a section. Colored
+// sections use heavy ━ so it lines up with the heavy ┃ gutter and ┛ corner;
+// non-section boundaries fall back to dim light ─.
+func sectionSeparator(order int, width int, muted bool) string {
+	fg := sectionColor(order, muted)
+	if fg == nil {
+		return SeparatorStyle.Width(width).Render(strings.Repeat("─", width))
+	}
+	return lipgloss.NewStyle().Foreground(fg).Width(width).Render(strings.Repeat("━", width))
+}
+
+// applyGutters expands each entry into its visual lines, pads them to m.width,
+// and appends a colored gutter character. Each returned line is exactly
+// m.width+1 columns wide, which is what SidebarPanelStyle expects.
+func (m SidebarModel) applyGutters(entries []string, kinds []gutterInfo) []string {
+	out := make([]string, 0, len(entries))
+	// Shared pad buffer — sliced into a per-line trailing-space string without
+	// re-allocating strings.Repeat() per visual line.
+	pad := strings.Repeat(" ", m.width)
+	fit := func(s string) string {
+		w := lipgloss.Width(s)
+		if w > m.width {
+			// Truncate to keep the gutter aligned. Letting an over-wide row
+			// through causes SidebarPanelStyle to soft-wrap, which cascades
+			// the whole sidebar layout down by one row per overflow.
+			return ansi.Truncate(s, m.width, "…")
+		}
+		if w < m.width {
+			return s + pad[:m.width-w]
+		}
+		return s
+	}
+	for i, entry := range entries {
+		gut := renderGutter(kinds[i])
+		// Fast path: single-line entry (no newline). Skips strings.Split alloc.
+		if !strings.Contains(entry, "\n") {
+			out = append(out, fit(entry)+gut)
+			continue
+		}
+		for _, vis := range strings.Split(entry, "\n") {
+			out = append(out, fit(vis)+gut)
+		}
+	}
+	return out
 }
 
 // visualHeight sums lipgloss.Height across a slice of rendered lines. A single
@@ -299,7 +517,7 @@ func (m *SidebarModel) pulseBlock() []string {
 	}
 	body := bodyStyle.Render(summary)
 	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
-	out := []string{"", separator, header}
+	out := []string{separator, header}
 	out = append(out, strings.Split(body, "\n")...)
 	return out
 }
@@ -331,7 +549,7 @@ func (m *SidebarModel) collapsedBadgesBlock() []string {
 		parts = append(parts, GroupHeaderBacklogStyle.Render(fmt.Sprintf("%s BACKLOG (%d)", IconBacklog, backlogCount)))
 	}
 	separator := SeparatorStyle.Width(m.width).Render(strings.Repeat("─", m.width))
-	return []string{"", separator, strings.Join(parts, " ")}
+	return []string{separator, strings.Join(parts, " ")}
 }
 
 // projectLabel builds the "🐾 name [🚩]" string shared by all project headers.
@@ -345,8 +563,18 @@ func projectLabel(project string, flagged bool) string {
 	return s
 }
 
-func renderGroupHeader(project string, flagged bool) string {
-	return GroupHeaderProjectStyle.Render(projectLabel(project, flagged))
+// padHeaderBar appends a thin dim ─ fill to a pre-rendered header label so the
+// row spans `width` columns. Returns the label unchanged if it already does.
+func padHeaderBar(label string, width int) string {
+	w := lipgloss.Width(label)
+	if w >= width {
+		return label
+	}
+	return label + SeparatorStyle.Render(strings.Repeat("─", width-w))
+}
+
+func renderGroupHeader(project string, width int, flagged bool) string {
+	return padHeaderBar(GroupHeaderProjectStyle.Render(projectLabel(project, flagged)), width)
 }
 
 // selectedProjectHeaderStyle is the highlight style for project headers at project-level nav.
@@ -358,23 +586,38 @@ func renderSelectedProjectHeader(project string, width int, flagged bool) string
 	return selectedProjectHeaderStyle.Width(width).Render(projectLabel(project, flagged))
 }
 
-func renderProjectSubHeader(project string, flagged bool) string {
-	return ProjectSubHeaderStyle.Render(projectLabel(project, flagged))
+func renderProjectSubHeader(project string, width int, flagged bool) string {
+	return padHeaderBar(ProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width)
 }
 
-func renderStatusGroupHeader(order int) string {
-	switch order {
-	case OrderUserTurn:
-		return GroupHeaderDoneStyle.Render(IconHandRaise + " YOUR TURN")
-	case OrderAgentTurn:
-		return GroupHeaderWorkingStyle.Render(IconWand + " CLAUDING")
-	case OrderLater:
-		return GroupHeaderLaterStyle.Render(IconLater + " LATER")
-	case OrderBacklog:
-		return GroupHeaderBacklogStyle.Render(IconBacklog + " BACKLOG")
-	default:
+// activeProjectSubHeaderStyle is ProjectSubHeaderStyle with the muted foreground
+// dropped, so the active project header reads at the terminal's default text
+// color — bright enough to mark the parent of the cursor, without competing
+// with the cursor's own highlight.
+var activeProjectSubHeaderStyle = ProjectSubHeaderStyle.UnsetForeground()
+
+func renderActiveGroupHeader(project string, width int, flagged bool) string {
+	return padHeaderBar(GroupHeaderStyle.Render(projectLabel(project, flagged)), width)
+}
+
+func renderActiveProjectSubHeader(project string, width int, flagged bool) string {
+	return padHeaderBar(activeProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width)
+}
+
+func renderStatusGroupHeader(order, width int, muted bool) string {
+	if order < 0 || order >= len(sectionPalette) || sectionPalette[order].label == "" {
 		return ""
 	}
+	entry := sectionPalette[order]
+	// Title text stays at full color so the section's identity remains visible
+	// even when the surrounding outline is muted; only the trailing dashes
+	// follow the muted flag.
+	rendered := entry.headerStyle.Render(entry.label)
+	w := lipgloss.Width(rendered)
+	if w >= width {
+		return rendered
+	}
+	return rendered + lipgloss.NewStyle().Foreground(sectionColor(order, muted)).Render(strings.Repeat("━", width-w))
 }
 
 // backlogItemLineCount returns the number of terminal lines a rendered backlog item occupies.
@@ -509,6 +752,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 	}
 
 	query := m.searchTextQuery()
+	projectFilter := m.searchProjectFilter()
 	currentLine := 0
 
 	if query != "" {
@@ -540,6 +784,9 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 		if m.focusMode && !m.IsEffectivelyFlagged(s) {
 			continue
 		}
+		if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+			continue
+		}
 
 		// Group headers — must mirror View()'s logic exactly
 		if m.groupByProject {
@@ -548,7 +795,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				currentOrder = OrderLater
 				currentProject = "" // reset to force project sub-header
 				if anyLinesEmitted {
-					currentLine += 2 // blank line + separator
+					currentLine++ // separator
 				}
 				anyLinesEmitted = true
 				currentLine++ // LATER status group header
@@ -558,11 +805,8 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				if currentOrder == OrderLater {
 					currentLine++ // project sub-header (no separator within Later)
 				} else {
-					if anyLinesEmitted {
-						currentLine += 2 // blank line + separator
-					}
 					anyLinesEmitted = true
-					currentLine++ // group header
+					currentLine++ // group header (inline separator, no standalone line)
 				}
 			}
 		} else {
@@ -570,7 +814,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				currentOrder = order
 				currentProject = ""
 				if anyLinesEmitted {
-					currentLine += 2 // blank line + separator
+					currentLine++ // separator
 				}
 				anyLinesEmitted = true
 				currentLine++ // status group header
@@ -605,6 +849,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	}
 
 	query := m.searchTextQuery()
+	projectFilter := m.searchProjectFilter()
 	currentLine := 0
 
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
@@ -630,6 +875,9 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 			if m.focusMode && !m.IsEffectivelyFlagged(s) {
 				continue
 			}
+			if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+				continue
+			}
 
 			if m.groupByProject {
 				// Emit LATER status header when entering the Later zone
@@ -637,7 +885,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					currentOrder = OrderLater
 					currentProject = "" // reset to force project sub-header
 					if anyLinesEmitted {
-						currentLine += 2 // blank line + separator
+						currentLine++ // separator
 					}
 					anyLinesEmitted = true
 					currentLine++ // LATER status group header
@@ -647,11 +895,8 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					if currentOrder == OrderLater {
 						currentLine++ // project sub-header (no separator within Later)
 					} else {
-						if anyLinesEmitted {
-							currentLine += 2 // blank line + separator
-						}
 						anyLinesEmitted = true
-						currentLine++ // group header
+						currentLine++ // group header (inline separator, no standalone line)
 					}
 				}
 			} else {
@@ -659,7 +904,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					currentOrder = order
 					currentProject = ""
 					if anyLinesEmitted {
-						currentLine += 2 // blank line + separator
+						currentLine++ // separator
 					}
 					anyLinesEmitted = true
 					currentLine++ // status group header
@@ -676,9 +921,9 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		}
 	}
 
-	// Backlog section: blank line + separator (if sessions exist) + group header.
+	// Backlog section: separator (when sessions exist) + group header.
 	if currentLine > 0 {
-		currentLine += 2 // blank line + "─────" separator
+		currentLine++ // separator
 	}
 	currentLine++ // "BACKLOG" group header
 
