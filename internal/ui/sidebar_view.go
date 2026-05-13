@@ -41,6 +41,7 @@ func (m *SidebarModel) View() string {
 	dw := m.computeDiffColWidths()
 	query := m.searchTextQuery()
 	projectFilter := m.searchProjectFilter()
+	singleProject := m.singleProjectFilter()
 
 	// Determine selected PaneID for cursor tracking across the full list
 	var selectedPaneID string
@@ -163,7 +164,7 @@ func (m *SidebarModel) View() string {
 					currentProject = "" // reset to force project sub-header
 					addHeader(OrderLater)
 				}
-				if s.Project != currentProject {
+				if !singleProject && s.Project != currentProject {
 					currentProject = s.Project
 					if currentOrder == OrderLater {
 						pe := projectEntry{Name: s.Project, StatusOrder: OrderLater}
@@ -198,7 +199,7 @@ func (m *SidebarModel) View() string {
 					currentProject = "" // reset project tracking for new status group
 					addHeader(order)
 				}
-				if s.Project != currentProject {
+				if !singleProject && s.Project != currentProject {
 					currentProject = s.Project
 					pe := projectEntry{Name: s.Project, StatusOrder: currentOrder}
 					if atProjectLevel && pe == selectedProject {
@@ -235,7 +236,7 @@ func (m *SidebarModel) View() string {
 
 		currentBacklogProject := ""
 		for i, backlog := range m.filteredBacklog {
-			if backlog.Project != currentBacklogProject {
+			if !singleProject && backlog.Project != currentBacklogProject {
 				currentBacklogProject = backlog.Project
 				backlogPE := projectEntry{Name: backlog.Project, StatusOrder: OrderBacklog}
 				if atProjectLevel && selectedProject == backlogPE {
@@ -753,6 +754,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 
 	query := m.searchTextQuery()
 	projectFilter := m.searchProjectFilter()
+	singleProject := m.singleProjectFilter()
 	currentLine := 0
 
 	if query != "" {
@@ -800,7 +802,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				anyLinesEmitted = true
 				currentLine++ // LATER status group header
 			}
-			if s.Project != currentProject {
+			if !singleProject && s.Project != currentProject {
 				currentProject = s.Project
 				if currentOrder == OrderLater {
 					currentLine++ // project sub-header (no separator within Later)
@@ -819,7 +821,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 				anyLinesEmitted = true
 				currentLine++ // status group header
 			}
-			if s.Project != currentProject {
+			if !singleProject && s.Project != currentProject {
 				currentProject = s.Project
 				currentLine++ // project sub-header
 			}
@@ -850,6 +852,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 
 	query := m.searchTextQuery()
 	projectFilter := m.searchProjectFilter()
+	singleProject := m.singleProjectFilter()
 	currentLine := 0
 
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
@@ -890,7 +893,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					anyLinesEmitted = true
 					currentLine++ // LATER status group header
 				}
-				if s.Project != currentProject {
+				if !singleProject && s.Project != currentProject {
 					currentProject = s.Project
 					if currentOrder == OrderLater {
 						currentLine++ // project sub-header (no separator within Later)
@@ -909,7 +912,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 					anyLinesEmitted = true
 					currentLine++ // status group header
 				}
-				if s.Project != currentProject {
+				if !singleProject && s.Project != currentProject {
 					currentProject = s.Project
 					currentLine++ // project sub-header
 				}
@@ -930,7 +933,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	// Walk backlog items: project header → items.
 	currentBacklogProject := ""
 	for _, backlog := range m.filteredBacklog {
-		if backlog.Project != currentBacklogProject {
+		if !singleProject && backlog.Project != currentBacklogProject {
 			currentBacklogProject = backlog.Project
 			currentLine++ // project sub-header
 		}

@@ -20,6 +20,14 @@ type SearchModel struct {
 	// the originally-typed text rather than against the most-recently-inserted
 	// candidate (which would collapse the candidate list to length 1).
 	pendingPrefix string
+	// tabbedSinceTyping: true once the user has pressed Tab (committing to a
+	// candidate), false again once they resume typing. Switches the active
+	// entry's popover styling from "preview" (bold-only) to "selected" (rose).
+	tabbedSinceTyping bool
+	// filtered caches the candidates that match pendingPrefix (case-insensitive).
+	// Recomputed by refreshFiltered() whenever candidates or pendingPrefix
+	// changes, so render-path readers are O(1).
+	filtered []string
 }
 
 func NewSearchModel() SearchModel {
@@ -37,6 +45,8 @@ func (m *SearchModel) Activate() {
 	m.input.SetValue("")
 	m.popoverIdx = 0
 	m.pendingPrefix = ""
+	m.tabbedSinceTyping = false
+	m.filtered = nil
 }
 
 // ActivateWith opens the search input pre-filled with the given value and
@@ -49,6 +59,8 @@ func (m *SearchModel) ActivateWith(value string) {
 	m.input.CursorEnd()
 	m.popoverIdx = 0
 	m.pendingPrefix = ""
+	m.tabbedSinceTyping = false
+	m.filtered = nil
 }
 
 func (m *SearchModel) Deactivate() {
@@ -57,6 +69,8 @@ func (m *SearchModel) Deactivate() {
 	m.input.SetValue("")
 	m.popoverIdx = 0
 	m.pendingPrefix = ""
+	m.tabbedSinceTyping = false
+	m.filtered = nil
 }
 
 func (m *SearchModel) Confirm() string {
@@ -65,6 +79,8 @@ func (m *SearchModel) Confirm() string {
 	m.input.Blur()
 	m.popoverIdx = 0
 	m.pendingPrefix = ""
+	m.tabbedSinceTyping = false
+	m.filtered = nil
 	return val
 }
 
@@ -105,13 +121,13 @@ func (m *SearchModel) TextInput() *textinput.Model {
 // Clamps popoverIdx if the new candidate set shrank below the previous index.
 func (m *SearchModel) SetCandidates(names []string) {
 	m.candidates = names
-	filtered := m.filteredCandidates()
-	if len(filtered) == 0 {
+	m.refreshFiltered()
+	if len(m.filtered) == 0 {
 		m.popoverIdx = 0
 		return
 	}
-	if m.popoverIdx >= len(filtered) {
-		m.popoverIdx = len(filtered) - 1
+	if m.popoverIdx >= len(m.filtered) {
+		m.popoverIdx = len(m.filtered) - 1
 	}
 	if m.popoverIdx < 0 {
 		m.popoverIdx = 0
@@ -146,22 +162,28 @@ func (m SearchModel) projectPrefix() (prefix string, ok bool) {
 // NoteTyped captures the user's current project-filter token as the anchor
 // for popover filtering. Call after the textinput consumes a keystroke so
 // the filter narrows with typing — but stays stable across Tab presses.
+// Also clears tabbedSinceTyping so the active popover entry reverts from
+// "selected" (red) back to "preview" (bold-only).
 func (m *SearchModel) NoteTyped() {
+	m.tabbedSinceTyping = false
 	if _, ok := m.projectPrefix(); !ok {
 		m.pendingPrefix = ""
-		return
+	} else {
+		m.pendingPrefix = m.currentToken()
 	}
-	m.pendingPrefix = m.currentToken()
+	m.refreshFiltered()
 }
 
-// filteredCandidates returns candidates whose lowercase name has the
-// pendingPrefix as a prefix. Returns nil when the directive isn't active.
-func (m SearchModel) filteredCandidates() []string {
+// refreshFiltered rebuilds m.filtered from candidates + pendingPrefix.
+// Empty when the directive isn't active. Called whenever either input changes.
+func (m *SearchModel) refreshFiltered() {
 	if _, ok := m.projectPrefix(); !ok {
-		return nil
+		m.filtered = nil
+		return
 	}
 	if m.pendingPrefix == "" {
-		return m.candidates
+		m.filtered = m.candidates
+		return
 	}
 	lower := strings.ToLower(m.pendingPrefix)
 	out := make([]string, 0, len(m.candidates))
@@ -170,27 +192,20 @@ func (m SearchModel) filteredCandidates() []string {
 			out = append(out, n)
 		}
 	}
-	return out
+	m.filtered = out
 }
 
-// PopoverActive reports whether the popover should render. Hidden when the
-// project directive isn't active or when there are no candidates.
-func (m SearchModel) PopoverActive() bool {
-	return len(m.filteredCandidates()) > 0
-}
-
-// SelectedCandidate returns the currently-highlighted candidate (the entry
+// selectedCandidate returns the currently-highlighted candidate (the entry
 // that Tab would insert), or "" if no candidates apply.
-func (m SearchModel) SelectedCandidate() string {
-	filtered := m.filteredCandidates()
-	if len(filtered) == 0 {
+func (m SearchModel) selectedCandidate() string {
+	if len(m.filtered) == 0 {
 		return ""
 	}
 	idx := m.popoverIdx
-	if idx < 0 || idx >= len(filtered) {
+	if idx < 0 || idx >= len(m.filtered) {
 		idx = 0
 	}
-	return filtered[idx]
+	return m.filtered[idx]
 }
 
 // ghostCompletion returns the suffix that completes the typed prefix into
@@ -201,7 +216,7 @@ func (m SearchModel) ghostCompletion() string {
 	if !ok {
 		return ""
 	}
-	sel := m.SelectedCandidate()
+	sel := m.selectedCandidate()
 	if sel == "" {
 		return ""
 	}
@@ -220,7 +235,7 @@ func (m SearchModel) ghostCompletion() string {
 // "completing" rather than cycling), an additional trailing space is
 // appended — fish/zsh-style — to signal that the directive is closed.
 func (m *SearchModel) PopoverAdvance(delta int) bool {
-	filtered := m.filteredCandidates()
+	filtered := m.filtered
 	if len(filtered) == 0 {
 		return false
 	}
@@ -242,9 +257,11 @@ func (m *SearchModel) PopoverAdvance(delta int) bool {
 		}
 	}
 	m.replaceToken(filtered[m.popoverIdx])
+	m.tabbedSinceTyping = true
 	if len(filtered) == 1 {
 		m.input.SetValue(m.input.Value() + " ")
 		m.input.CursorEnd()
+		m.refreshFiltered() // trailing space exits the directive — filtered should clear
 	}
 	return true
 }
@@ -276,69 +293,151 @@ func (m *SearchModel) replaceToken(name string) {
 	m.input.CursorEnd()
 }
 
-// PopoverView returns the rendered popover and its content width, or
-// ("", 0, false) when nothing should render. maxRows caps the visible entry
-// count; entries scroll to keep the highlighted row in view. Hides when
-// there's nothing left to decide: zero matches, or a single match that's
-// already fully typed (Tab-accepted or hand-typed).
-func (m SearchModel) PopoverView(maxRows int) (view string, width int, ok bool) {
-	filtered := m.filteredCandidates()
+// MaxQueryWidth returns the widest the search field could ever render
+// while the popover is active — `/  p:` plus the longest candidate revealed
+// as ghost text, plus padding. renderSearchBar uses this to pad the field
+// to a constant width so the popover's start column doesn't slide as the
+// user types. Returns 0 when the popover isn't active.
+func (m SearchModel) MaxQueryWidth() int {
+	if _, ok := m.projectPrefix(); !ok {
+		return 0
+	}
+	if len(m.candidates) == 0 {
+		return 0
+	}
+	maxName := 0
+	for _, n := range m.candidates {
+		if w := lipgloss.Width(n); w > maxName {
+			maxName = w
+		}
+	}
+	promptW := lipgloss.Width(m.input.PromptStyle.Render(m.input.Prompt))
+	// promptW + 2 ("p:" directive) + maxName + 1 (cursor block always emitted
+	// at end-of-value by renderHighlightedSearchValue) + 2 (Padding(0,1) wrapper
+	// in View()).
+	return promptW + 2 + maxName + 1 + 2
+}
+
+// PopoverView renders the horizontal completion strip. Each candidate's
+// matched-prefix characters are tinted with the directive color; the rest
+// is muted (or full rose+bold on the active candidate). No background fill,
+// no per-cell padding — relies on color alone so it sits cleanly on the
+// existing label row. Overflow on either side collapses to `…`.
+func (m SearchModel) PopoverView(maxWidth int) (view string, width int, ok bool) {
+	filtered := m.filtered
 	if len(filtered) == 0 {
 		return "", 0, false
 	}
 	if len(filtered) == 1 && strings.EqualFold(filtered[0], m.currentToken()) {
 		return "", 0, false
 	}
-	if maxRows < 1 {
-		maxRows = 1
+	if maxWidth < 8 {
+		maxWidth = 8
 	}
 	idx := m.popoverIdx
 	if idx < 0 || idx >= len(filtered) {
 		idx = 0
 	}
-	// Scroll window so the highlighted row is visible.
-	start := 0
-	if len(filtered) > maxRows {
-		start = idx - maxRows/2
-		if start < 0 {
-			start = 0
-		}
-		if start+maxRows > len(filtered) {
-			start = len(filtered) - maxRows
-		}
+
+	prefixLen := len([]rune(m.pendingPrefix))
+
+	// Matched chars are tinted rose for every entry; the rest is muted. The
+	// active entry is "preview" (bold-only) until the user actually presses
+	// Tab — after that it goes full rose + bold + underline to mark a real
+	// selection. Typing any character flips back to preview.
+	var matchedActive, restActive lipgloss.Style
+	if m.tabbedSinceTyping {
+		matchedActive = lipgloss.NewStyle().Foreground(ColorPulse).Bold(true).Underline(true)
+		restActive = lipgloss.NewStyle().Foreground(ColorPulse).Bold(true)
+	} else {
+		matchedActive = lipgloss.NewStyle().Foreground(ColorPulse).Bold(true)
+		restActive = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 	}
-	end := start + maxRows
-	if end > len(filtered) {
-		end = len(filtered)
+	matchedInactive := lipgloss.NewStyle().Foreground(ColorPulse)
+	restInactive := lipgloss.NewStyle().Foreground(ColorMuted)
+
+	const sep = "  "
+	sepW := lipgloss.Width(sep)
+
+	cells := make([]string, len(filtered))
+	cellW := make([]int, len(filtered))
+	for i, name := range filtered {
+		runes := []rune(name)
+		split := prefixLen
+		if split > len(runes) {
+			split = len(runes)
+		}
+		matched := string(runes[:split])
+		rest := string(runes[split:])
+		var cell string
+		if i == idx {
+			cell = matchedActive.Render(matched) + restActive.Render(rest)
+		} else {
+			cell = matchedInactive.Render(matched) + restInactive.Render(rest)
+		}
+		cells[i] = cell
+		cellW[i] = lipgloss.Width(name)
 	}
 
-	maxW := 0
-	for _, n := range filtered {
-		if w := lipgloss.Width(n); w > maxW {
-			maxW = w
+	leftHint := SearchPopoverDimStyle.Render("…")
+	rightHint := SearchPopoverDimStyle.Render("…")
+	hintW := lipgloss.Width(leftHint)
+
+	start, end := idx, idx+1
+	used := cellW[idx]
+	for {
+		grew := false
+		if end < len(filtered) {
+			extra := cellW[end] + sepW
+			rightCost := 0
+			if end+1 < len(filtered) {
+				rightCost = hintW + sepW
+			}
+			leftCost := 0
+			if start > 0 {
+				leftCost = hintW + sepW
+			}
+			if used+extra+leftCost+rightCost <= maxWidth {
+				used += extra
+				end++
+				grew = true
+			}
+		}
+		if start > 0 {
+			extra := cellW[start-1] + sepW
+			leftCost := 0
+			if start-1 > 0 {
+				leftCost = hintW + sepW
+			}
+			rightCost := 0
+			if end < len(filtered) {
+				rightCost = hintW + sepW
+			}
+			if used+extra+leftCost+rightCost <= maxWidth {
+				used += extra
+				start--
+				grew = true
+			}
+		}
+		if !grew {
+			break
 		}
 	}
-	innerW := maxW + 2 // 1-char left + 1-char right padding
 
-	var rows []string
+	parts := make([]string, 0, len(filtered)+2)
 	if start > 0 {
-		rows = append(rows, SearchPopoverDimStyle.Width(innerW).Render("↑ more"))
+		parts = append(parts, leftHint, sep)
 	}
 	for i := start; i < end; i++ {
-		line := " " + filtered[i]
-		if w := lipgloss.Width(line); w < innerW {
-			line += strings.Repeat(" ", innerW-w)
+		if i > start {
+			parts = append(parts, sep)
 		}
-		if i == idx {
-			rows = append(rows, SearchPopoverActiveRowStyle.Render(line))
-		} else {
-			rows = append(rows, SearchPopoverRowStyle.Render(line))
-		}
+		parts = append(parts, cells[i])
 	}
 	if end < len(filtered) {
-		rows = append(rows, SearchPopoverDimStyle.Width(innerW).Render("↓ more"))
+		parts = append(parts, sep, rightHint)
 	}
-	body := strings.Join(rows, "\n")
+	body := strings.Join(parts, "")
 	return body, lipgloss.Width(body), true
 }
 

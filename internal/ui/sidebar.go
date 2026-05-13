@@ -78,6 +78,7 @@ type SidebarModel struct {
 	claudingExpanded    bool             // true = CLAUDING section visible
 	laterCount          int              // cached count of Later sessions (updated in applyNarrow)
 	claudingCount       int              // cached count of Clauding sessions (updated in applyNarrow)
+	singleProject       bool             // cached: `p:` filter narrowed visible set to one project (updated in applyNarrow)
 	landPaneID          string           // pane most recently jumped to (landing flash)
 	landBacklogID       string           // backlog item most recently jumped to (landing flash)
 	landFrame           int              // landing animation frame (counts up to landMaxFrames)
@@ -155,6 +156,7 @@ func (m *SidebarModel) SetBacklogExpanded(v bool) {
 	m.backlogExpanded = v
 	m.applyNarrowBacklog()
 	m.rebuildProjects()
+	m.recomputeSingleProject()
 }
 
 func (m SidebarModel) BacklogExpanded() bool {
@@ -369,6 +371,13 @@ func (m SidebarModel) searchTextQuery() string {
 func (m SidebarModel) searchProjectFilter() string {
 	p, _ := parseSearchQuery(m.narrow)
 	return p
+}
+
+// singleProjectFilter reports whether an active project filter (`p:`) has
+// narrowed the visible session set to a single project. Backed by the
+// cached field updated in applyNarrow.
+func (m SidebarModel) singleProjectFilter() bool {
+	return m.singleProject
 }
 
 // AllProjectNames returns unique project names across all sessions (preserves
@@ -726,6 +735,37 @@ func (m *SidebarModel) applyNarrow() {
 	}
 	m.applyNarrowBacklog()
 	m.rebuildProjects()
+	m.recomputeSingleProject()
+}
+
+// recomputeSingleProject caches whether the active `p:` filter has narrowed
+// the visible session set to a single project. Render paths use this flag
+// to skip the now-redundant project header. Called once at the end of
+// applyNarrow and after backlog-expansion changes so the read-side helper
+// is O(1).
+func (m *SidebarModel) recomputeSingleProject() {
+	if m.searchProjectFilter() == "" {
+		m.singleProject = false
+		return
+	}
+	seen := ""
+	for _, s := range m.filtered {
+		if seen == "" {
+			seen = s.Project
+		} else if s.Project != seen {
+			m.singleProject = false
+			return
+		}
+	}
+	for _, b := range m.filteredBacklog {
+		if seen == "" {
+			seen = b.Project
+		} else if b.Project != seen {
+			m.singleProject = false
+			return
+		}
+	}
+	m.singleProject = seen != ""
 }
 
 // bestNarrowScore returns the best fuzzy score of query across the session's searchable fields.

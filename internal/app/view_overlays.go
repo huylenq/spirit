@@ -183,16 +183,47 @@ func (m Model) renderBacklogPreview(backlog claude.Backlog, width, height, scrol
 }
 
 // renderSearchBar renders the search/filter bar that replaces the usage stats label.
+// When the project-completion popover is active, filterView is padded out to
+// MaxQueryWidth — the widest the search field could ever take during the
+// current popover session — so the popover starts at a stable column as the
+// user types instead of sliding right with each keystroke.
 func (m Model) renderSearchBar(width int) string {
 	filterView := m.search.View()
 	usageLabel := m.usageBar.LabelView()
 	usageLabelWidth := lipgloss.Width(usageLabel)
 	filterWidth := lipgloss.Width(filterView)
-	gap := width - filterWidth - usageLabelWidth
-	if gap < 2 {
-		return ui.BorderLabelStyle.Width(width).Render(filterView)
+
+	if maxQ := m.search.MaxQueryWidth(); maxQ > filterWidth {
+		filterView += strings.Repeat(" ", maxQ-filterWidth)
+		filterWidth = maxQ
 	}
-	return filterView + strings.Repeat(" ", gap) + usageLabel
+
+	popoverDivider := ui.SearchPopoverDividerStyle.Render(" │  ")
+	dividerW := lipgloss.Width(popoverDivider)
+	const trailing = 2 // gap between popover and usage label
+	popoverMaxW := width - filterWidth - dividerW - usageLabelWidth - trailing
+	popover := ""
+	popoverW := 0
+	if popoverMaxW > 6 {
+		if p, w, ok := m.search.PopoverView(popoverMaxW); ok {
+			popover = p
+			popoverW = w
+		}
+	}
+
+	if popover == "" {
+		gap := width - filterWidth - usageLabelWidth
+		if gap < 2 {
+			return ui.BorderLabelStyle.Width(width).Render(filterView)
+		}
+		return filterView + strings.Repeat(" ", gap) + usageLabel
+	}
+
+	trailingGap := width - filterWidth - dividerW - popoverW - usageLabelWidth
+	if trailingGap < 1 {
+		trailingGap = 1
+	}
+	return filterView + popoverDivider + popover + strings.Repeat(" ", trailingGap) + usageLabel
 }
 
 // renderFooter renders the context-sensitive footer bar.

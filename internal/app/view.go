@@ -260,13 +260,8 @@ func (m Model) View() string {
 		content = ui.OverlayAt(content, m.renderPathInputOverlay(overlayWidth), row, col)
 	}
 
-	// Search popover (IDE-style project autocompletion). Anchors just under
-	// the search bar; only renders when a `p:` directive has matches.
-	if m.state == StateSearching {
-		if popover, _, ok := m.search.PopoverView(8); ok {
-			content = ui.OverlayAt(content, popover, 0, 3)
-		}
-	}
+	// Search popover is rendered inline in renderSearchBar — right-flushed to
+	// the usage label so typing doesn't shift it.
 
 	// Prompt editor overlays (new session / new backlog from session context)
 	if m.state == StateNewSessionPrompt {

@@ -159,19 +159,12 @@ var (
 				Foreground(ColorMuted).
 				Faint(true)
 
-	// IDE-style autocompletion popover for project search (borderless;
-	// background tint differentiates active vs. inactive rows).
-	SearchPopoverRowStyle = lipgloss.NewStyle().
-				Background(ColorSelectionBg)
-	SearchPopoverActiveRowStyle = lipgloss.NewStyle().
-					Background(ColorPulse).
-					Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1a1a1a"}).
-					Bold(true)
+	// Inline horizontal completion strip — color-only decoration.
 	SearchPopoverDimStyle = lipgloss.NewStyle().
-				Background(ColorSelectionBg).
 				Foreground(ColorMuted).
-				Faint(true).
-				Align(lipgloss.Center)
+				Faint(true)
+	SearchPopoverDividerStyle = lipgloss.NewStyle().
+					Foreground(ColorBorder)
 
 	// Relay (prompt relay input)
 	RelayPromptStyle = lipgloss.NewStyle().
