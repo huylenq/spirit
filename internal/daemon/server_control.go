@@ -42,6 +42,43 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	return &r
 }
 
+// handleQueueCommitDone queues the standard commit message behind any pending
+// work on the session and registers a *persistent* kill-on-commit watcher.
+// Unlike handleCommit, this returns immediately without typing into tmux — useful
+// from macros that want to chain "run X first, then commit-and-done" without
+// blocking the macro on the X cycle. The watcher survives intermediate
+// working→idle cycles (e.g. /simplify finishing) and only resolves when an
+// actual commit is detected.
+func (d *Daemon) handleQueueCommitDone(data json.RawMessage) *Response {
+	var req CommitDoneData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	d.queueMu.Lock()
+	d.queuePanes[req.SessionID] = append(d.queuePanes[req.SessionID], commitCmd)
+	msgs := d.queuePanes[req.SessionID]
+	queueErr := claude.WriteQueueMessages(req.SessionID, msgs)
+	d.queueMu.Unlock()
+	if queueErr != nil {
+		r := errResponse("write queue: " + queueErr.Error())
+		return &r
+	}
+	d.commitDoneMu.Lock()
+	d.commitDonePanes[req.SessionID] = commitDoneEntry{
+		PaneID:     req.PaneID,
+		PID:        req.PID,
+		KillOnDone: true,
+		Persistent: true,
+		CreatedAt:  time.Now(),
+	}
+	d.commitDoneMu.Unlock()
+	d.nudge()
+	log.Printf("queue-commit-done: registered session %s (pane %s, queue=%d)", req.SessionID, req.PaneID, len(msgs))
+	r := resultResponse("ok")
+	return &r
+}
+
 func (d *Daemon) handleCancelCommitDone(data json.RawMessage) *Response {
 	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {

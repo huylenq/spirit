@@ -627,6 +627,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PaneKilledMsg:
 		title := m.killTargetTitle
+		killedPaneID := m.killTargetPaneID
 		m.state = StateNormal
 		m.killTargetPaneID = ""
 		m.killTargetSessionID = ""
@@ -638,7 +639,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			return m, m.setFlash("kill failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
-		return m, m.setFlash("killed "+title, false, 2*time.Second)
+		cmds := m.autoJump(killedPaneID)
+		cmds = append(cmds, m.setFlash("killed "+title, false, 2*time.Second))
+		return m, tea.Batch(cmds...)
 
 	case OriginalPaneCapturedMsg:
 		if msg.Err == nil {

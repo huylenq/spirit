@@ -314,6 +314,14 @@ func (c *Client) CommitAndDone(paneID, sessionID string, pid int) error {
 	return c.rpcInto(Request{Type: ReqCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
 }
 
+// QueueCommitDone queues /commit-commands:commit behind any pending work and
+// registers a persistent auto-kill-on-commit watcher. The watcher tolerates
+// intermediate working→idle cycles, so this is safe to call right after sending
+// another slash command without waiting for it to finish.
+func (c *Client) QueueCommitDone(paneID, sessionID string, pid int) error {
+	return c.rpcInto(Request{Type: ReqQueueCommitDone, Data: marshalData(CommitDoneData{PaneID: paneID, SessionID: sessionID, PID: pid})}, nil)
+}
+
 // CancelCommitDone removes the pending commit-and-done registration for a session.
 func (c *Client) CancelCommitDone(sessionID string) error {
 	return c.rpcInto(Request{Type: ReqCancelCommitDone, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)

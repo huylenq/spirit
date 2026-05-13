@@ -42,6 +42,7 @@ const (
 	ReqRenameAllWindows   = "rename_all_windows"
 	ReqCommitOnly       = "commit_only"
 	ReqCommitDone       = "commit_done"
+	ReqQueueCommitDone  = "queue_commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
 	ReqQueue              = "queue"
 	ReqCancelQueueItem    = "cancel_queue_item"

@@ -20,5 +20,5 @@ if s.commit_done_pending then
 end
 auto_jump(id)
 flash("simplify+commit+done started")
-send(id, "/simplify", { wait = "cycle" })
-commit_done(id)
+send(id, "/simplify")
+queue_commit_done(id)

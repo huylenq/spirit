@@ -18,6 +18,6 @@ if s.commit_done_pending then
   flash("commit+done already pending")
   return
 end
-commit_done(id)
 auto_jump(id)
 flash("commit+done started")
+commit_done(id)

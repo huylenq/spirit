@@ -122,6 +122,24 @@ func luaCommitDone(deps Deps) lua.LGFunction {
 	}
 }
 
+// queue_commit_done(id)
+// Category: Features
+// Queue /commit behind any pending work and auto-kill on commit. Returns
+// immediately — unlike commit_done(), this does not type into the pane right
+// away, so it's safe to call right after send(id, "/foo") without waiting for
+// /foo to finish. The auto-kill watcher tolerates intermediate working→idle
+// cycles and only resolves on an actual commit.
+func luaQueueCommitDone(deps Deps) lua.LGFunction {
+	return func(L *lua.LState) int {
+		id := L.CheckString(1)
+		s := resolveSession(L, deps.Client, id)
+		if err := deps.Client.QueueCommitDone(s.PaneID, id, s.PID); err != nil {
+			L.RaiseError("queue_commit_done: %v", err)
+		}
+		return 0
+	}
+}
+
 // cancel_commit_done(id)
 // Category: Features
 // Cancel pending commit-done auto-kill.

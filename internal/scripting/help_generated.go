@@ -79,6 +79,13 @@ later(id)
 later_kill(id)
   Mark session for later and kill its pane.
 
+queue_commit_done(id)
+  Queue /commit behind any pending work and auto-kill on commit. Returns
+  immediately — unlike commit_done(), this does not type into the pane right
+  away, so it's safe to call right after send(id, "/foo") without waiting for
+  /foo to finish. The auto-kill watcher tolerates intermediate working→idle
+  cycles and only resolves on an actual commit.
+
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
 

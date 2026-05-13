@@ -102,6 +102,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCommitDone:
 		return d.handleCommit(req.Data, true)
 
+	case ReqQueueCommitDone:
+		return d.handleQueueCommitDone(req.Data)
+
 	case ReqCancelCommitDone:
 		return d.handleCancelCommitDone(req.Data)
 

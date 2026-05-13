@@ -30,6 +30,9 @@ type commitDoneEntry struct {
 	SawWorking bool      // true once the session has transitioned to agent-turn
 	KillOnDone bool      // true for commit+done, false for commit-only
 	CreatedAt  time.Time // when the entry was registered; used to expire stuck entries
+	Persistent bool      // if true, survive working→idle cycles where no commit was detected
+	//                  (used when the commit message is queued behind earlier work like /simplify;
+	//                   the watcher waits for the *commit* cycle, not the prior cycle)
 }
 
 // pendingPromptEntry tracks a prompt to deliver to a newly spawned session.

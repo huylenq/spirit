@@ -74,6 +74,17 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 			tmux.KillPane(s.PaneID) //nolint:errcheck
 			claude.RemoveSessionFiles(sessionID)
 			claude.RemovePaneMapping(s.PaneID)
+			delete(d.commitDonePanes, sessionID)
+			continue
+		}
+		if entry.Persistent && !s.LastActionCommit {
+			// Wait for a later cycle to produce the commit (e.g. queued /commit-commands:commit
+			// runs after the current /simplify cycle finishes). Reset SawWorking and extend
+			// the timeout window so we keep watching.
+			entry.SawWorking = false
+			entry.CreatedAt = time.Now()
+			d.commitDonePanes[sessionID] = entry
+			continue
 		}
 		delete(d.commitDonePanes, sessionID)
 	}
