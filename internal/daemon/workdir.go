@@ -36,7 +36,7 @@ func WorkdirDaemonInfo(repoRoot string) DaemonInfo {
 // DefaultDaemonInfo returns the DaemonInfo for this process.
 // If the binary lives inside a git repository (e.g. a dev worktree build),
 // the socket is scoped to that repo root so multiple worktrees can each run
-// an independent daemon. Otherwise falls back to ~/.cache/spirit/daemon.sock.
+// an independent daemon. Otherwise falls back to ~/.spirit/daemon.sock.
 // Result is cached — the binary location doesn't change within a process.
 func DefaultDaemonInfo() DaemonInfo {
 	cachedInfoOnce.Do(func() {

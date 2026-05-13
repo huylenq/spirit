@@ -2,18 +2,14 @@ package app
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/huylenq/spirit/internal/claude"
 )
 
-func prefsPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "spirit", "prefs")
-}
-
 func loadPrefs() map[string]string {
-	data, err := os.ReadFile(prefsPath())
+	data, err := os.ReadFile(claude.PrefsPath())
 	if err != nil {
 		return nil
 	}
@@ -25,7 +21,7 @@ func savePrefs(prefs map[string]string) {
 	for k, v := range prefs {
 		lines = append(lines, k+"="+v)
 	}
-	_ = os.WriteFile(prefsPath(), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	_ = os.WriteFile(claude.PrefsPath(), []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
 // parsePrefsText parses key=value pairs from raw text.

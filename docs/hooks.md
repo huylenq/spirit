@@ -6,7 +6,7 @@
 flowchart LR
     CC["Claude Code<br/>(hook event)"]
     Hook["spirit _hook &lt;type&gt;<br/>(subprocess)"]
-    Files[("~/.cache/spirit/<br/>status files")]
+    Files[("~/.spirit/<br/>status files")]
     Sock["daemon.sock<br/>(Unix socket)"]
     Daemon["Daemon<br/>(patchSession)"]
     TUI["TUI<br/>(Bubble Tea)"]
@@ -400,7 +400,7 @@ flowchart TD
 
 ## Status Files
 
-All stored in `~/.cache/spirit/`, keyed by tmux pane ID (e.g., `%1`).
+All stored in `~/.spirit/`, keyed by tmux pane ID (e.g., `%1`).
 
 #### Current
 

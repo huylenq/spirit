@@ -22,17 +22,21 @@ import (
 var version = "dev"
 
 func init() {
-	// Migrate cache directory from pre-rebrand location.
+	// Migrate state directory across rebrands:
+	//   ~/.cache/cmc    → ~/.cache/spirit (pre-rebrand)
+	//   ~/.cache/spirit → ~/.spirit       (moved out of XDG cache)
 	home, _ := os.UserHomeDir()
-	if home != "" {
-		oldCache := filepath.Join(home, ".cache", "cmc")
-		newCache := filepath.Join(home, ".cache", "spirit")
-		if info, err := os.Stat(oldCache); err == nil && info.IsDir() {
-			if _, err := os.Stat(newCache); os.IsNotExist(err) {
-				os.Rename(oldCache, newCache) //nolint:errcheck
-			}
-		}
+	if home == "" {
+		return
 	}
+	newDir := claude.StatusDir()
+	if _, err := os.Stat(newDir); err == nil {
+		return
+	}
+	// os.Rename returns ENOENT on missing source and won't clobber an existing
+	// dest dir — safe to fire both hops blind.
+	os.Rename(filepath.Join(home, ".cache", "cmc"), filepath.Join(home, ".cache", "spirit")) //nolint:errcheck
+	os.Rename(filepath.Join(home, ".cache", "spirit"), newDir)                               //nolint:errcheck
 }
 
 func main() {
@@ -164,9 +168,9 @@ The daemon polls sessions every 1s and pushes updates to connected clients.
 It auto-shuts down after 10 minutes with no clients.
 
 Files:
-  ~/.cache/spirit/daemon.sock   Unix socket
-  ~/.cache/spirit/daemon.pid    PID file
-  ~/.cache/spirit/daemon.log    Log output
+  ~/.spirit/daemon.sock   Unix socket
+  ~/.spirit/daemon.pid    PID file
+  ~/.spirit/daemon.log    Log output
 `, version)
 }
 
@@ -199,7 +203,7 @@ func runDaemon() {
 	}
 
 	// Redirect log output to a file for debugging
-	logPath := os.ExpandEnv("$HOME/.cache/spirit/daemon.log")
+	logPath := filepath.Join(claude.StatusDir(), "daemon.log")
 	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
 		log.SetOutput(f)
 		defer f.Close()
@@ -347,22 +351,6 @@ func upsertHookCmd(existing any, newCmd, matcher string) ([]any, bool) {
 	return append(groups, newGroup), true
 }
 
-// readPref reads a single key from the spirit prefs file (~/.cache/spirit/prefs).
-func readPref(key string) string {
-	home, _ := os.UserHomeDir()
-	data, err := os.ReadFile(filepath.Join(home, ".cache", "spirit", "prefs"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		k, v, ok := strings.Cut(line, "=")
-		if ok && k == key {
-			return v
-		}
-	}
-	return ""
-}
-
 // runPopup opens a tmux display-popup with the spirit TUI.
 // Reads the fullscreen preference to determine popup size.
 // Flags:
@@ -388,7 +376,7 @@ func runPopup() {
 	}
 	bin, _ = filepath.EvalSymlinks(bin)
 
-	fullscreen := readPref("fullscreen") == "true"
+	fullscreen := claude.ReadPref("fullscreen") == "true"
 	w, h := "80%", "70%"
 	if fullscreen {
 		w, h = "100%", "100%"

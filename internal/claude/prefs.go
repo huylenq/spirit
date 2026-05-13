@@ -8,11 +8,10 @@ import (
 
 // PrefsPath returns the path to spirit's prefs file.
 func PrefsPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "spirit", "prefs")
+	return filepath.Join(StatusDir(), "prefs")
 }
 
-// LoadPrefs reads ~/.cache/spirit/prefs as a map. Empty file or missing file
+// LoadPrefs reads ~/.spirit/prefs as a map. Empty file or missing file
 // returns an empty (non-nil) map. The format is plain key=value, one per line.
 func LoadPrefs() map[string]string {
 	out := map[string]string{}

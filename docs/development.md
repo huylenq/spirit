@@ -42,7 +42,7 @@ This happens automatically — the binary detects its own location with
 needed. `make` in any worktree builds and restarts only that worktree's daemon.
 
 Binaries installed globally (TPM, PATH) that are not inside a git repo fall back
-to `~/.cache/spirit/daemon.sock`.
+to `~/.spirit/daemon.sock`.
 
 ## Concurrent agent development
 
@@ -98,10 +98,10 @@ layout without opening the popup.
 
 ## Daemon log
 
-Always at `~/.cache/spirit/daemon.log` regardless of which worktree's daemon is running:
+Always at `~/.spirit/daemon.log` regardless of which worktree's daemon is running:
 
 ```sh
-tail -f ~/.cache/spirit/daemon.log
+tail -f ~/.spirit/daemon.log
 ```
 
 ## Project structure

@@ -345,7 +345,7 @@ type DaemonInfo struct {
 }
 
 // DefaultDaemonInfo is defined in workdir.go — it auto-detects from the
-// binary's location and falls back to ~/.cache/spirit/daemon.sock.
+// binary's location and falls back to ~/.spirit/daemon.sock.
 
 // IdleTimeout is how long the daemon stays alive with zero clients.
 const IdleTimeout = 10 * time.Minute

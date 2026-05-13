@@ -9,12 +9,13 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/huylenq/spirit/internal/claude"
 )
 
-// EventsDir returns the default events directory path (~/.cache/spirit/copilot/events).
+// EventsDir returns the default events directory path (~/.spirit/copilot/events).
 func EventsDir() string {
-	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".cache", "spirit", "copilot", "events")
+	dir := filepath.Join(claude.StatusDir(), "copilot", "events")
 	os.MkdirAll(dir, 0o755) //nolint:errcheck
 	return dir
 }
@@ -26,7 +27,7 @@ type Journal struct {
 	baseDir string
 }
 
-// NewJournal creates a Journal rooted at baseDir (typically ~/.cache/spirit/copilot/events/).
+// NewJournal creates a Journal rooted at baseDir (typically ~/.spirit/copilot/events/).
 // Creates the directory if it doesn't exist.
 func NewJournal(baseDir string) *Journal {
 	_ = os.MkdirAll(baseDir, 0o755)

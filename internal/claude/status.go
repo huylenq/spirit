@@ -19,11 +19,20 @@ func statusDir() string {
 	return StatusDir()
 }
 
-// StatusDir returns the path to the spirit cache directory.
+// StatusDir returns the path to the spirit state directory (~/.spirit).
+// Cached because it's hit per-session every poll tick.
 func StatusDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "spirit")
+	statusDirOnce.Do(func() {
+		home, _ := os.UserHomeDir()
+		cachedStatusDir = filepath.Join(home, ".spirit")
+	})
+	return cachedStatusDir
 }
+
+var (
+	cachedStatusDir string
+	statusDirOnce   sync.Once
+)
 
 // DaemonSocketPath returns the path to the daemon Unix socket.
 // If the binary lives inside a git repository, the socket is scoped to that

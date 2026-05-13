@@ -8,7 +8,7 @@ How spirit starts, processes events, discovers sessions, and renders UI.
 flowchart LR
     CC["Claude Code<br/>(per pane)"]
     Hook["spirit _hook<br/>(subprocess)"]
-    Files[("~/.cache/spirit/<br/>status files")]
+    Files[("~/.spirit/<br/>status files")]
     Daemon["Daemon<br/>(singleton)"]
     TUI["TUI Client<br/>(Bubble Tea)"]
 
@@ -175,7 +175,7 @@ flowchart TD
 1. **Pane enumeration**: Single `tmux list-panes -a -F <format>` call returns all panes across all tmux sessions
 2. **Process tree**: Single `ps -eo pid,ppid,comm` call builds a PPID→children map
 3. **Session matching**: For each pane:
-   - `ReadSessionID(paneID)` reads `~/.cache/spirit/<paneID>.session` (written by hooks)
+   - `ReadSessionID(paneID)` reads `~/.spirit/<paneID>.session` (written by hooks)
    - `findClaudeInTree()` walks the process tree under the pane's shell PID looking for a `claude` process
 4. **State assembly**: `buildSession()` reads the cluster of per-session status files (`ReadStatus`, `ReadLastUserMessage`, `ReadCachedSummary`, `ReadCustomTitle`, `ReadStopReason`, `ReadSkillName`, etc.)
 5. **Git branch**: Looked up with a 10-second in-process cache

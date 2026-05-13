@@ -19,8 +19,8 @@ restart: build
 skill: build
 	@mkdir -p ~/.claude/skills/spirit
 	@$(BINARY) _gen-skill > ~/.claude/skills/spirit/SKILL.md
-	@mkdir -p ~/.cache/spirit/copilot-workspace/skills/spirit
-	@$(BINARY) _gen-skill > ~/.cache/spirit/copilot-workspace/skills/spirit/SKILL.md
+	@mkdir -p ~/.spirit/copilot-workspace/skills/spirit
+	@$(BINARY) _gen-skill > ~/.spirit/copilot-workspace/skills/spirit/SKILL.md
 	@echo "SKILL.md installed (claude-code + openclaw)"
 
 clean:

@@ -178,10 +178,10 @@ type NudgeData struct {
 
 ### Directory Layout
 
-All state files live under `~/.cache/spirit/` unless noted otherwise.
+All state files live under `~/.spirit/` unless noted otherwise.
 
 ```
-~/.cache/spirit/
+~/.spirit/
 ├── daemon.sock              # Unix domain socket (or /tmp/spirit-<hash>.sock)
 ├── daemon.pid               # Process ID file
 ├── daemon.sock.lock         # flock file for singleton
@@ -271,7 +271,7 @@ Preferences are read on startup in `NewModel()` and written immediately on each 
 | `daemon.sock` | Unix domain socket (or `/tmp/spirit-<hash>.sock`) |
 | `daemon.pid` | Daemon process ID |
 | `<socket>.lock` | `flock` file for singleton guarantee |
-| `daemon.log` | Always at `~/.cache/spirit/daemon.log` regardless of worktree |
+| `daemon.log` | Always at `~/.spirit/daemon.log` regardless of worktree |
 
 ## Memory vs Disk
 
@@ -302,7 +302,7 @@ Preferences are read on startup in `NewModel()` and written immediately on each 
 
 ```mermaid
 flowchart LR
-    D[("Disk files<br/>~/.cache/spirit/<br/>.status, .lastmsg, ...")] --> DS["DiscoverSessions()"]
+    D[("Disk files<br/>~/.spirit/<br/>.status, .lastmsg, ...")] --> DS["DiscoverSessions()"]
     T["tmux list-panes -a<br/>(live panes)"] --> DS
     P["ps -eo pid,ppid,comm<br/>(process table)"] --> DS
     DS --> S["sessions []ClaudeSession<br/>(computed cache)"]
@@ -358,7 +358,7 @@ flowchart TD
     SYM --> GIT{"Inside a<br/>git repo?"}
     GIT -->|"yes"| HASH["sha256(repoRoot)[:12]"]
     HASH --> TMP["/tmp/spirit-&lt;hash&gt;.sock<br/>/tmp/spirit-&lt;hash&gt;.pid"]
-    GIT -->|"no (global install)"| DEFAULT["~/.cache/spirit/daemon.sock<br/>~/.cache/spirit/daemon.pid"]
+    GIT -->|"no (global install)"| DEFAULT["~/.spirit/daemon.sock<br/>~/.spirit/daemon.pid"]
 
     subgraph "Worktree A"
         WA["bin/spirit"] --> DA["Daemon A<br/>/tmp/spirit-abc123.sock"]
@@ -367,7 +367,7 @@ flowchart TD
         WB["bin/spirit"] --> DB["Daemon B<br/>/tmp/spirit-def456.sock"]
     end
     subgraph "Global install"
-        WG["spirit (PATH)"] --> DG["Daemon<br/>~/.cache/spirit/daemon.sock"]
+        WG["spirit (PATH)"] --> DG["Daemon<br/>~/.spirit/daemon.sock"]
     end
 ```
 
@@ -378,7 +378,7 @@ When the `spirit` binary lives inside a git repo (a dev worktree build), `Daemon
 /tmp/spirit-<sha256(repoRoot)[:12]>.pid
 ```
 
-Binaries installed globally (via TPM or PATH) that are **not** inside a git repo fall back to `~/.cache/spirit/daemon.sock`.
+Binaries installed globally (via TPM or PATH) that are **not** inside a git repo fall back to `~/.spirit/daemon.sock`.
 
 This means each worktree's `spirit` binary talks to an independent daemon instance with zero session sharing. No configuration needed — detection is automatic via `os.Executable()` → resolve symlinks → find git root.
 

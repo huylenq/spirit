@@ -38,8 +38,7 @@ var (
 )
 
 func avatarFilePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "spirit", "avatars.json")
+	return filepath.Join(StatusDir(), "avatars.json")
 }
 
 func loadAvatarStore() {

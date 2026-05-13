@@ -127,7 +127,7 @@ The plugin uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-co
 - `UserPromptSubmit` — sets status to "agent-turn" and captures the user's prompt
 - `Stop` — sets status to "user-turn" when Claude finishes
 
-Status files are stored in `~/.cache/spirit/`. A background daemon polls tmux panes every second and pushes updates to connected TUI clients over a Unix socket.
+Status files are stored in `~/.spirit/`. A background daemon polls tmux panes every second and pushes updates to connected TUI clients over a Unix socket.
 
 ## License
 
