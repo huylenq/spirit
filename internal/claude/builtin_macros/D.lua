@@ -1,4 +1,4 @@
--- key: D
+-- key: d
 -- name: commit+simplify+done
 local id = selected()
 if not id or id == "" then
