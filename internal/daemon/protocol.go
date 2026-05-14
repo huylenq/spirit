@@ -132,6 +132,7 @@ type OpenLaterData struct {
 
 type RenameAllResultData struct {
 	Renamed int      `json:"renamed"`
+	Killed  int      `json:"killed"`
 	Errors  []string `json:"errors,omitempty"`
 }
 

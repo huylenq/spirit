@@ -931,6 +931,6 @@ func (m Model) discoverBacklogs(sessions []claude.ClaudeSession) tea.Cmd {
 func (m Model) fetchRenameAllWindows() tea.Cmd {
 	return func() tea.Msg {
 		data, err := m.client.RenameAllWindows()
-		return WindowsRenamedMsg{Renamed: data.Renamed, Errors: data.Errors, Err: err}
+		return WindowsRenamedMsg{Renamed: data.Renamed, Killed: data.Killed, Errors: data.Errors, Err: err}
 	}
 }

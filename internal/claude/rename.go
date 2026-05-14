@@ -51,11 +51,13 @@ type WindowPaneInfo struct {
 }
 
 // GatherAllClaudeWindowPanes collects pane info for every tmux window that
-// contains at least one tracked Claude session, using a single tmux call.
-func GatherAllClaudeWindowPanes(sessions []ClaudeSession) (map[WindowKey][]WindowPaneInfo, error) {
+// contains at least one tracked Claude session. It also returns the pane IDs
+// of single-pane idle windows in idleSessionName (empty string disables that
+// scan) — folded in here so both consumers share one tmux + ps pass.
+func GatherAllClaudeWindowPanes(sessions []ClaudeSession, idleSessionName string) (map[WindowKey][]WindowPaneInfo, []string, error) {
 	allPanes, err := tmux.ListAllPanes()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	procTree := buildProcessTree()
@@ -74,30 +76,44 @@ func GatherAllClaudeWindowPanes(sessions []ClaudeSession) (map[WindowKey][]Windo
 	}
 
 	result := make(map[WindowKey][]WindowPaneInfo, len(claudeWindows))
+	idleGroups := make(map[int][]tmux.PaneInfo)
 	for _, p := range allPanes {
 		key := WindowKey{Session: p.SessionName, WindowIndex: p.WindowIndex}
-		if !claudeWindows[key] {
+		if claudeWindows[key] {
+			info := WindowPaneInfo{
+				PaneID:      p.PaneID,
+				CWD:         p.CurrentPath,
+				DirBasename: filepath.Base(p.CurrentPath),
+				GitBranch:   getGitBranchCached(p.CurrentPath),
+				ProcessName: findDeepestProcess(procTree, p.PanePID),
+			}
+			if cs, ok := sessionByPane[p.PaneID]; ok {
+				info.IsClaude = true
+				info.CustomTitle = cs.CustomTitle
+				info.SynthesizedTitle = cs.SynthesizedTitle
+				info.FirstMessage = cs.FirstMessage
+				info.LastUserMessage = cs.LastUserMessage
+				info.Status = cs.Status.String()
+				info.Project = cs.Project
+			}
+			result[key] = append(result[key], info)
+		}
+		if idleSessionName != "" && p.SessionName == idleSessionName {
+			idleGroups[p.WindowIndex] = append(idleGroups[p.WindowIndex], p)
+		}
+	}
+
+	var idle []string
+	for _, panes := range idleGroups {
+		if len(panes) != 1 {
 			continue
 		}
-		info := WindowPaneInfo{
-			PaneID:      p.PaneID,
-			CWD:         p.CurrentPath,
-			DirBasename: filepath.Base(p.CurrentPath),
-			GitBranch:   getGitBranchCached(p.CurrentPath),
-			ProcessName: findDeepestProcess(procTree, p.PanePID),
+		if findDeepestProcess(procTree, panes[0].PanePID) != "" {
+			continue
 		}
-		if cs, ok := sessionByPane[p.PaneID]; ok {
-			info.IsClaude = true
-			info.CustomTitle = cs.CustomTitle
-			info.SynthesizedTitle = cs.SynthesizedTitle
-			info.FirstMessage = cs.FirstMessage
-			info.LastUserMessage = cs.LastUserMessage
-			info.Status = cs.Status.String()
-			info.Project = cs.Project
-		}
-		result[key] = append(result[key], info)
+		idle = append(idle, panes[0].PaneID)
 	}
-	return result, nil
+	return result, idle, nil
 }
 
 // findDeepestProcess walks the process tree from parentPID, skipping shell processes,

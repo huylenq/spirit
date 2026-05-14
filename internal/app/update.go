@@ -595,11 +595,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var text string
 		isError := false
 		switch {
-		case msg.Renamed == 0 && len(msg.Errors) == 0:
+		case msg.Renamed == 0 && msg.Killed == 0 && len(msg.Errors) == 0:
 			text = "no windows to rename"
 		case len(msg.Errors) > 0:
-			text = fmt.Sprintf("renamed %d window(s) (%d failed)", msg.Renamed, len(msg.Errors))
+			text = fmt.Sprintf("renamed %d, killed %d (%d failed)", msg.Renamed, msg.Killed, len(msg.Errors))
 			isError = true
+		case msg.Killed > 0:
+			text = fmt.Sprintf("renamed %d window(s), killed %d idle", msg.Renamed, msg.Killed)
 		default:
 			text = fmt.Sprintf("renamed %d window(s)", msg.Renamed)
 		}

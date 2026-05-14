@@ -97,6 +97,7 @@ type MinimapReadyMsg struct {
 // tmux windows containing Claude sessions.
 type WindowsRenamedMsg struct {
 	Renamed int
+	Killed  int
 	Errors  []string
 	Err     error
 }

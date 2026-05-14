@@ -11,7 +11,7 @@ import (
 
 func (d *Daemon) handleRenameAllWindows() *Response {
 	sessions := d.currentSessions()
-	windows, err := claude.GatherAllClaudeWindowPanes(sessions)
+	windows, idlePanes, err := claude.GatherAllClaudeWindowPanes(sessions, "main")
 	if err != nil {
 		r := errResponse(err.Error())
 		return &r
@@ -23,10 +23,11 @@ func (d *Daemon) handleRenameAllWindows() *Response {
 	}
 
 	var (
-		wg   sync.WaitGroup
-		mu   sync.Mutex
-		ok   int
-		errs []string
+		wg     sync.WaitGroup
+		mu     sync.Mutex
+		ok     int
+		killed int
+		errs   []string
 	)
 	for k, name := range names {
 		wg.Add(1)
@@ -42,9 +43,23 @@ func (d *Daemon) handleRenameAllWindows() *Response {
 			ok++
 		}(k, name)
 	}
+	for _, paneID := range idlePanes {
+		wg.Add(1)
+		go func(paneID string) {
+			defer wg.Done()
+			err := tmux.KillPane(paneID)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, "kill "+paneID+": "+err.Error())
+				return
+			}
+			killed++
+		}(paneID)
+	}
 	wg.Wait()
 
-	r := resultResponse(RenameAllResultData{Renamed: ok, Errors: errs})
+	r := resultResponse(RenameAllResultData{Renamed: ok, Killed: killed, Errors: errs})
 	return &r
 }
 
