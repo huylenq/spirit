@@ -185,7 +185,6 @@ func (m *SidebarModel) View() string {
 		case "":
 			firstProject[order] = project
 		case project:
-			// same project as before
 		default:
 			multiProject[order] = true
 		}
@@ -663,6 +662,16 @@ func padHeaderBar(label string, width int) string {
 	return label + SeparatorStyle.Render(strings.Repeat("─", width-w))
 }
 
+// padHeaderBarIf is padHeaderBar gated on a flag — callers use it to suppress
+// the trailing dim ─ rule (e.g. on a sub-header that's the only one in its
+// section, where the section chrome already brackets the row).
+func padHeaderBarIf(label string, width int, withBar bool) string {
+	if !withBar {
+		return label
+	}
+	return padHeaderBar(label, width)
+}
+
 func renderGroupHeader(project string, width int, flagged bool) string {
 	return padHeaderBar(GroupHeaderProjectStyle.Render(projectLabel(project, flagged)), width)
 }
@@ -676,15 +685,8 @@ func renderSelectedProjectHeader(project string, width int, flagged bool) string
 	return selectedProjectHeaderStyle.Width(width).Render(projectLabel(project, flagged))
 }
 
-// renderProjectSubHeader renders a project sub-header. The trailing dim ─ bar
-// is skipped when the project is the only one in its section — the section
-// chrome already brackets it, so the rule would just be visual noise.
 func renderProjectSubHeader(project string, width int, flagged, withBar bool) string {
-	label := ProjectSubHeaderStyle.Render(projectLabel(project, flagged))
-	if !withBar {
-		return label
-	}
-	return padHeaderBar(label, width)
+	return padHeaderBarIf(ProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width, withBar)
 }
 
 // activeProjectSubHeaderStyle is ProjectSubHeaderStyle with the muted foreground
@@ -698,11 +700,7 @@ func renderActiveGroupHeader(project string, width int, flagged bool) string {
 }
 
 func renderActiveProjectSubHeader(project string, width int, flagged, withBar bool) string {
-	label := activeProjectSubHeaderStyle.Render(projectLabel(project, flagged))
-	if !withBar {
-		return label
-	}
-	return padHeaderBar(label, width)
+	return padHeaderBarIf(activeProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width, withBar)
 }
 
 func renderStatusGroupHeader(order, width int, muted bool) string {
@@ -946,8 +944,6 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	singleProject := m.singleProjectFilter()
 	currentLine := 0
 
-	// lastOrder is the final section reached during session counting; the
-	// backlog transition below uses it to mirror View()'s section boundary.
 	lastOrder := -1
 
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
