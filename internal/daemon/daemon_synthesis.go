@@ -8,31 +8,56 @@ import (
 	"github.com/huylenq/spirit/internal/copilot"
 )
 
+// Debounce windows for auto-synthesis. Short window applies while a session
+// is young and its objective is still shifting; long window kicks in once it
+// has matured past autoSynthMatureMsgs user messages.
+const (
+	autoSynthShortWindow   = 30 * time.Second
+	autoSynthLongWindow    = 15 * time.Minute
+	autoSynthMatureMsgs    = 3
+)
+
 // autoSynthesize runs synthesis for a session that just became idle.
 // Called as a goroutine from patchSession on agent-turn → user-turn transitions.
 func (d *Daemon) autoSynthesize(paneID, sessionID string) {
-	// Check pref — default on (only skip if explicitly "false")
 	if d.readPref("autoSynthesize") == "false" {
 		return
 	}
 
-	// Atomically check debounce + claim synthesizing slot.
-	// Single lock acquisition prevents TOCTOU between debounce check and slot claim.
-	d.autoSynthMu.Lock()
-	if last, ok := d.lastAutoSynthTime[sessionID]; ok && time.Since(last) < 30*time.Second {
-		d.autoSynthMu.Unlock()
-		return
+	// Cheap path first: always-skip if inside the short window; always-proceed
+	// if outside the long window. Only when we're between the two do we need
+	// to read the transcript to disambiguate by message count.
+	d.lastSynthMu.Lock()
+	last, hasLast := d.lastSynthTime[sessionID]
+	d.lastSynthMu.Unlock()
+	if hasLast {
+		elapsed := time.Since(last)
+		if elapsed < autoSynthShortWindow {
+			return
+		}
+		if elapsed < autoSynthLongWindow {
+			msgs, err := claude.ReadUserMessages(sessionID)
+			if err != nil {
+				log.Printf("auto-synth: read messages %s: %v", sessionID, err)
+				return
+			}
+			if len(msgs) > autoSynthMatureMsgs {
+				return
+			}
+		}
 	}
+
 	d.synthesizingMu.Lock()
 	if d.synthesizingPanes[paneID] {
 		d.synthesizingMu.Unlock()
-		d.autoSynthMu.Unlock()
 		return
 	}
 	d.synthesizingPanes[paneID] = true
 	d.synthesizingMu.Unlock()
-	d.lastAutoSynthTime[sessionID] = time.Now()
-	d.autoSynthMu.Unlock()
+
+	d.lastSynthMu.Lock()
+	d.lastSynthTime[sessionID] = time.Now()
+	d.lastSynthMu.Unlock()
 
 	d.nudge() // show spinner immediately
 

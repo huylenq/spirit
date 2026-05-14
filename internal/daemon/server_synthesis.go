@@ -19,6 +19,9 @@ func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
 	d.synthesizingMu.Lock()
 	d.synthesizingPanes[req.PaneID] = true
 	d.synthesizingMu.Unlock()
+	d.lastSynthMu.Lock()
+	d.lastSynthTime[req.SessionID] = time.Now()
+	d.lastSynthMu.Unlock()
 
 	summary, fromCache, err := claude.Summarize(req.SessionID)
 
@@ -78,6 +81,12 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 		d.synthesizingPanes[t.paneID] = true
 	}
 	d.synthesizingMu.Unlock()
+	now := time.Now()
+	d.lastSynthMu.Lock()
+	for _, t := range targets {
+		d.lastSynthTime[t.sessionID] = now
+	}
+	d.lastSynthMu.Unlock()
 	d.nudge()
 
 	// Fan out with bounded concurrency (max 4 parallel)

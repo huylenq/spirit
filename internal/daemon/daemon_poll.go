@@ -156,10 +156,10 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 			go d.autoSynthesize(endPaneID, endSessionID)
 			// Defer cleanup of debounce entry (after auto-synth has a chance to check it)
 			go func() {
-				time.Sleep(35 * time.Second)
-				d.autoSynthMu.Lock()
-				delete(d.lastAutoSynthTime, endSessionID)
-				d.autoSynthMu.Unlock()
+				time.Sleep(60 * time.Second)
+				d.lastSynthMu.Lock()
+				delete(d.lastSynthTime, endSessionID)
+				d.lastSynthMu.Unlock()
 			}()
 		}
 		return patchApplied

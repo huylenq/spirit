@@ -65,8 +65,8 @@ type Daemon struct {
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
 
-	autoSynthMu       sync.Mutex
-	lastAutoSynthTime map[string]time.Time // sessionID → last auto-synth time
+	lastSynthMu   sync.Mutex
+	lastSynthTime map[string]time.Time // sessionID → last synth time (manual or auto)
 
 	overlapMu    sync.RWMutex
 	overlaps     []claude.FileOverlap
@@ -109,7 +109,7 @@ func Run(info DaemonInfo) error {
 		synthesizingPanes:  make(map[string]bool),
 		pendingPromptPanes: make(map[string]pendingPromptEntry),
 		orchestratorIDs:    make(map[string]bool),
-		lastAutoSynthTime:  make(map[string]time.Time),
+		lastSynthTime:      make(map[string]time.Time),
 		overlapPanes:       make(map[string]bool),
 		nudgeCh:            make(chan struct{}, 1),
 		socketPath:         info.SocketPath,
