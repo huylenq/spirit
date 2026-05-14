@@ -33,6 +33,40 @@ func (m *SidebarModel) renderItemWithStats(isSelected, isAutoJump bool, s claude
 	return PinStatsRight(content, statsRight, m.width, padSp)
 }
 
+// passesViewFilters reports whether s should be rendered in the main session
+// list. View(), PaneIDAtLine, and BacklogIDAtLine all funnel through this so
+// their visible rows and line counts stay aligned.
+func (m SidebarModel) passesViewFilters(s claude.ClaudeSession, projectFilter string) bool {
+	order := sessionOrder(s)
+	if !m.claudingExpanded && order == OrderAgentTurn {
+		return false
+	}
+	if !m.laterExpanded && order == OrderLater {
+		return false
+	}
+	if m.focusMode && !m.IsEffectivelyFlagged(s) {
+		return false
+	}
+	if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+		return false
+	}
+	return true
+}
+
+// transitionLines counts the divider lines View() emits when moving from
+// section prev to section next: YT close (heavy ━+┛) when prev was YT, plus
+// a dim ─ top rule when next is non-YT.
+func transitionLines(prev, next int) int {
+	n := 0
+	if prev == OrderUserTurn {
+		n++
+	}
+	if next != OrderUserTurn {
+		n++
+	}
+	return n
+}
+
 func (m *SidebarModel) View() string {
 	if len(m.items) == 0 {
 		return EmptyStyle.Width(m.width).Render("No Claude sessions found\n\nStart Claude in a tmux pane to see it here.")
@@ -96,8 +130,26 @@ func (m *SidebarModel) View() string {
 		return activeOrder != -1 && order != -1 && order != activeOrder
 	}
 	addSeparator := func(order int) {
+		// Only YOUR TURN owns a closing line — its full outline must terminate
+		// with a heavy ━ + ┛ corner. Non-YT sections have no closing chrome;
+		// the next section's addTopRule (or nothing) handles the boundary.
+		if order != OrderUserTurn {
+			return
+		}
 		muted := mutedFor(order)
 		add(sectionSeparator(order, m.width, muted), gutterInfo{order: order, kind: kindBottom, muted: muted})
+	}
+	// addTopRule emits a dim ─ above a non-YT section header so it has a clear
+	// boundary with whatever came before — including YT's own ┛ close, which
+	// produces a stacked heavy+dim pair at the YT→other-section boundary. YT
+	// itself never gets a top rule (its colored ━ header is its own top).
+	// Suppressed when nothing has been emitted yet, so the very first section
+	// in the list doesn't get a leading rule.
+	addTopRule := func(order int) {
+		if order == OrderUserTurn || len(lines) == 0 {
+			return
+		}
+		add(sectionSeparator(-1, m.width, false), gutterInfo{order: -1, kind: kindBottom})
 	}
 	// Defensive: never emit the same section's top-border twice per render.
 	// If we ever do, it's a logic bug elsewhere (the loop's order-transition
@@ -116,6 +168,50 @@ func (m *SidebarModel) View() string {
 	sectionGutter := func(order int) gutterInfo {
 		return gutterInfo{order: order, muted: mutedFor(order)}
 	}
+
+	// onlyProject(order) reports whether section `order` holds exactly one
+	// distinct project — sub-headers in that case skip the trailing dim ─
+	// rule since the section chrome already brackets the row. In groupByProject
+	// mode every non-LATER status lifts its projects to the top level, so we
+	// only track LATER (and BACKLOG, which always groups internally). Search
+	// mode renders flat and never consults this.
+	var firstProject [5]string
+	var multiProject [5]bool
+	trackProject := func(order int, project string) {
+		if order < 0 || order >= len(firstProject) || multiProject[order] {
+			return
+		}
+		switch firstProject[order] {
+		case "":
+			firstProject[order] = project
+		case project:
+			// same project as before
+		default:
+			multiProject[order] = true
+		}
+	}
+	if query == "" {
+		for _, s := range m.allSorted {
+			if !m.passesViewFilters(s, projectFilter) {
+				continue
+			}
+			order := sessionOrder(s)
+			if m.groupByProject && order != OrderLater {
+				continue
+			}
+			trackProject(order, s.Project)
+		}
+		for _, b := range m.filteredBacklog {
+			trackProject(OrderBacklog, b.Project)
+		}
+	}
+	onlyProject := func(order int) bool {
+		if order < 0 || order >= len(firstProject) {
+			return false
+		}
+		return firstProject[order] != "" && !multiProject[order]
+	}
+
 	m.selectedProjectRow = -1
 	m.selectedItemRow = -1
 
@@ -135,21 +231,7 @@ func (m *SidebarModel) View() string {
 		currentProject := ""
 
 		for _, s := range m.allSorted {
-			// When Clauding is collapsed, skip Clauding items entirely (header rendered at bottom)
-			if !m.claudingExpanded && sessionOrder(s) == OrderAgentTurn {
-				continue
-			}
-			// When Later is collapsed, skip Later items entirely (header rendered at bottom)
-			if !m.laterExpanded && sessionOrder(s) == OrderLater {
-				continue
-			}
-			// Focus mode: skip unflagged sessions
-			if m.focusMode && !m.IsEffectivelyFlagged(s) {
-				continue
-			}
-			// Project filter (`p:foo`): drop non-matching projects entirely so
-			// their group headers disappear along with their items.
-			if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
+			if !m.passesViewFilters(s, projectFilter) {
 				continue
 			}
 			// Group headers — always rendered for spatial stability during narrowing
@@ -162,6 +244,7 @@ func (m *SidebarModel) View() string {
 					}
 					currentOrder = OrderLater
 					currentProject = "" // reset to force project sub-header
+					addTopRule(OrderLater)
 					addHeader(OrderLater)
 				}
 				if !singleProject && s.Project != currentProject {
@@ -173,9 +256,9 @@ func (m *SidebarModel) View() string {
 							m.selectedProjectRow = len(lines)
 							add(renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
 						} else if pe == activeProject {
-							add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
+							add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project], !onlyProject(OrderLater)), sectionGutter(OrderLater))
 						} else {
-							add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(OrderLater))
+							add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project], !onlyProject(OrderLater)), sectionGutter(OrderLater))
 						}
 					} else {
 						pe := projectEntry{Name: s.Project, StatusOrder: -1}
@@ -197,6 +280,7 @@ func (m *SidebarModel) View() string {
 					}
 					currentOrder = order
 					currentProject = "" // reset project tracking for new status group
+					addTopRule(order)
 					addHeader(order)
 				}
 				if !singleProject && s.Project != currentProject {
@@ -206,9 +290,9 @@ func (m *SidebarModel) View() string {
 						m.selectedProjectRow = len(lines)
 						add(renderSelectedProjectHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
 					} else if pe == activeProject {
-						add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
+						add(renderActiveProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project], !onlyProject(currentOrder)), sectionGutter(currentOrder))
 					} else {
-						add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project]), sectionGutter(currentOrder))
+						add(renderProjectSubHeader(s.Project, m.width, m.flaggedProjects[s.Project], !onlyProject(currentOrder)), sectionGutter(currentOrder))
 					}
 				}
 			}
@@ -232,6 +316,7 @@ func (m *SidebarModel) View() string {
 		if len(lines) > 0 {
 			addSeparator(currentOrder)
 		}
+		addTopRule(OrderBacklog)
 		addHeader(OrderBacklog)
 
 		currentBacklogProject := ""
@@ -243,9 +328,9 @@ func (m *SidebarModel) View() string {
 					m.selectedProjectRow = len(lines)
 					add(renderSelectedProjectHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
 				} else if backlogPE == activeProject {
-					add(renderActiveProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
+					add(renderActiveProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project], !onlyProject(OrderBacklog)), sectionGutter(OrderBacklog))
 				} else {
-					add(renderProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project]), sectionGutter(OrderBacklog))
+					add(renderProjectSubHeader(backlog.Project, m.width, m.flaggedProjects[backlog.Project], !onlyProject(OrderBacklog)), sectionGutter(OrderBacklog))
 				}
 			}
 			backlogCursor := len(m.filtered) + i
@@ -255,9 +340,10 @@ func (m *SidebarModel) View() string {
 		currentOrder = OrderBacklog
 	}
 
-	// Every section must close with a ┛ corner so its outline is symmetric
-	// with the ┓ on its header row.
-	if currentOrder != -1 {
+	// Only YOUR TURN needs a trailing close — its full outline must terminate
+	// with a ┛ corner. Other sections fade into the bottom-pinned region (or
+	// the sidebar floor) without a closing rule, matching the pre-outline look.
+	if currentOrder == OrderUserTurn {
 		addSeparator(currentOrder)
 	}
 
@@ -389,7 +475,10 @@ var (
 )
 
 func renderGutter(g gutterInfo) string {
-	if g.order >= 0 && g.order < len(sectionPalette) && sectionPalette[g.order].label != "" {
+	// Only YOUR TURN renders the colored outline glyphs. Every other section
+	// falls back to the dim │ (or ┤ on a separator row) so the surrounding
+	// chrome reads as a simple horizontal-divider layout.
+	if g.order == OrderUserTurn {
 		mi := 0
 		if g.muted {
 			mi = 1
@@ -587,8 +676,15 @@ func renderSelectedProjectHeader(project string, width int, flagged bool) string
 	return selectedProjectHeaderStyle.Width(width).Render(projectLabel(project, flagged))
 }
 
-func renderProjectSubHeader(project string, width int, flagged bool) string {
-	return padHeaderBar(ProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width)
+// renderProjectSubHeader renders a project sub-header. The trailing dim ─ bar
+// is skipped when the project is the only one in its section — the section
+// chrome already brackets it, so the rule would just be visual noise.
+func renderProjectSubHeader(project string, width int, flagged, withBar bool) string {
+	label := ProjectSubHeaderStyle.Render(projectLabel(project, flagged))
+	if !withBar {
+		return label
+	}
+	return padHeaderBar(label, width)
 }
 
 // activeProjectSubHeaderStyle is ProjectSubHeaderStyle with the muted foreground
@@ -601,8 +697,12 @@ func renderActiveGroupHeader(project string, width int, flagged bool) string {
 	return padHeaderBar(GroupHeaderStyle.Render(projectLabel(project, flagged)), width)
 }
 
-func renderActiveProjectSubHeader(project string, width int, flagged bool) string {
-	return padHeaderBar(activeProjectSubHeaderStyle.Render(projectLabel(project, flagged)), width)
+func renderActiveProjectSubHeader(project string, width int, flagged, withBar bool) string {
+	label := activeProjectSubHeaderStyle.Render(projectLabel(project, flagged))
+	if !withBar {
+		return label
+	}
+	return padHeaderBar(label, width)
 }
 
 func renderStatusGroupHeader(order, width int, muted bool) string {
@@ -612,8 +712,12 @@ func renderStatusGroupHeader(order, width int, muted bool) string {
 	entry := sectionPalette[order]
 	// Title text stays at full color so the section's identity remains visible
 	// even when the surrounding outline is muted; only the trailing dashes
-	// follow the muted flag.
+	// follow the muted flag. Only YOUR TURN gets a heavy ━ fill — other
+	// sections render just the label and let applyGutters pad with spaces.
 	rendered := entry.headerStyle.Render(entry.label)
+	if order != OrderUserTurn {
+		return rendered
+	}
 	w := lipgloss.Width(rendered)
 	if w >= width {
 		return rendered
@@ -774,31 +878,19 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 	anyLinesEmitted := false
 
 	for _, s := range m.allSorted {
+		if !m.passesViewFilters(s, projectFilter) {
+			continue
+		}
 		order := sessionOrder(s)
-
-		// Skip collapsed sections — mirrors View()'s continue checks exactly
-		if !m.claudingExpanded && order == OrderAgentTurn {
-			continue
-		}
-		if !m.laterExpanded && order == OrderLater {
-			continue
-		}
-		if m.focusMode && !m.IsEffectivelyFlagged(s) {
-			continue
-		}
-		if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
-			continue
-		}
 
 		// Group headers — must mirror View()'s logic exactly
 		if m.groupByProject {
-			// Emit LATER status header when entering the Later zone
 			if order == OrderLater && currentOrder != OrderLater {
-				currentOrder = OrderLater
-				currentProject = "" // reset to force project sub-header
 				if anyLinesEmitted {
-					currentLine++ // separator
+					currentLine += transitionLines(currentOrder, OrderLater)
 				}
+				currentOrder = OrderLater
+				currentProject = ""
 				anyLinesEmitted = true
 				currentLine++ // LATER status group header
 			}
@@ -813,11 +905,11 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 			}
 		} else {
 			if order != currentOrder {
+				if anyLinesEmitted {
+					currentLine += transitionLines(currentOrder, order)
+				}
 				currentOrder = order
 				currentProject = ""
-				if anyLinesEmitted {
-					currentLine++ // separator
-				}
 				anyLinesEmitted = true
 				currentLine++ // status group header
 			}
@@ -827,7 +919,6 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 			}
 		}
 
-		// Skip non-matching items (same as View)
 		if m.matchSet != nil && !m.matchSet[s.PaneID] {
 			continue
 		}
@@ -855,6 +946,10 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	singleProject := m.singleProjectFilter()
 	currentLine := 0
 
+	// lastOrder is the final section reached during session counting; the
+	// backlog transition below uses it to mirror View()'s section boundary.
+	lastOrder := -1
+
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
 	if query != "" {
 		for _, s := range m.filtered {
@@ -866,30 +961,18 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 		anyLinesEmitted := false
 
 		for _, s := range m.allSorted {
+			if !m.passesViewFilters(s, projectFilter) {
+				continue
+			}
 			order := sessionOrder(s)
 
-			// Skip collapsed sections — mirrors View()'s continue checks exactly
-			if !m.claudingExpanded && order == OrderAgentTurn {
-				continue
-			}
-			if !m.laterExpanded && order == OrderLater {
-				continue
-			}
-			if m.focusMode && !m.IsEffectivelyFlagged(s) {
-				continue
-			}
-			if projectFilter != "" && !strings.Contains(strings.ToLower(s.Project), projectFilter) {
-				continue
-			}
-
 			if m.groupByProject {
-				// Emit LATER status header when entering the Later zone
 				if order == OrderLater && currentOrder != OrderLater {
-					currentOrder = OrderLater
-					currentProject = "" // reset to force project sub-header
 					if anyLinesEmitted {
-						currentLine++ // separator
+						currentLine += transitionLines(currentOrder, OrderLater)
 					}
+					currentOrder = OrderLater
+					currentProject = ""
 					anyLinesEmitted = true
 					currentLine++ // LATER status group header
 				}
@@ -904,11 +987,11 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 				}
 			} else {
 				if order != currentOrder {
+					if anyLinesEmitted {
+						currentLine += transitionLines(currentOrder, order)
+					}
 					currentOrder = order
 					currentProject = ""
-					if anyLinesEmitted {
-						currentLine++ // separator
-					}
 					anyLinesEmitted = true
 					currentLine++ // status group header
 				}
@@ -922,11 +1005,11 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 			}
 			currentLine += m.itemLineCount(s, query)
 		}
+		lastOrder = currentOrder
 	}
 
-	// Backlog section: separator (when sessions exist) + group header.
 	if currentLine > 0 {
-		currentLine++ // separator
+		currentLine += transitionLines(lastOrder, OrderBacklog)
 	}
 	currentLine++ // "BACKLOG" group header
 
