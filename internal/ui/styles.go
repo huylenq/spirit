@@ -46,11 +46,11 @@ var (
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
-	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#2e3658"} // selection row bg
+	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#e8ecf5", Dark: "#312e81"} // selection row bg (indigo-900, toned down)
 	// Cursor-row pulse colors: brighter shades that decay back to
 	// ColorSelectionBg over a few frames after navigation.
-	CursorPulseHigh = lipgloss.AdaptiveColor{Light: "#a8b5d6", Dark: "#525e8c"}
-	CursorPulseMid  = lipgloss.AdaptiveColor{Light: "#c3cce0", Dark: "#3f4872"}
+	CursorPulseHigh = lipgloss.AdaptiveColor{Light: "#a8b5d6", Dark: "#818cf8"}
+	CursorPulseMid  = lipgloss.AdaptiveColor{Light: "#c3cce0", Dark: "#6366f1"}
 	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
 	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#eab308"} // yellow — file overlap warning
