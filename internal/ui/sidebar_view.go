@@ -652,14 +652,14 @@ func projectLabel(project string, flagged bool) string {
 	return s
 }
 
-// padHeaderBar appends a thin dim ─ fill to a pre-rendered header label so the
+// padHeaderBar appends a thin dim ‧ fill to a pre-rendered header label so the
 // row spans `width` columns. Returns the label unchanged if it already does.
 func padHeaderBar(label string, width int) string {
 	w := lipgloss.Width(label)
 	if w >= width {
 		return label
 	}
-	return label + SeparatorStyle.Render(strings.Repeat("─", width-w))
+	return label + SeparatorStyle.Render(strings.Repeat("‧", width-w))
 }
 
 // padHeaderBarIf is padHeaderBar gated on a flag — callers use it to suppress
