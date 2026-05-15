@@ -369,14 +369,15 @@ func (m SearchModel) PopoverView(maxWidth int) (view string, width int, ok bool)
 		}
 		matched := string(runes[:split])
 		rest := string(runes[split:])
+		glyph := IconForProject(name)
 		var cell string
 		if i == idx {
-			cell = matchedActive.Render(matched) + restActive.Render(rest)
+			cell = restActive.Render(glyph+" ") + matchedActive.Render(matched) + restActive.Render(rest)
 		} else {
-			cell = matchedInactive.Render(matched) + restInactive.Render(rest)
+			cell = restInactive.Render(glyph+" ") + matchedInactive.Render(matched) + restInactive.Render(rest)
 		}
 		cells[i] = cell
-		cellW[i] = lipgloss.Width(name)
+		cellW[i] = lipgloss.Width(glyph) + 1 + lipgloss.Width(name)
 	}
 
 	leftHint := SearchPopoverDimStyle.Render("…")
