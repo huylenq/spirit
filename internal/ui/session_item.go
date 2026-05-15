@@ -611,7 +611,7 @@ func (m *SidebarModel) BuildStatsRight(s claude.ClaudeSession, dw DiffColWidths,
 				totalRemoved += ds.Removed
 			}
 			statsRight += sp(" ") +
-				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconFile, dw.files, len(stats))) +
+				withBg(ItemDetailStyle).Render(fmt.Sprintf("%s %*d", IconDiff, dw.files, len(stats))) +
 				sp(" ") + withBg(DiffAddedStyle).Render(fmt.Sprintf("+%-*d", dw.added, totalAdded)) +
 				sp(" ") + withBg(StatWorkingStyle).Render(fmt.Sprintf("-%-*d", dw.removed, totalRemoved))
 		}
