@@ -12,6 +12,8 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+var diffStatSeparator = BorderCharStyle.Render(" │ ")
+
 // EmptyView renders the "no session selected" placeholder at the given size.
 func (m *DetailModel) EmptyView(w, h int) string {
 	return EmptyStyle.Width(w).Height(h).Render("Select a session to preview")
@@ -26,21 +28,37 @@ func (m *DetailModel) View() string {
 
 	avatarColor := AvatarColor(s.AvatarColorIdx)
 
-	// Header line 1: project + diff stats + right-aligned git info
-	projectLabel := DetailTitleStyle.Foreground(avatarColor).Render(s.Project + "/")
+	// Header line 1: avatar + project + display name ... right-aligned git info
+	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
+	projectLabel := DetailTitleStyle.Foreground(avatarColor).Render(s.Project)
 	gitInfo := ""
 	if s.GitBranch != "" {
 		gitInfo = DetailMetaStyle.Render(s.GitBranch + " " + IconGitBranch + " " +
 			s.TmuxSession + ":" + fmt.Sprintf("%d.%s", s.TmuxWindow, s.PaneID))
 	}
 	gitInfoWidth := lipgloss.Width(gitInfo)
-	projectWidth := lipgloss.Width(projectLabel)
 
-	// Diff stats fill the gap between project and right-aligned git info
+	titleLeft := avatar + " " + projectLabel
+	if name := s.DisplayName(); name != "" {
+		name = strings.ReplaceAll(name, "\n", " ")
+		prefixWidth := lipgloss.Width(titleLeft) + 1
+		maxNameWidth := m.width - prefixWidth - gitInfoWidth - 4 // 2 gap to git + 2 padding
+		if maxNameWidth > 0 {
+			name = ansi.Truncate(name, maxNameWidth, "…")
+		}
+		titleLeft += " " + name
+	}
+	titleLeftWidth := lipgloss.Width(titleLeft)
+	titleGap := m.width - titleLeftWidth - gitInfoWidth - 2
+	if titleGap < 2 {
+		titleGap = 2
+	}
+	sessionTitle := titleLeft + strings.Repeat(" ", titleGap) + gitInfo
+
+	// Header line 2: diff stats (full row)
 	diffStatsStr := ""
 	if len(m.diffFiles) > 0 {
-		// Available width for diffs: total - project - gitInfo - gaps
-		rowWidth := m.width - projectWidth - gitInfoWidth - 6 // 2 gap left + 2 gap right + 2 padding
+		rowWidth := m.width - 4 // 2 padding each side
 		if rowWidth < 10 {
 			rowWidth = 10
 		}
@@ -51,7 +69,7 @@ func (m *DetailModel) View() string {
 			entry := fs.name + " "
 			addStr := fmt.Sprintf("+%d", fs.added)
 			rmStr := fmt.Sprintf("-%d", fs.removed)
-			plainWidth := lipgloss.Width(entry) + lipgloss.Width(addStr) + 1 + lipgloss.Width(rmStr)
+			plainWidth := lipgloss.Width(entry) + len(addStr) + 1 + len(rmStr)
 			if used > 0 {
 				plainWidth += 3 // separator " │ "
 			}
@@ -68,36 +86,11 @@ func (m *DetailModel) View() string {
 		}
 
 		if len(entries) > 0 {
-			sep := ItemDetailStyle.Render(" │ ")
-			diffStatsStr = "  " + strings.Join(entries, sep)
+			diffStatsStr = "  " + strings.Join(entries, diffStatSeparator)
 		}
 	}
 
-	// Assemble line 1: project + diffs + gap + git info (right-aligned)
-	leftPart := projectLabel + diffStatsStr
-	leftWidth := lipgloss.Width(leftPart)
-	gap := m.width - leftWidth - gitInfoWidth - 2
-	if gap < 2 {
-		gap = 2
-	}
-	line1 := leftPart + strings.Repeat(" ", gap) + gitInfo
-
-	// Header line 2: avatar + mnemonic badge + session title
-	avatar := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
-	badge := AvatarMnemonicBadge(s.AvatarAnimalIdx, s.AvatarColorIdx)
-	sessionTitle := avatar + " " + badge
-	if name := s.DisplayName(); name != "" {
-		// Strip newlines — FirstMessage can be multiline
-		name = strings.ReplaceAll(name, "\n", " ")
-		prefixWidth := lipgloss.Width(sessionTitle) + 1 // +1 for the separating space we'll prepend
-		maxNameWidth := m.width - prefixWidth - 2       // -2 matches line-1 right-margin convention
-		if maxNameWidth > 0 {
-			name = ansi.Truncate(name, maxNameWidth, "…")
-		}
-		sessionTitle += " " + name
-	}
-
-	header := line1 + "\n" + sessionTitle
+	header := sessionTitle + "\n" + diffStatsStr
 
 	// Content viewport, optionally with aside panel (chat outline + notes)
 	contentWidth := m.width - 4
@@ -105,6 +98,7 @@ func (m *DetailModel) View() string {
 	if m.relayView != "" {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
+	vpRaw = m.highlightCursorAnchorRow(vpRaw)
 	// Use the session's avatar color for the preview border
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
@@ -281,11 +275,9 @@ const maxOutlineMessages = 15
 // outlineGap is the number of space columns between the styled bullet glyph and message text.
 const outlineGap = 1
 
-// Per-section line caps inside the "current turn" block.
-const (
-	outlineLastUserMaxLines   = 5
-	outlineFirstReplyMaxLines = 2
-)
+// outlineLastUserMaxLines caps the wrap height of the current-turn user
+// message at the top of the timeline.
+const outlineLastUserMaxLines = 5
 
 // recapPanelMaxLines caps the body of the bottom-docked recap panel.
 const recapPanelMaxLines = 8
@@ -404,34 +396,191 @@ func (m *DetailModel) renderChatOutline(width int) string {
 		}
 	}
 
-	// Agent reply in the current turn. While the agent is working we show the
-	// first reply ("I'll start by…") as the in-flight signal; after the turn
-	// ends we show the last assistant text as the wrap-up. The Recap panel
-	// lives separately at the bottom — independent of this slot.
-	var agentReply string
-	if isWorking {
-		agentReply = strings.TrimSpace(m.currentTurn.FirstAssistantText)
-	} else if m.session != nil {
-		agentReply = strings.TrimSpace(m.session.LastAssistantMessage)
-	}
-	if agentReply != "" {
-		lines = append(lines, renderTurnAccessory(agentReply, innerWidth, "↪ ", outlineFirstReplyMaxLines, ItemDetailStyle)...)
-	}
-
-	// Files touched this turn. Stays live as tool_use entries land. The row
-	// gets a one-line break above it and renders on a subtle bg band so it
-	// reads as turn metadata rather than another line of the user's message.
-	// Bg is composed into every leaf style inside renderTurnFilesRow so the
-	// band is continuous across child segments; the outer Width pad picks up
-	// the same bg for the trailing whitespace.
-	if len(m.currentTurn.Files) > 0 {
-		if row := renderTurnFilesRow(m.currentTurn.Files, innerWidth, TurnFilesBg); row != "" {
-			lines = append(lines, "")
-			lines = append(lines, lipgloss.NewStyle().Background(TurnFilesBg).Width(innerWidth).Render(row))
+	// Current-turn timeline: one row per event in chronological source order.
+	// Text events: `›` bullet + flattened-truncated first line.
+	// Edit/Write/MultiEdit: `⫶` bullet + bg-tinted band showing file + stats.
+	// Every row is a single nav stop; j/k cycles through them after the
+	// current user message. Recap lives in its own bottom-docked panel.
+	eventBase := lastIdx + 1 // first cursor index that lands on event 0
+	subPos, subTotal := m.FocusedSubInfo()
+	for ei, ev := range m.currentTurn.Events {
+		focused := m.msgCursor == eventBase+ei
+		switch ev.Kind {
+		case claude.TurnEventText:
+			lines = append(lines, renderTurnTextRow(ev.Text, innerWidth, msgWidth, focused))
+		case claude.TurnEventEdit, claude.TurnEventWrite, claude.TurnEventMultiEdit:
+			lines = append(lines, renderTurnToolRow(ev, innerWidth, focused, subPos, subTotal))
 		}
 	}
 
 	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+// renderTurnTextRow renders a single-line text event with the `›` bullet at
+// col 2 and the truncated text at col 5. Cursor focus brightens the bullet
+// and the text style.
+func renderTurnTextRow(text string, innerWidth, msgWidth int, focused bool) string {
+	flat := flattenMarkdownText(text)
+	glyphStyle := TranscriptBulletStyle
+	textStyle := ItemDetailStyle
+	if focused {
+		glyphStyle = TranscriptCursorStyle
+		textStyle = TranscriptMsgStyle
+	}
+	glyph := glyphStyle.Render(IconText)
+	prefix := glyph + strings.Repeat(" ", outlineGap)
+	return prefix + textStyle.Render(ansi.Truncate(flat, msgWidth, "…"))
+}
+
+// renderTurnToolRow renders a single-line tool event (Edit/Write/MultiEdit)
+// with the `⫶` bullet at col 2 and a bg-tinted file row at col 5. When the
+// event merges multiple source blocks (BlockCount > 1), appends a merge
+// indicator so the user sees there are sub-blocks navigable via ctrl+h/l:
+//   - unfocused: `×N` (just the count)
+//   - focused:   `(p/N)` (current sub-cursor position out of total)
+func renderTurnToolRow(ev claude.TurnEvent, innerWidth int, focused bool, subPos, subTotal int) string {
+	indentCols := outlineIndicatorWidth()
+	bandWidth := max(1, innerWidth-indentCols)
+	contentBudget := max(1, bandWidth-2) // -2 for inner left/right bg padding
+	row := renderTurnFileEntry(ev, contentBudget, TurnFilesBg)
+	if ev.BlockCount > 1 {
+		var suffix string
+		if focused && subTotal > 1 {
+			suffix = ItemDetailStyle.Background(TurnFilesBg).Render(fmt.Sprintf(" (%d/%d)", subPos, subTotal))
+		} else {
+			suffix = ItemDetailStyle.Background(TurnFilesBg).Render(fmt.Sprintf(" ×%d", ev.BlockCount))
+		}
+		// Re-fit so row + suffix stays within budget.
+		if lipgloss.Width(row)+lipgloss.Width(suffix) > contentBudget {
+			row = ansi.Truncate(row, max(1, contentBudget-lipgloss.Width(suffix)), "…")
+		}
+		row += suffix
+	}
+	glyphStyle := TranscriptBulletStyle
+	if focused {
+		glyphStyle = TranscriptCursorStyle
+	}
+	prefix := glyphStyle.Render(IconDiff) + strings.Repeat(" ", outlineGap)
+	bandStyle := lipgloss.NewStyle().Background(TurnFilesBg).Padding(0, 1).Width(bandWidth)
+	return prefix + bandStyle.Render(row)
+}
+
+// flattenMarkdownText collapses a markdown-ish text block to a single line:
+// strip emphasis markers, replace newlines/runs of whitespace with a single
+// space. Used for compact one-line previews in the timeline.
+func flattenMarkdownText(s string) string {
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.ReplaceAll(s, "__", "")
+	s = strings.ReplaceAll(s, "`", "")
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
+
+// renderTurnFileEntry renders one tool event's body: `name +A -R`. Every leaf
+// style composes the given bg so the band stays continuous across child
+// segments.
+func renderTurnFileEntry(ev claude.TurnEvent, width int, bg lipgloss.TerminalColor) string {
+	nameStyle := TranscriptMsgStyle.Background(bg)
+	addedStyle := DiffAddedStyle.Background(bg)
+	removedStyle := StatWorkingStyle.Background(bg)
+
+	base := filepath.Base(ev.FilePath)
+	out := nameStyle.Render(base)
+	if ev.Added > 0 {
+		out += addedStyle.Render(fmt.Sprintf(" +%d", ev.Added))
+	}
+	if ev.Removed > 0 {
+		out += removedStyle.Render(fmt.Sprintf(" -%d", ev.Removed))
+	}
+	if lipgloss.Width(out) > width {
+		// Hard truncate the rendered string to fit; preserves left-edge styling.
+		out = ansi.Truncate(out, width, "…")
+	}
+	return out
+}
+
+// highlightCursorAnchorRow tints the main viewport row corresponding to the
+// outline cursor's anchor line (user message or current sub-cursor sub-edit),
+// re-applying the bg after every inline reset so claude's per-segment ANSI
+// styling doesn't drop the tint mid-row. No-op when the anchor scrolled out
+// of the viewport or the line offset isn't known.
+func (m *DetailModel) highlightCursorAnchorRow(vpView string) string {
+	target := m.cursorAnchorLine()
+	if target < 0 {
+		return vpView
+	}
+	screenRow := target - m.viewport.YOffset
+	if screenRow < 0 || screenRow >= m.viewport.Height {
+		return vpView
+	}
+	lines := strings.Split(vpView, "\n")
+	if screenRow >= len(lines) {
+		return vpView
+	}
+	lines[screenRow] = reapplyBgToLine(lines[screenRow], m.cursorRowBg(), m.viewport.Width)
+	return strings.Join(lines, "\n")
+}
+
+// cursorRowBg picks the cursor-row bg based on the pulse phase. Frames decay
+// from CursorPulseHigh → CursorPulseMid → ColorSelectionBg over the pulse
+// budget, then stay at ColorSelectionBg as the permanent tint.
+func (m *DetailModel) cursorRowBg() lipgloss.TerminalColor {
+	switch {
+	case m.cursorPulseFrame >= cursorPulseFrames-1:
+		return CursorPulseHigh
+	case m.cursorPulseFrame >= cursorPulseFrames-3:
+		return CursorPulseMid
+	default:
+		return ColorSelectionBg
+	}
+}
+
+// cursorAnchorLine returns the captured-content line number that the outline
+// cursor currently points at — a user-message line, or (for an event) the
+// current sub-cursor's `⏺` line. -1 when no anchor is available.
+func (m *DetailModel) cursorAnchorLine() int {
+	if m.msgCursor < 0 {
+		return -1
+	}
+	if m.msgCursor < len(m.userMessages) {
+		if m.msgCursor < len(m.msgOffsets) {
+			return m.msgOffsets[m.msgCursor]
+		}
+		return -1
+	}
+	evIdx := m.msgCursor - len(m.userMessages)
+	if evIdx < 0 || evIdx >= len(m.eventSubOffsets) {
+		return -1
+	}
+	subs := m.eventSubOffsets[evIdx]
+	if len(subs) == 0 {
+		return -1
+	}
+	sub := m.subCursor
+	if sub < 0 || sub >= len(subs) {
+		sub = 0
+	}
+	return subs[sub]
+}
+
+// reapplyBgToLine paints `bg` as a persistent background across a possibly-
+// ANSI-styled line. Every inline reset (`\x1b[0m` / `\x1b[m`) is rewritten to
+// reset+bg so claude's per-segment styling doesn't drop the tint. The line is
+// padded to width with bg-spaces so the row reads as a continuous band.
+func reapplyBgToLine(line string, bg lipgloss.TerminalColor, width int) string {
+	// Extract just the bg open/close escapes by rendering a sentinel.
+	rendered := lipgloss.NewStyle().Background(bg).Render("\x00")
+	parts := strings.SplitN(rendered, "\x00", 2)
+	if len(parts) != 2 {
+		return line
+	}
+	openSeq, closeSeq := parts[0], parts[1]
+	if w := ansi.StringWidth(line); w < width {
+		line += strings.Repeat(" ", width-w)
+	}
+	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+openSeq)
+	line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+openSeq)
+	return openSeq + line + closeSeq
 }
 
 // pickOutlineBullet picks the bullet glyph + style for a user message based on
@@ -463,78 +612,6 @@ func wrapToCappedLines(text string, width, maxLines int) []string {
 	}
 	out[maxLines-1] = last + " ↩"
 	return out
-}
-
-// renderTurnAccessory wraps text with a one-line prefix on line 1 and continuation
-// indent on subsequent lines, capped to maxLines and styled with one style.
-func renderTurnAccessory(text string, innerWidth int, prefix string, maxLines int, style lipgloss.Style) []string {
-	pw := ansi.StringWidth(prefix)
-	contentWidth := max(1, innerWidth-pw)
-	indent := strings.Repeat(" ", pw)
-	wrapped := wrapToCappedLines(text, contentWidth, maxLines)
-	out := make([]string, len(wrapped))
-	for i, ln := range wrapped {
-		if i == 0 {
-			out[i] = style.Render(prefix + ln)
-		} else {
-			out[i] = style.Render(indent + ln)
-		}
-	}
-	return out
-}
-
-// renderTurnFilesRow renders one line of `file +A -R · file +A -R · …+N`.
-// Every leaf style composes the given bg so the row reads as one continuous
-// band — applying bg only at the parent leaves gaps where each child's reset
-// (`\x1b[0m`) drops the background. Returns "" when nothing fits.
-func renderTurnFilesRow(files []claude.TurnFileStat, innerWidth int, bg lipgloss.TerminalColor) string {
-	iconStyle := ItemDetailStyle.Background(bg)
-	dimStyle := ItemDetailStyle.Background(bg)
-	nameStyle := TranscriptMsgStyle.Background(bg)
-	addedStyle := DiffAddedStyle.Background(bg)
-	removedStyle := StatWorkingStyle.Background(bg)
-
-	iconPrefix := iconStyle.Render(IconFile + " ")
-	overheadW := lipgloss.Width(iconPrefix)
-	sep := dimStyle.Render(" · ")
-	sepW := lipgloss.Width(sep)
-	budget := max(1, innerWidth-overheadW)
-
-	var entries []string
-	used := 0
-	for i, f := range files {
-		base := filepath.Base(f.Path)
-		nameRendered := nameStyle.Render(base)
-		var statRendered string
-		statW := 0
-		if f.Added > 0 {
-			rendered := addedStyle.Render(fmt.Sprintf(" +%d", f.Added))
-			statRendered += rendered
-			statW += lipgloss.Width(rendered)
-		}
-		if f.Removed > 0 {
-			rendered := removedStyle.Render(fmt.Sprintf(" -%d", f.Removed))
-			statRendered += rendered
-			statW += lipgloss.Width(rendered)
-		}
-		entry := nameRendered + statRendered
-		eW := lipgloss.Width(nameRendered) + statW
-		needed := eW
-		if len(entries) > 0 {
-			needed += sepW
-		}
-		if used+needed > budget && len(entries) > 0 {
-			remaining := len(files) - i
-			entries = append(entries, dimStyle.Render(fmt.Sprintf("…+%d", remaining)))
-			break
-		}
-		entries = append(entries, entry)
-		used += needed
-	}
-	if len(entries) == 0 {
-		return ""
-	}
-	return iconPrefix + strings.Join(entries, sep)
 }
 
 // assembleAside stacks the aside sections vertically with recap + note bottom-

@@ -76,7 +76,7 @@ var avatarColorDefs = []avatarColorDef{
 	{
 		Fg:        lipgloss.AdaptiveColor{Light: "#4338ca", Dark: "#818cf8"},
 		BadgeBgDk: "#252535",
-		FillBg:    lipgloss.AdaptiveColor{Light: "#e0e7ff", Dark: "#1e1e2a"},
+		FillBg:    lipgloss.AdaptiveColor{Light: "#e0e7ff", Dark: "#1a152a"},
 	},
 	{
 		Fg:        lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"},
@@ -92,8 +92,6 @@ var avatarColorDefs = []avatarColorDef{
 
 // avatarAdjectives references the shared spirit.Adjectives table.
 var avatarAdjectives = spirit.Adjectives
-
-const avatarBadgeFgLight = "#ffffff"
 
 func init() {
 	if len(avatarColorDefs) != len(avatarAdjectives) {
@@ -156,14 +154,3 @@ func AvatarMnemonicName(animalIdx, colorIdx int) string {
 	return avatarAdjectives[ci][ai] + " " + animalDef(animalIdx).Name
 }
 
-// AvatarMnemonicBadge renders a colored pill badge with the mnemonic name.
-func AvatarMnemonicBadge(animalIdx, colorIdx int) string {
-	def := colorDef(colorIdx)
-	name := AvatarMnemonicName(animalIdx, colorIdx)
-	fg := lipgloss.AdaptiveColor{Light: avatarBadgeFgLight, Dark: def.Fg.Dark}
-	bg := lipgloss.AdaptiveColor{Light: def.Fg.Light, Dark: def.BadgeBgDk}
-	return lipgloss.NewStyle().
-		Foreground(fg).
-		Background(bg).
-		Render(" " + name + " ")
-}
