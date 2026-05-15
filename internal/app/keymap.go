@@ -84,6 +84,10 @@ type KeyMap struct {
 	ListShrink key.Binding
 	ListGrow   key.Binding
 
+	// Chat outline panel resize
+	ChatOutlineShrink key.Binding
+	ChatOutlineGrow   key.Binding
+
 	// Popup fullscreen toggle
 	Fullscreen key.Binding
 
@@ -420,6 +424,13 @@ var Keys = KeyMap{
 	),
 	ListGrow: key.NewBinding(
 		key.WithKeys("alt+l"),
+	),
+	ChatOutlineShrink: key.NewBinding(
+		key.WithKeys("alt+H"),
+		key.WithHelp("alt+H/L", "resize outline"),
+	),
+	ChatOutlineGrow: key.NewBinding(
+		key.WithKeys("alt+L"),
 	),
 	Fullscreen: key.NewBinding(
 		key.WithKeys("z"),

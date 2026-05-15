@@ -746,6 +746,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	const lastKeysCap = 12
+	m.lastKeys = append(m.lastKeys, msg.String())
+	if len(m.lastKeys) > lastKeysCap {
+		m.lastKeys = m.lastKeys[len(m.lastKeys)-lastKeysCap:]
+	}
+
 	// alt+' toggles copilot visibility from any state.
 	if msg.String() == "alt+'" {
 		return execToggleCopilot(&m)

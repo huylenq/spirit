@@ -5,10 +5,20 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+const chatOutlineResizeStep = 3
+
 func (m Model) execChatOutline() (Model, tea.Cmd) {
 	m.chatOutlineMode = nextChatOutlineMode(m.chatOutlineMode)
 	savePrefString("chatOutlineMode", m.chatOutlineMode)
 	m.detail.SetChatOutlineMode(m.chatOutlineMode)
+	return m, nil
+}
+
+func (m Model) resizeChatOutline(delta int) (Model, tea.Cmd) {
+	if m.chatOutlineMode == ChatOutlineHidden {
+		return m, nil
+	}
+	savePrefInt("chatOutlineWidth", m.detail.NudgeChatOutlineWidth(delta))
 	return m, nil
 }
 

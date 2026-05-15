@@ -237,6 +237,7 @@ type Model struct {
 	queueCursor          int                       // -1 = text input focused, >= 0 = highlighted item index
 	debugMode            bool                      // toggle debug overlay (D key)
 	globalEffects        []claude.GlobalHookEffect // latest handled effects across all sessions
+	lastKeys             []string                  // for debug panel (alt+d)
 	showHelp             bool                      // toggle help overlay (? key)
 	showSpiritAnimal     bool                      // toggle spirit animal overlay (gs chord)
 	lastClickPaneID      string                    // pane clicked last (for double-click detection)

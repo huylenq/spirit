@@ -11,6 +11,18 @@ import (
 	"github.com/huylenq/spirit/internal/ui"
 )
 
+func (m Model) renderLastKeysPanel() string {
+	lines := []string{ui.DebugTitleStyle.Render("LAST KEYS")}
+	if len(m.lastKeys) == 0 {
+		lines = append(lines, ui.ItemDetailStyle.Render("(none yet)"))
+	} else {
+		for i := len(m.lastKeys) - 1; i >= 0; i-- {
+			lines = append(lines, ui.TranscriptMsgStyle.Render(m.lastKeys[i]))
+		}
+	}
+	return ui.DebugOverlayStyle.Render(strings.Join(lines, "\n"))
+}
+
 func (m Model) renderEffectsPanel() string {
 	var lines []string
 	lines = append(lines, ui.DebugTitleStyle.Render("EFFECTS"))

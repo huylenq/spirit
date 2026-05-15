@@ -657,6 +657,12 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		savePrefInt("sidebarWidthPct", m.sidebarWidthPct)
 		return m, nil
 
+	case key.Matches(msg, Keys.ChatOutlineShrink):
+		return m.resizeChatOutline(-chatOutlineResizeStep)
+
+	case key.Matches(msg, Keys.ChatOutlineGrow):
+		return m.resizeChatOutline(+chatOutlineResizeStep)
+
 	case key.Matches(msg, Keys.ApplyTitle):
 		if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
 			return m, m.fetchApplyTitle(s.PaneID, s.SessionID)

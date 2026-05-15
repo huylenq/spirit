@@ -199,7 +199,8 @@ func (m Model) View() string {
 		usagePanel := m.renderUsageDebugPanel()
 		synthPanel := m.renderSynthesizeDebugPanel()
 		jumpPanel := m.renderJumpTrailPanel()
-		combined := lipgloss.JoinHorizontal(lipgloss.Bottom, effectsPanel, " ", sessionPanel, " ", usagePanel, " ", synthPanel, " ", jumpPanel)
+		keysPanel := m.renderLastKeysPanel()
+		combined := lipgloss.JoinHorizontal(lipgloss.Bottom, effectsPanel, " ", sessionPanel, " ", usagePanel, " ", synthPanel, " ", jumpPanel, " ", keysPanel)
 		if combined != "" {
 			content = ui.OverlayBottomRight(content, combined, innerWidth)
 		}
