@@ -224,8 +224,8 @@ func (m *Model) tryInitialSelection() bool {
 	}
 	if moved {
 		m.recordJump() // register destination so ] can reach it
-		// Activation flash animations
-		m.sidebar.SetLand(targetPaneID, ui.ActivateAnimFrames)
+		// Activation flash animations — TUI reveal gets the extra row-bg gradient
+		m.sidebar.SetLandReveal(targetPaneID, ui.ActivateAnimFrames)
 		if m.rotateNext && m.origPane.PaneID != targetPaneID {
 			// Ctrl+Tab: fading ghost trail on the origin pane
 			m.sidebar.SetTrail(m.origPane.PaneID)
@@ -462,6 +462,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ChatOutlineReadyMsg:
 		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
 			m.detail.SetUserMessages(msg.Messages)
+			m.detail.SetCurrentTurn(msg.Turn)
 		}
 		return m, nil
 

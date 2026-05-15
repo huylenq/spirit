@@ -42,14 +42,6 @@ func (pe projectEntry) matches(s claude.ClaudeSession) bool {
 	return s.Project == pe.Name && sessionOrder(s) == pe.StatusOrder
 }
 
-// selBg adds avatar-tinted background to st when selected, otherwise returns st unchanged.
-func selBg(st lipgloss.Style, selected bool, colorIdx int) lipgloss.Style {
-	if selected {
-		return st.Background(AvatarFillBg(colorIdx))
-	}
-	return st
-}
-
 type SidebarModel struct {
 	items               []claude.ClaudeSession
 	filtered            []claude.ClaudeSession // cursor-navigable matching items
@@ -83,6 +75,7 @@ type SidebarModel struct {
 	landBacklogID       string           // backlog item most recently jumped to (landing flash)
 	landFrame           int              // landing animation frame (counts up to landMaxFrames)
 	landMaxFrames       int              // total frames for landing animation (default JumpAnimFrames)
+	landRevealBg        bool             // when true, landing flash also gradients the row background (TUI-reveal only)
 	trailPaneID         string           // pane most recently jumped from (ghost trail)
 	trailFrame          int              // trail animation frame (0–3 visible, 4 = clear)
 	inlineTagSessionID  string           // session with active inline tag input (empty = none)
@@ -104,6 +97,15 @@ func (m *SidebarModel) SetLand(paneID string, frames int) {
 	m.landBacklogID = ""
 	m.landFrame = 0
 	m.landMaxFrames = frames
+	m.landRevealBg = false
+}
+
+// SetLandReveal is SetLand with the row-background gradient enabled — reserved
+// for the one-shot TUI-reveal focus animation so it stays visually distinct
+// from in-session jumps (autojump, search-confirm, etc).
+func (m *SidebarModel) SetLandReveal(paneID string, frames int) {
+	m.SetLand(paneID, frames)
+	m.landRevealBg = true
 }
 
 // SetLandBacklog marks a backlog item as the landing target for the jump-arrival animation.
@@ -113,6 +115,7 @@ func (m *SidebarModel) SetLandBacklog(backlogID string, frames int) {
 	m.landPaneID = ""
 	m.landFrame = 0
 	m.landMaxFrames = frames
+	m.landRevealBg = false
 }
 
 // landT returns the blend parameter [0,1] for the landing animation.
@@ -127,6 +130,19 @@ func (m SidebarModel) landT() float64 {
 	return float64(fadeFrame) / float64(JumpAnimFrames-1)
 }
 
+// selBg tints st with the selected item's avatar background.
+func selBg(st lipgloss.Style, selected bool, colorIdx int) lipgloss.Style {
+	if selected {
+		return st.Background(AvatarFillBg(colorIdx))
+	}
+	return st
+}
+
+// isRevealing reports whether the wave animation is currently active on paneID.
+func (m SidebarModel) isRevealing(paneID string) bool {
+	return m.landRevealBg && paneID != "" && paneID == m.landPaneID && m.landFrame < m.landMaxFrames
+}
+
 // SetLandByRef triggers the landing animation for whatever item CursorRef points to.
 func (m *SidebarModel) SetLandByRef(ref CursorRef, frames int) {
 	switch {
@@ -134,6 +150,16 @@ func (m *SidebarModel) SetLandByRef(ref CursorRef, frames int) {
 		m.SetLand(ref.PaneID, frames)
 	case ref.BacklogID != "":
 		m.SetLandBacklog(ref.BacklogID, frames)
+	}
+}
+
+// SetLandByRefReveal is SetLandByRef with the row-bg wave enabled. Used for
+// search-confirm and TUI-reveal landings where the destination is a deliberate
+// user pick worth highlighting beyond the bar-only flash.
+func (m *SidebarModel) SetLandByRefReveal(ref CursorRef, frames int) {
+	m.SetLandByRef(ref, frames)
+	if ref.PaneID != "" {
+		m.landRevealBg = true
 	}
 }
 
@@ -227,10 +253,13 @@ func (m *SidebarModel) SetDiffStats(sessionID string, stats map[string]claude.Fi
 // commitDoneFrames is a distinct animation for commit-and-done pending sessions.
 var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 
+// Landing-flash frame budgets. All three drive the same animation pipeline —
+// the constants exist so call sites name their UX context rather than a number.
+// Each frame is one spinner tick (~80ms).
 const (
-	JumpAnimFrames     = 4  // visible frames for standard jump flash
-	SearchFlashFrames  = 12 // longer hold for search-confirm landing
-	ActivateAnimFrames = 8  // longer flash for ctrl+tab / ctrl+space activation
+	JumpAnimFrames     = 4 // autojump (bar-only flash)
+	ActivateAnimFrames = 8 // TUI reveal (ctrl+tab / ctrl+space)
+	SearchFlashFrames  = 5 // search-confirm Enter
 )
 
 func (m *SidebarModel) SetSpinnerView(s string) {

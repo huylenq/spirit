@@ -30,7 +30,11 @@ func (m *SidebarModel) renderItemWithStats(isSelected, isAutoJump bool, s claude
 		content = strings.Join(lines, "\n")
 	}
 	statsRight := m.BuildStatsRight(s, dw, isSelected, s.AvatarColorIdx)
-	return PinStatsRight(content, statsRight, m.width, padSp)
+	out := PinStatsRight(content, statsRight, m.width, padSp)
+	// TUI-reveal wave overlay (no-op outside the reveal animation).
+	// Sidebar rows reserve cols 0-1 for slot/flag indicators (transparent bg);
+	// the selection background starts at the vertical bar in col 2.
+	return m.applyRevealWave(out, s.PaneID, s.AvatarColorIdx, 2, m.width)
 }
 
 // passesViewFilters reports whether s should be rendered in the main session

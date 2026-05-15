@@ -37,7 +37,7 @@ func (m Model) handleKeySearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.workQueue.SelectByPaneID(s.PaneID)
 		}
 		// Trigger landing flash so the jumped-to item is visually highlighted
-		m.sidebar.SetLandByRef(ref, ui.SearchFlashFrames)
+		m.sidebar.SetLandByRefReveal(ref, ui.SearchFlashFrames)
 		return m, nil
 	case key.Matches(msg, Keys.MsgNext):
 		m.sidebar.MoveDown()

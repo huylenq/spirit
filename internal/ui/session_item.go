@@ -688,5 +688,7 @@ func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJum
 	// Pin stats on the bottom-right — selection-aware
 	_, padSp := selectionFuncs(isSelected, s.AvatarColorIdx)
 	statsRight := m.BuildStatsRight(s, dw, isSelected, s.AvatarColorIdx)
-	return PinStatsRight(result, statsRight, cardWidth, padSp)
+	out := PinStatsRight(result, statsRight, cardWidth, padSp)
+	// Card mode has no slot/flag prefix — selection background starts at col 0.
+	return m.applyRevealWave(out, s.PaneID, s.AvatarColorIdx, 0, cardWidth)
 }
