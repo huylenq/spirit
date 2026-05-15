@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -108,39 +109,26 @@ func (m *DetailModel) View() string {
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
 	var contentBox string
+	hasRecap := m.chatOutlineMode != chatOutlineHidden && m.session != nil && strings.TrimSpace(m.session.LastRecap) != ""
 	showChatOutline := m.chatOutlineMode != chatOutlineHidden && (len(m.userMessages) > 0 || m.summary != nil)
 	showNote := (m.note != "" || m.noteEditing) && m.chatOutlineMode != chatOutlineHidden
 	panelWidth := m.effectivePanelWidth(contentWidth)
-	if (showChatOutline || showNote) && m.isChatOutlineDocked() {
+	if (showChatOutline || showNote || hasRecap) && m.isChatOutlineDocked() {
 		chatOutlineWidth := panelWidth
 		vpWidth := contentWidth - chatOutlineWidth - 3 // 1 gap + 2 for content border
 		vpView := truncateLines(vpRaw, vpWidth)
 		vpPanel := lipgloss.NewStyle().Width(vpWidth).MaxWidth(vpWidth).Render(vpView)
-		var aside string
-		noteVertStart := -1 // row in aside where note begins (-1 = no highlight)
-		switch {
-		case showChatOutline && showNote:
-			outline := m.renderChatOutline(chatOutlineWidth)
-			note := m.renderNotePanel(chatOutlineWidth)
-			if m.chatOutlineMode == chatOutlineDockedLeft {
-				sepStyle := BorderCharStyle
-				if m.noteEditing {
-					sepStyle = NoteCharStyle
-					noteVertStart = lipgloss.Height(outline) + 1 // after outline + h-separator
-				}
-				sep := sepStyle.Render(strings.Repeat("─", chatOutlineWidth))
-				aside = lipgloss.JoinVertical(lipgloss.Left, outline, sep, note)
-			} else {
-				aside = lipgloss.JoinVertical(lipgloss.Left, outline, note)
-			}
-		case showChatOutline:
-			aside = m.renderChatOutline(chatOutlineWidth)
-		default:
-			aside = m.renderNotePanel(chatOutlineWidth)
-			if m.noteEditing && m.chatOutlineMode == chatOutlineDockedLeft {
-				noteVertStart = 0
-			}
+		var outlinePart, recapPart, notePart string
+		if showChatOutline {
+			outlinePart = m.renderChatOutline(chatOutlineWidth)
 		}
+		if hasRecap {
+			recapPart = m.renderRecapPanel(chatOutlineWidth)
+		}
+		if showNote {
+			notePart = m.renderNotePanel(chatOutlineWidth)
+		}
+		aside, noteVertStart := m.assembleAside(chatOutlineWidth, outlinePart, recapPart, notePart, m.viewport.Height)
 		var joined string
 		if m.chatOutlineMode == chatOutlineDockedLeft {
 			// Full-height separator: standalone │ column replaces the gap.
@@ -168,19 +156,30 @@ func (m *DetailModel) View() string {
 		contentBox = contentStyle.Width(contentWidth).Render(joinedClip)
 	} else {
 		contentBox = contentStyle.Width(contentWidth).Render(vpRaw)
-		if showChatOutline { // overlay mode
-			outlinePanel := m.renderChatOutline(panelWidth)
-			col := lipgloss.Width(contentBox) - lipgloss.Width(outlinePanel) - 1
-			contentBox = overlayAt(contentBox, outlinePanel, col, 1)
-			if showNote {
-				notePanel := m.renderNotePanel(panelWidth)
-				row := 1 + lipgloss.Height(outlinePanel)
-				contentBox = overlayAt(contentBox, notePanel, col, row)
+		if showChatOutline || hasRecap || showNote { // overlay mode
+			// Top-down stack at the right edge: outline → recap → note.
+			row := 1
+			col := 0
+			width := panelWidth
+			placePanel := func(panel string) {
+				if panel == "" {
+					return
+				}
+				if col == 0 {
+					col = lipgloss.Width(contentBox) - lipgloss.Width(panel) - 1
+				}
+				contentBox = overlayAt(contentBox, panel, col, row)
+				row += lipgloss.Height(panel)
 			}
-		} else if showNote {
-			notePanel := m.renderNotePanel(panelWidth)
-			col := lipgloss.Width(contentBox) - lipgloss.Width(notePanel) - 1
-			contentBox = overlayAt(contentBox, notePanel, col, 1)
+			if showChatOutline {
+				placePanel(m.renderChatOutline(width))
+			}
+			if hasRecap {
+				placePanel(m.renderRecapPanel(width))
+			}
+			if showNote {
+				placePanel(m.renderNotePanel(width))
+			}
 		}
 	}
 
@@ -215,15 +214,15 @@ func (m *DetailModel) View() string {
 	}
 	meta := DetailMetaStyle.Render(strings.Join(metaParts, "  "))
 
-	footer := m.renderFooter(s, avatar, badge, meta)
+	footer := m.renderFooter(s, meta)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, contentBox, footer)
 }
 
-// renderFooter builds the bottom bar: label + content (left) + metadata (right-aligned).
-// Insight footer: "★ Insight │ <glamour-rendered text>". No bubble — glamour provides styling.
-// Non-insight footer: avatar+badge bubble with last assistant message.
-func (m *DetailModel) renderFooter(s *claude.ClaudeSession, avatar, badge, meta string) string {
+// renderFooter builds the bottom bar: insight (if present) on the left, metadata right-aligned.
+// Insight footer: "★ Insight │ <glamour-rendered text>".
+// Otherwise: just right-aligned metadata.
+func (m *DetailModel) renderFooter(s *claude.ClaudeSession, meta string) string {
 	metaWidth := lipgloss.Width(meta)
 
 	if m.renderedInsight != "" {
@@ -252,37 +251,11 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, avatar, badge, meta 
 		return content + strings.Repeat(" ", gap) + meta
 	}
 
-	// Non-insight: avatar+badge bubble with recap (if present) or last assistant message
-	bubblePrefix := avatar + " " + badge + " "
-	prefixWidth := lipgloss.Width(bubblePrefix)
-	overheadFixed := prefixWidth + 8 // leftCap(1) + " "(1) + " "(1) + rightCap(1) + gap(2) + margin(2)
-
-	lastResp := bubblePrefix
-	bubbleMsg := s.LastRecap
-	if bubbleMsg == "" {
-		bubbleMsg = s.LastAssistantMessage
-	}
-	if bubbleMsg != "" {
-		firstLine, _, multiline := strings.Cut(bubbleMsg, "\n")
-		maxW := m.width - metaWidth - overheadFixed
-		if multiline {
-			maxW -= 2
-		}
-		if maxW > 0 {
-			text := ansi.Truncate(firstLine, maxW, "…")
-			if multiline {
-				text += " ↩"
-			}
-			lastResp = bubblePrefix + BubbleLeftCap + BubbleTextStyle.Render(" "+text+" ") + BubbleRightCap
-		}
-	}
-
-	lastRespWidth := lipgloss.Width(lastResp)
-	gap := m.width - lastRespWidth - metaWidth - 2
+	gap := m.width - metaWidth - 2
 	if gap < 1 {
 		gap = 1
 	}
-	return lastResp + strings.Repeat(" ", gap) + meta
+	return strings.Repeat(" ", gap) + meta
 }
 
 // AllQuietCounts holds per-section counts for the all-quiet dashboard.
@@ -300,12 +273,22 @@ func (m *DetailModel) ViewAllQuiet(counts AllQuietCounts) string {
 	return renderStaticDashboard(m.width, m.height, counts)
 }
 
-// maxOutlineMessages is the maximum number of user messages visible in the chat outline.
-// When there are more messages, the outline becomes scrollable.
+// maxOutlineMessages is the maximum number of past user messages visible in the
+// chat outline. The current-turn block is always pinned at the bottom, so this
+// cap applies only to scroll-back.
 const maxOutlineMessages = 15
 
 // outlineGap is the number of space columns between the styled bullet glyph and message text.
 const outlineGap = 1
+
+// Per-section line caps inside the "current turn" block.
+const (
+	outlineLastUserMaxLines   = 5
+	outlineFirstReplyMaxLines = 2
+)
+
+// recapPanelMaxLines caps the body of the bottom-docked recap panel.
+const recapPanelMaxLines = 8
 
 // outlineIndicatorWidth returns the visual column width of a styled bullet indicator + gap.
 // All bullet styles share the same Padding(0,1), so this is constant across glyph types.
@@ -328,219 +311,374 @@ func stripOutlinePrefix(flat string) string {
 	}
 }
 
-// renderChatOutline renders the user messages outline panel with a border.
+// renderChatOutline renders the chat outline panel: a compact scroll-back of
+// past user messages (one line each) followed by a "current turn" block that
+// surfaces the latest user message, the agent's first reply (while in-flight),
+// the files touched this turn, and the recap / last reply (once the turn ends).
 func (m *DetailModel) renderChatOutline(width int) string {
-	// Pick panel style: docked-left uses borderless style (separator drawn in View);
-	// others use full rounded border.
 	panelStyle := TranscriptOverlayStyle
 	borderCols := 4 // border(2) + padding(2)
 	if m.chatOutlineMode == chatOutlineDockedLeft {
 		panelStyle = AsideDockLeftStyle
-		borderCols = 2 // padding(2) only, no border
+		borderCols = 2
 	}
-	innerWidth := width - borderCols
-	if innerWidth < 5 {
-		innerWidth = 5
-	}
+	innerWidth := max(5, width-borderCols)
+	indicatorWidth := outlineIndicatorWidth()
+	msgWidth := max(1, innerWidth-indicatorWidth)
 
-	// Pre-compute per-type bullet styles to avoid per-iteration allocations.
-	bulletContGlyph := lipgloss.NewStyle().Foreground(TranscriptBulletStyle.GetForeground()).Render("╰")
-	cursorContGlyph := lipgloss.NewStyle().Foreground(TranscriptCursorStyle.GetForeground()).Render("╰")
 	bashBulletStyle := TranscriptBulletStyle.Foreground(ColorBashCmd)
 	planBulletStyle := TranscriptBulletStyle.Foreground(ColorPlan)
 	slashBulletStyle := TranscriptBulletStyle.Foreground(ColorSlashCmd)
 
-	var lines []string
-
-	// Hoist constant layout values before the loop.
-	indicatorWidth := outlineIndicatorWidth()
-	msgWidth := max(1, innerWidth-indicatorWidth)
-	indentPad := strings.Repeat(" ", indicatorWidth)
-
-	titleLine := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
-	lines = append(lines, titleLine)
-	lines = append(lines, "") // blank line after title
-	// Pulse the last bullet when the agent is working — regardless of whether
-	// LastAssistantMessage is set, because that field holds the previous exchange's
-	// response until the new one arrives.
-	isLastPulsing := m.session != nil &&
+	isWorking := m.session != nil &&
 		m.session.Status == claude.StatusAgentTurn &&
 		len(m.userMessages) > 0
 
-	// Compute visible window for scrollable outline.
-	totalMsgs := len(m.userMessages)
-	visStart, visEnd := m.outlineWindow()
+	var lines []string
+	lines = append(lines,
+		TranscriptTitleStyle.Foreground(ColorBorder).Render(" "+IconInput+"  Your Messages"),
+		"",
+	)
 
-	// Show scroll-up indicator.
+	if len(m.userMessages) == 0 {
+		return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
+	}
+	lastIdx := len(m.userMessages) - 1
+
+	// Past messages: one line each. Dim by default; cursor brightens.
+	visStart, visEnd := m.outlinePastWindow()
 	if visStart > 0 {
-		arrow := ItemDetailStyle.Render(fmt.Sprintf("  ↑ %d more", visStart))
-		lines = append(lines, arrow)
+		lines = append(lines, ItemDetailStyle.Render(fmt.Sprintf("  ↑ %d more", visStart)))
 	}
-
 	for i := visStart; i < visEnd; i++ {
-		msg := m.userMessages[i]
-		focused := i == m.msgCursor
-		isLast := i == len(m.userMessages)-1
-
-		// Flatten + detect/strip type prefix → promote prefix to bullet glyph.
-		raw := strings.ReplaceAll(msg, "\n", " ")
-		flat := stripOutlinePrefix(raw)
-		bulletGlyph := IconQuote
-		typedStyle := TranscriptBulletStyle
-		switch {
-		case strings.HasPrefix(raw, claude.BashCmdGlyph):
-			bulletGlyph = "!"
-			typedStyle = bashBulletStyle
-		case strings.HasPrefix(raw, claude.PlanGlyph):
-			bulletGlyph = IconPlan
-			typedStyle = planBulletStyle
-		case strings.HasPrefix(raw, claude.SlashCmdGlyph):
-			bulletGlyph = "/"
-			typedStyle = slashBulletStyle
+		raw := m.userMessages[i]
+		flat := stripOutlinePrefix(strings.ReplaceAll(raw, "\n", " "))
+		glyph, glyphStyle := pickOutlineBullet(raw, bashBulletStyle, planBulletStyle, slashBulletStyle)
+		msgStyle := ItemDetailStyle
+		if i == m.msgCursor {
+			if glyph == IconQuote {
+				glyphStyle = TranscriptCursorStyle
+			}
+			msgStyle = TranscriptMsgStyle
 		}
+		lines = append(lines,
+			glyphStyle.Render(glyph)+strings.Repeat(" ", outlineGap)+
+				msgStyle.Render(ansi.Truncate(flat, msgWidth, "…")),
+		)
+	}
+	if visEnd < lastIdx {
+		lines = append(lines, ItemDetailStyle.Render(fmt.Sprintf("  ↓ %d more", lastIdx-visEnd)))
+	}
 
-		msgStyle := TranscriptMsgStyle
-		contGlyph := bulletContGlyph
-		var styledGlyph string
-		if isLast && isLastPulsing {
-			// Breathing gradient: ping-pong through PulseGradient (6 colors, 10 frames/cycle ≈ 800ms).
-			phase := m.pulsePhase % 10
-			idx := phase
-			if idx > 5 {
-				idx = 10 - idx // bounce back: 4,3,2,1
-			}
-			styledGlyph = TranscriptBulletStyle.Foreground(PulseGradient[idx]).Render(bulletGlyph)
-		} else if focused {
-			// Only the default quote glyph adopts cursor color; typed glyphs keep their own color.
-			if bulletGlyph == IconQuote {
-				styledGlyph = TranscriptCursorStyle.Render(bulletGlyph)
-			} else {
-				styledGlyph = typedStyle.Render(bulletGlyph)
-			}
-			contGlyph = cursorContGlyph
+	// Current-turn separator rule — only when there's scroll-back to separate from.
+	if lastIdx > 0 {
+		lines = append(lines, renderTurnSeparator(innerWidth))
+	}
+
+	// Current user message (multi-line capped).
+	rawCur := m.userMessages[lastIdx]
+	flatCur := stripOutlinePrefix(strings.ReplaceAll(rawCur, "\n", " "))
+	glyphCur, glyphStyleCur := pickOutlineBullet(rawCur, bashBulletStyle, planBulletStyle, slashBulletStyle)
+	contColor := TranscriptBulletStyle.GetForeground()
+	msgStyleCur := TranscriptMsgStyle
+	if isWorking {
+		phase := m.pulsePhase % 10
+		pi := phase
+		if pi > 5 {
+			pi = 10 - pi
+		}
+		glyphStyleCur = TranscriptBulletStyle.Foreground(PulseGradient[pi])
+		contColor = PulseGradient[pi]
+	} else if lastIdx == m.msgCursor && glyphCur == IconQuote {
+		glyphStyleCur = TranscriptCursorStyle
+		contColor = TranscriptCursorStyle.GetForeground()
+	}
+	// Continuation glyph mirrors the bullet's Padding(0,1) so `│` lands in the
+	// same column as the bullet and the wrapped text aligns with line 1.
+	contGlyphStyle := lipgloss.NewStyle().Foreground(contColor).Padding(0, 1)
+	for k, ln := range wrapToCappedLines(flatCur, msgWidth, outlineLastUserMaxLines) {
+		if k == 0 {
+			lines = append(lines, glyphStyleCur.Render(glyphCur)+strings.Repeat(" ", outlineGap)+msgStyleCur.Render(ln))
 		} else {
-			styledGlyph = typedStyle.Render(bulletGlyph)
-			msgStyle = ItemDetailStyle
-		}
-		// Indicator = styled glyph (includes style padding) + uniform gap.
-		styledIndicator := styledGlyph + strings.Repeat(" ", outlineGap)
-
-		if ansi.StringWidth(flat) <= msgWidth {
-			lines = append(lines, styledIndicator+msgStyle.Render(flat))
-		} else {
-			// Two-line display: word-wrap at msgWidth, truncate second line.
-			// ╰ aligns with the first character of line 1 text.
-			line1, rest := wordWrapFirst(flat, msgWidth)
-			indent := indentPad + contGlyph + " "
-			line2 := ansi.Truncate(rest, max(1, msgWidth-2), "…")
-			lines = append(lines,
-				styledIndicator+msgStyle.Render(line1),
-				indent+msgStyle.Render(line2),
-			)
-		}
-
-		// After the last user message, render the assistant's response — but only
-		// when the agent is not actively working (otherwise the response is stale).
-		if isLast && !isLastPulsing && m.session != nil && m.session.LastAssistantMessage != "" {
-			if reply := m.renderOutlineReply(innerWidth); reply != "" {
-				lines = append(lines, reply)
-			}
+			lines = append(lines, contGlyphStyle.Render("│")+strings.Repeat(" ", outlineGap)+msgStyleCur.Render(ln))
 		}
 	}
 
-	// Show scroll-down indicator.
-	if visEnd < totalMsgs {
-		arrow := ItemDetailStyle.Render(fmt.Sprintf("  ↓ %d more", totalMsgs-visEnd))
-		lines = append(lines, arrow)
+	// Agent reply in the current turn. While the agent is working we show the
+	// first reply ("I'll start by…") as the in-flight signal; after the turn
+	// ends we show the last assistant text as the wrap-up. The Recap panel
+	// lives separately at the bottom — independent of this slot.
+	var agentReply string
+	if isWorking {
+		agentReply = strings.TrimSpace(m.currentTurn.FirstAssistantText)
+	} else if m.session != nil {
+		agentReply = strings.TrimSpace(m.session.LastAssistantMessage)
+	}
+	if agentReply != "" {
+		lines = append(lines, renderTurnAccessory(agentReply, innerWidth, "↪ ", outlineFirstReplyMaxLines, ItemDetailStyle)...)
 	}
 
-	content := strings.Join(lines, "\n")
-	return panelStyle.
-		Width(width).
-		Render(content)
+	// Files touched this turn. Stays live as tool_use entries land. The row
+	// gets a one-line break above it and renders on a subtle bg band so it
+	// reads as turn metadata rather than another line of the user's message.
+	// Bg is composed into every leaf style inside renderTurnFilesRow so the
+	// band is continuous across child segments; the outer Width pad picks up
+	// the same bg for the trailing whitespace.
+	if len(m.currentTurn.Files) > 0 {
+		if row := renderTurnFilesRow(m.currentTurn.Files, innerWidth, TurnFilesBg); row != "" {
+			lines = append(lines, "")
+			lines = append(lines, lipgloss.NewStyle().Background(TurnFilesBg).Width(innerWidth).Render(row))
+		}
+	}
+
+	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
-// outlineReplyMaxLines is the maximum number of word-wrapped lines shown for the
-// assistant response in the chat outline.
-const outlineReplyMaxLines = 5
+// pickOutlineBullet picks the bullet glyph + style for a user message based on
+// the type-prefix (bash, plan, slash) embedded by the transcript reader.
+func pickOutlineBullet(raw string, bashStyle, planStyle, slashStyle lipgloss.Style) (string, lipgloss.Style) {
+	switch {
+	case strings.HasPrefix(raw, claude.BashCmdGlyph):
+		return "!", bashStyle
+	case strings.HasPrefix(raw, claude.PlanGlyph):
+		return IconPlan, planStyle
+	case strings.HasPrefix(raw, claude.SlashCmdGlyph):
+		return "/", slashStyle
+	default:
+		return IconQuote, TranscriptBulletStyle
+	}
+}
 
-// renderOutlineReply renders the last assistant response as a bordered block.
-// Results are cached and invalidated when the message or width changes.
-func (m *DetailModel) renderOutlineReply(innerWidth int) string {
-	raw := strings.TrimSpace(m.session.LastAssistantMessage)
+// wrapToCappedLines word-wraps text to width and truncates to maxLines, suffixing
+// the last line with " ↩" when content was cut.
+func wrapToCappedLines(text string, width, maxLines int) []string {
+	wrapped := strings.Split(WordWrapContent(text, width), "\n")
+	if len(wrapped) <= maxLines {
+		return wrapped
+	}
+	out := wrapped[:maxLines]
+	last := out[maxLines-1]
+	if ansi.StringWidth(last)+2 > width {
+		last = ansi.Truncate(last, max(1, width-2), "")
+	}
+	out[maxLines-1] = last + " ↩"
+	return out
+}
+
+// renderTurnAccessory wraps text with a one-line prefix on line 1 and continuation
+// indent on subsequent lines, capped to maxLines and styled with one style.
+func renderTurnAccessory(text string, innerWidth int, prefix string, maxLines int, style lipgloss.Style) []string {
+	pw := ansi.StringWidth(prefix)
+	contentWidth := max(1, innerWidth-pw)
+	indent := strings.Repeat(" ", pw)
+	wrapped := wrapToCappedLines(text, contentWidth, maxLines)
+	out := make([]string, len(wrapped))
+	for i, ln := range wrapped {
+		if i == 0 {
+			out[i] = style.Render(prefix + ln)
+		} else {
+			out[i] = style.Render(indent + ln)
+		}
+	}
+	return out
+}
+
+// renderTurnFilesRow renders one line of `file +A -R · file +A -R · …+N`.
+// Every leaf style composes the given bg so the row reads as one continuous
+// band — applying bg only at the parent leaves gaps where each child's reset
+// (`\x1b[0m`) drops the background. Returns "" when nothing fits.
+func renderTurnFilesRow(files []claude.TurnFileStat, innerWidth int, bg lipgloss.TerminalColor) string {
+	iconStyle := ItemDetailStyle.Background(bg)
+	dimStyle := ItemDetailStyle.Background(bg)
+	nameStyle := TranscriptMsgStyle.Background(bg)
+	addedStyle := DiffAddedStyle.Background(bg)
+	removedStyle := StatWorkingStyle.Background(bg)
+
+	iconPrefix := iconStyle.Render(IconFile + " ")
+	overheadW := lipgloss.Width(iconPrefix)
+	sep := dimStyle.Render(" · ")
+	sepW := lipgloss.Width(sep)
+	budget := max(1, innerWidth-overheadW)
+
+	var entries []string
+	used := 0
+	for i, f := range files {
+		base := filepath.Base(f.Path)
+		nameRendered := nameStyle.Render(base)
+		var statRendered string
+		statW := 0
+		if f.Added > 0 {
+			rendered := addedStyle.Render(fmt.Sprintf(" +%d", f.Added))
+			statRendered += rendered
+			statW += lipgloss.Width(rendered)
+		}
+		if f.Removed > 0 {
+			rendered := removedStyle.Render(fmt.Sprintf(" -%d", f.Removed))
+			statRendered += rendered
+			statW += lipgloss.Width(rendered)
+		}
+		entry := nameRendered + statRendered
+		eW := lipgloss.Width(nameRendered) + statW
+		needed := eW
+		if len(entries) > 0 {
+			needed += sepW
+		}
+		if used+needed > budget && len(entries) > 0 {
+			remaining := len(files) - i
+			entries = append(entries, dimStyle.Render(fmt.Sprintf("…+%d", remaining)))
+			break
+		}
+		entries = append(entries, entry)
+		used += needed
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+	return iconPrefix + strings.Join(entries, sep)
+}
+
+// assembleAside stacks the aside sections vertically with recap + note bottom-
+// docked: outline (top, padded), then recap, then note. In docked-left mode an
+// h-separator is drawn between adjacent sections. Returns the aside string and
+// the row at which the note panel begins (-1 when no note is shown), used for
+// the v-separator color transition in docked-left.
+func (m *DetailModel) assembleAside(width int, outline, recap, note string, targetHeight int) (string, int) {
+	isDockedLeft := m.chatOutlineMode == chatOutlineDockedLeft
+
+	// Heights of each section. Recap and note panels include their own top
+	// separator now (pulse-style), so no inter-panel separator slot is needed.
+	outlineH := 0
+	if outline != "" {
+		outlineH = lipgloss.Height(outline)
+	}
+	recapH := 0
+	if recap != "" {
+		recapH = lipgloss.Height(recap)
+	}
+	noteH := 0
+	if note != "" {
+		noteH = lipgloss.Height(note)
+	}
+
+	// Only pad when something is being bottom-docked — otherwise let the outline
+	// stay compact (the contentBox's own border will close at its natural height).
+	hasBottom := recap != "" || note != ""
+	filler := 0
+	if hasBottom {
+		filler = max(0, targetHeight-outlineH-recapH-noteH)
+	}
+
+	var sections []string
+	if outline != "" {
+		sections = append(sections, outline)
+	}
+	if filler > 0 {
+		sections = append(sections, lipgloss.NewStyle().Height(filler).Render(""))
+	}
+	if recap != "" {
+		sections = append(sections, recap)
+	}
+
+	noteVertStart := -1
+	if note != "" {
+		if isDockedLeft && m.noteEditing {
+			noteVertStart = 0
+			for _, s := range sections {
+				noteVertStart += lipgloss.Height(s)
+			}
+		}
+		sections = append(sections, note)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...), noteVertStart
+}
+
+// renderRecapPanel renders the bottom-docked session recap panel. Returns ""
+// when the session has no away_summary recap. Uses the same compact layout as
+// the sidebar pulse: top separator, single-line title, body indented by 1 col.
+func (m *DetailModel) renderRecapPanel(width int) string {
+	if m.session == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(m.session.LastRecap)
 	if raw == "" {
 		return ""
 	}
-
-	// Return cached block if inputs haven't changed.
-	if raw == m.cachedReplyMsg && innerWidth == m.cachedReplyWidth {
-		return m.cachedReplyBlock
+	if raw == m.cachedRecapSrc && width == m.cachedRecapWidth && m.cachedRecapBlock != "" {
+		return m.cachedRecapBlock
 	}
+	innerWidth := max(5, width-1) // PaddingLeft(1)
 
-	// border(2) + padding(1 each side = 2) = 4 overhead columns
-	contentWidth := max(5, innerWidth-4)
-
-	// Render markdown via glamour; glamour adds 2 spaces of left indent which
-	// dedentANSILine strips. Fall back to plain word-wrap if glamour fails.
-	var lines []string
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(max(20, contentWidth-2)),
+	sep := BorderCharStyle.Render(strings.Repeat("─", width))
+	titleLine := lipgloss.NewStyle().Width(width).Render(
+		" " + TranscriptTitleStyle.Foreground(ColorLater).Render("★ Recap"),
 	)
-	if err == nil {
-		if rendered, rerr := r.Render(raw); rerr == nil {
-			for _, line := range strings.Split(rendered, "\n") {
-				// Skip leading blank lines before any content.
-				if len(lines) == 0 && strings.TrimSpace(ansi.Strip(line)) == "" {
+
+	var rendered []string
+	if r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(innerWidth),
+	); err == nil {
+		if out, gerr := r.Render(raw); gerr == nil {
+			for _, line := range strings.Split(out, "\n") {
+				if len(rendered) == 0 && strings.TrimSpace(ansi.Strip(line)) == "" {
 					continue
 				}
-				lines = append(lines, dedentANSILine(line))
+				rendered = append(rendered, dedentANSILine(line))
 			}
-			// Trim trailing blank lines.
-			for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
-				lines = lines[:len(lines)-1]
+			for len(rendered) > 0 && strings.TrimSpace(ansi.Strip(rendered[len(rendered)-1])) == "" {
+				rendered = rendered[:len(rendered)-1]
 			}
 		}
 	}
-	if len(lines) == 0 {
-		// Fallback: plain word wrap.
-		wrapped := WordWrapContent(raw, contentWidth)
-		lines = strings.Split(wrapped, "\n")
+	if len(rendered) == 0 {
+		rendered = strings.Split(WordWrapContent(raw, innerWidth), "\n")
 	}
-	if len(lines) > outlineReplyMaxLines {
-		lines = lines[:outlineReplyMaxLines]
-		last := lines[outlineReplyMaxLines-1]
-		lines[outlineReplyMaxLines-1] = ansi.Truncate(last, max(1, contentWidth-2), "…")
+	if len(rendered) > recapPanelMaxLines {
+		rendered = rendered[:recapPanelMaxLines]
+		last := rendered[recapPanelMaxLines-1]
+		if ansi.StringWidth(ansi.Strip(last))+2 > innerWidth {
+			last = ansi.Truncate(last, max(1, innerWidth-2), "")
+		}
+		rendered[recapPanelMaxLines-1] = last + " ↩"
 	}
-
-	result := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(0, 1).
-		Width(contentWidth).
-		Render(strings.Join(lines, "\n"))
-
-	m.cachedReplyMsg = raw
-	m.cachedReplyWidth = innerWidth
-	m.cachedReplyBlock = result
-	return result
+	body := lipgloss.NewStyle().Width(width).PaddingLeft(1).Render(strings.Join(rendered, "\n"))
+	out := lipgloss.JoinVertical(lipgloss.Left, sep, titleLine, body)
+	m.cachedRecapSrc = raw
+	m.cachedRecapWidth = width
+	m.cachedRecapBlock = out
+	return out
 }
 
-// renderNotePanel renders the session note panel with a border.
-// When noteEditing is true, it shows the textarea for inline editing.
-func (m *DetailModel) renderNotePanel(width int) string {
-	panelStyle := NoteOverlayStyle
-	borderCols := 6 // border(2) + padding(4)
-	if m.chatOutlineMode == chatOutlineDockedLeft {
-		panelStyle = NoteDockedStyle
-		borderCols = 4 // padding(4) only, no border
+// renderTurnSeparator draws the `─── current turn ───` rule.
+func renderTurnSeparator(innerWidth int) string {
+	label := " current turn "
+	lw := lipgloss.Width(label)
+	if innerWidth < lw+4 {
+		return BorderCharStyle.Render(strings.Repeat("─", innerWidth))
 	}
-	innerWidth := width - borderCols
-	if innerWidth < 5 {
-		innerWidth = 5
-	}
+	left := (innerWidth - lw) / 2
+	right := innerWidth - lw - left
+	return BorderCharStyle.Render(strings.Repeat("─", left)) +
+		ItemDetailStyle.Render(label) +
+		BorderCharStyle.Render(strings.Repeat("─", right))
+}
 
-	titleLine := TranscriptTitleStyle.Foreground(ColorNote).Render(" " + IconNote + "  Notes")
+// renderNotePanel renders the session note panel. Uses the same compact layout
+// as the sidebar pulse: top separator, single-line title, body indented by 1.
+// When noteEditing is true, it shows the textarea for inline editing and tints
+// the top separator with the note color.
+func (m *DetailModel) renderNotePanel(width int) string {
+	innerWidth := max(5, width-1) // PaddingLeft(1)
+
+	sepStyle := BorderCharStyle
+	if m.noteEditing {
+		sepStyle = NoteCharStyle
+	}
+	sep := sepStyle.Render(strings.Repeat("─", width))
+	titleLine := lipgloss.NewStyle().Width(width).Render(
+		" " + TranscriptTitleStyle.Foreground(ColorNote).Render(IconNote+" Notes"),
+	)
 
 	var body string
 	if m.noteEditing {
@@ -550,16 +688,8 @@ func (m *DetailModel) renderNotePanel(width int) string {
 		wrapped := WordWrapContent(m.note, innerWidth)
 		body = TranscriptMsgStyle.Render(wrapped)
 	}
-
-	borderColor := ColorBorder
-	if m.noteEditing {
-		borderColor = ColorNote
-	}
-	content := titleLine + "\n\n" + body
-	return panelStyle.
-		BorderForeground(borderColor).
-		Width(width).
-		Render(content)
+	body = lipgloss.NewStyle().Width(width).PaddingLeft(1).Render(body)
+	return lipgloss.JoinVertical(lipgloss.Left, sep, titleLine, body)
 }
 
 // WordWrapContent wraps plain text to fit within maxWidth columns.

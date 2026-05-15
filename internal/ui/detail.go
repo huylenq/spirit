@@ -39,6 +39,7 @@ type DetailModel struct {
 	msgCursor                int   // which user message we last navigated to
 	outlineScrollTop         int   // index of first visible message in chat outline
 	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
+	currentTurn              claude.CurrentTurn // latest user→agent turn snapshot (first reply, files)
 	diffStats                map[string]claude.FileDiffStat
 	diffFiles                []diffFileStat // cached sorted file entries
 	summary                  *claude.SessionSummary
@@ -72,10 +73,10 @@ type DetailModel struct {
 	insightIdx               int     // random insight index, picked on session switch
 	renderedInsight          string  // glamour-rendered insight (single line, ANSI-styled)
 	renderedInsightSrc       string  // raw insight text that produced renderedInsight (change guard)
+	cachedRecapBlock         string  // glamour-rendered recap panel body (multi-line, ANSI-styled)
+	cachedRecapSrc           string  // raw recap text that produced cachedRecapBlock (change guard)
+	cachedRecapWidth         int     // panel width that produced cachedRecapBlock
 	pulsePhase               int     // animation phase for pulsing last user-message bullet (incremented on spinner tick)
-	cachedReplyBlock         string  // cached rendered reply block
-	cachedReplyMsg           string  // LastAssistantMessage that produced cachedReplyBlock
-	cachedReplyWidth         int     // innerWidth that produced cachedReplyBlock
 	width                    int
 	height                   int
 	ready                    bool
@@ -322,6 +323,18 @@ func (m *DetailModel) ChatOutlineWidthOverride() int {
 	return m.chatOutlineWidthOverride
 }
 
+// NudgeChatOutlineWidth adjusts the panel width by delta (relative to the
+// current effective width) and returns the new override.
+func (m *DetailModel) NudgeChatOutlineWidth(delta int) int {
+	contentWidth := m.width - 4
+	w := m.chatOutlineWidthOverride
+	if w == 0 {
+		w = m.effectivePanelWidth(contentWidth)
+	}
+	m.SetChatOutlineWidth(w + delta)
+	return m.chatOutlineWidthOverride
+}
+
 // Width returns the detail panel's current width.
 func (m *DetailModel) Width() int {
 	return m.width
@@ -376,6 +389,7 @@ func (m *DetailModel) ClearSession() {
 	m.session = nil
 	m.content = ""
 	m.userMessages = nil
+	m.currentTurn = claude.CurrentTurn{}
 	m.outlineScrollTop = 0
 	m.diffFiles = nil
 	m.summary = nil
@@ -393,6 +407,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 	m.session = &claude.ClaudeSession{PaneID: paneID, Project: title}
 	if isNew {
 		m.userMessages = nil
+		m.currentTurn = claude.CurrentTurn{}
 		m.diffFiles = nil
 		m.diffStats = nil
 		m.summary = nil
