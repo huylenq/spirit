@@ -77,8 +77,10 @@ type KeyMap struct {
 	PageUp   key.Binding
 
 	// Conversation message navigation
-	MsgNext key.Binding
-	MsgPrev key.Binding
+	MsgNext    key.Binding
+	MsgPrev    key.Binding
+	SubMsgNext key.Binding // step forward within a merged file-edit row
+	SubMsgPrev key.Binding // step back within a merged file-edit row
 
 	// Sidebar panel resize
 	ListShrink key.Binding
@@ -417,6 +419,13 @@ var Keys = KeyMap{
 	),
 	MsgPrev: key.NewBinding(
 		key.WithKeys("ctrl+k"),
+	),
+	SubMsgNext: key.NewBinding(
+		key.WithKeys("ctrl+l"),
+		key.WithHelp("ctrl+h/l", "step through merged edits"),
+	),
+	SubMsgPrev: key.NewBinding(
+		key.WithKeys("ctrl+h"),
 	),
 	ListShrink: key.NewBinding(
 		key.WithKeys("alt+h"),

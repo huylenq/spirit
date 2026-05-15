@@ -314,6 +314,7 @@ func (m Model) handleDetailClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	if idx := m.detail.ChatOutlineMsgAt(localX, localY); idx >= 0 {
 		m.detail.NavigateMsgTo(idx)
+		return m, maybeCursorPulseTickCmd(&m)
 	}
 	return m, nil
 }

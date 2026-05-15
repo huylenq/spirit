@@ -679,8 +679,8 @@ func (m Model) fetchChatOutline(paneID, sessionID string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		msgs, _ := m.client.Transcript(sessionID)
-		return ChatOutlineReadyMsg{PaneID: paneID, Messages: msgs}
+		msgs, turn, _ := m.client.Transcript(sessionID)
+		return ChatOutlineReadyMsg{PaneID: paneID, Messages: msgs, Turn: turn}
 	}
 }
 

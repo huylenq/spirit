@@ -699,18 +699,26 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.MsgNext):
 		if m.showHooks || m.showRawTranscript || m.showDiffs {
 			m.detail.ScrollLines(1)
-		} else {
-			m.detail.NavigateMsg(1)
+			return m, nil
 		}
-		return m, nil
+		m.detail.NavigateMsg(1)
+		return m, maybeCursorPulseTickCmd(&m)
 
 	case key.Matches(msg, Keys.MsgPrev):
 		if m.showHooks || m.showRawTranscript || m.showDiffs {
 			m.detail.ScrollLines(-1)
-		} else {
-			m.detail.NavigateMsg(-1)
+			return m, nil
 		}
-		return m, nil
+		m.detail.NavigateMsg(-1)
+		return m, maybeCursorPulseTickCmd(&m)
+
+	case key.Matches(msg, Keys.SubMsgNext):
+		m.detail.NavigateSubMsg(1)
+		return m, maybeCursorPulseTickCmd(&m)
+
+	case key.Matches(msg, Keys.SubMsgPrev):
+		m.detail.NavigateSubMsg(-1)
+		return m, maybeCursorPulseTickCmd(&m)
 
 	case msg.String() == "[" && m.showDiffs:
 		m.detail.AdjustDiffSimThreshold(-0.05)

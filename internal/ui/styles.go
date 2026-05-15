@@ -46,7 +46,11 @@ var (
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
-	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#1e2235"} // selection row bg
+	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#dde3f0", Dark: "#2e3658"} // selection row bg
+	// Cursor-row pulse colors: brighter shades that decay back to
+	// ColorSelectionBg over a few frames after navigation.
+	CursorPulseHigh = lipgloss.AdaptiveColor{Light: "#a8b5d6", Dark: "#525e8c"}
+	CursorPulseMid  = lipgloss.AdaptiveColor{Light: "#c3cce0", Dark: "#3f4872"}
 	ColorWaiting     = lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"} // magenta/rose — waiting for user
 	ColorPostTool    = lipgloss.AdaptiveColor{Light: "#0891b2", Dark: "#22d3ee"} // cyan — PostToolUse
 	ColorOverlap     = lipgloss.AdaptiveColor{Light: "#ca8a04", Dark: "#eab308"} // yellow — file overlap warning
@@ -240,6 +244,10 @@ var (
 	// Diff stats
 	DiffAddedStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 
+	// Subtle bg band used for tool-event rows in the chat outline timeline —
+	// distinguishes "agent did X" from "agent said X" rows visually.
+	TurnFilesBg = lipgloss.AdaptiveColor{Light: "#eef0f3", Dark: "#22272e"}
+
 	// Diff background highlights (dimmed, used for all diff lines)
 	DiffDelBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#f5e6e6", Dark: "#2a1517"})
 	DiffAddBg = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#e6f2e6", Dark: "#152a1a"})
@@ -379,13 +387,6 @@ var (
 	CopilotDockedStyle    = copilotDocked(ColorCopilot)
 	CopilotDockedDimStyle = copilotDocked(ColorMuted)
 
-	// Footer chat bubble (powerline pill with neutral surface)
-	ColorBubbleBg = lipgloss.AdaptiveColor{Light: "#e5e7eb", Dark: "#2d2d2d"}
-
-	BubbleCapStyle   = lipgloss.NewStyle().Foreground(ColorBubbleBg)
-	BubbleTextStyle  = lipgloss.NewStyle().Background(ColorBubbleBg)
-	BubbleLeftCap    = BubbleCapStyle.Render("\ue0b2")
-	BubbleRightCap   = BubbleCapStyle.Render("\ue0b4")
 	InsightLabelStyle = lipgloss.NewStyle().Foreground(ColorLater).Bold(true)
 	InsightSepStyle   = lipgloss.NewStyle().Foreground(ColorBorder)
 )

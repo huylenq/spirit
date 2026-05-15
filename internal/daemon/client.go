@@ -199,11 +199,11 @@ func (c *Client) ReadNext() ([]claude.ClaudeSession, *claude.UsageStats, error) 
 	return data.Sessions, data.Usage, nil
 }
 
-// Transcript fetches user messages for a session.
-func (c *Client) Transcript(sessionID string) ([]string, error) {
+// Transcript fetches user messages and the current-turn snapshot for a session.
+func (c *Client) Transcript(sessionID string) ([]string, claude.CurrentTurn, error) {
 	var data TranscriptData
 	err := c.rpcInto(Request{Type: ReqTranscript, Data: marshalData(SessionIDData{SessionID: sessionID})}, &data)
-	return data.Messages, err
+	return data.Messages, data.Turn, err
 }
 
 // DiffStats fetches file diff statistics for a session.

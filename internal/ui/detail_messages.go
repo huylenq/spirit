@@ -19,44 +19,162 @@ func (m *DetailModel) SetUserMessages(msgs []string) {
 			m.msgCursor = 0
 		}
 	}
-	// Keep scroll position valid and cursor visible.
-	if total := len(msgs); total > maxOutlineMessages {
-		m.outlineScrollTop = min(m.outlineScrollTop, total-maxOutlineMessages)
+	// Keep scroll position valid and cursor visible. The window indexes past
+	// messages only — the current-turn block is always pinned at the bottom.
+	pastCount := len(msgs) - 1
+	if pastCount > maxOutlineMessages {
+		m.outlineScrollTop = min(m.outlineScrollTop, pastCount-maxOutlineMessages)
 	} else {
 		m.outlineScrollTop = 0
 	}
 	m.ensureOutlineVisible(m.msgCursor)
 }
 
-// recomputeOffsets rebuilds msgOffsets from the current content and userMessages.
-func (m *DetailModel) recomputeOffsets() {
-	m.msgOffsets = findMsgLineOffsets(m.content, m.userMessages)
+// SetCurrentTurn updates the current-turn event stream and rebuilds the
+// per-event line offsets used for navigation.
+func (m *DetailModel) SetCurrentTurn(t claude.CurrentTurn) {
+	m.currentTurn = t
+	m.recomputeEventOffsets(m.wrapForViewport())
+	// Clamp cursor in case the event count shrank (e.g., session switch).
+	maxIdx := m.navStopCount() - 1
+	if maxIdx < 0 {
+		m.msgCursor = 0
+	} else if m.msgCursor > maxIdx {
+		m.msgCursor = maxIdx
+	}
 }
 
-// NavigateMsg moves the message cursor by delta (+1 = next, -1 = prev) and scrolls
-// the viewport to that message's line in the pane capture.
+// recomputeOffsets rebuilds msgOffsets and eventSubOffsets. Offsets are in
+// wrapped-content line indices — `viewport.YOffset` indexes the wrapped
+// output, not the raw captured pane, so any mismatch makes navigation jump to
+// the wrong line.
+func (m *DetailModel) recomputeOffsets() {
+	wrapped := m.wrapForViewport()
+	m.msgOffsets = findMsgLineOffsets(wrapped, m.userMessages)
+	m.recomputeEventOffsets(wrapped)
+}
+
+// recomputeEventOffsets anchors current-turn events to `⏺` markers in the
+// (already-wrapped) content, starting just after the last user-message line.
+// Each event gets a slice of sub-block offsets (one entry per merged source
+// block) so ctrl+h/ctrl+l can step through individual edits inside a merged
+// file event.
+func (m *DetailModel) recomputeEventOffsets(searchContent string) {
+	lastUserLine := -1
+	if n := len(m.msgOffsets); n > 0 {
+		lastUserLine = m.msgOffsets[n-1]
+	}
+	m.eventSubOffsets = findEventSubOffsets(searchContent, lastUserLine, m.currentTurn.Events)
+}
+
+// navStopCount is the total number of cursor positions: every user message
+// plus every event in the current turn.
+func (m *DetailModel) navStopCount() int {
+	return len(m.userMessages) + len(m.currentTurn.Events)
+}
+
+// NavigateMsg moves the message cursor by delta and scrolls the viewport to
+// the target user message or event line.
 func (m *DetailModel) NavigateMsg(delta int) {
-	if len(m.userMessages) == 0 {
+	total := m.navStopCount()
+	if total == 0 {
 		return
 	}
-	m.NavigateMsgTo(min(max(m.msgCursor+delta, 0), len(m.userMessages)-1))
+	m.NavigateMsgTo(min(max(m.msgCursor+delta, 0), total-1))
 }
 
-// NavigateMsgTo navigates directly to a specific message index.
+// NavigateMsgTo navigates directly to a specific cursor index. Indices in
+// [0, len(userMessages)) target user messages; [len(userMessages), navStopCount())
+// target events. Moving to a different cursor stop resets the sub-cursor.
 func (m *DetailModel) NavigateMsgTo(idx int) {
-	if idx < 0 || idx >= len(m.userMessages) {
+	total := m.navStopCount()
+	if idx < 0 || idx >= total {
 		return
+	}
+	if idx != m.msgCursor {
+		m.startCursorPulse()
 	}
 	m.msgCursor = idx
+	m.subCursor = 0
 	m.ensureOutlineVisible(idx)
-	if idx < len(m.msgOffsets) && m.msgOffsets[idx] >= 0 {
-		m.viewport.SetYOffset(m.msgOffsets[idx])
+
+	lineOffset := -1
+	if idx < len(m.userMessages) {
+		if idx < len(m.msgOffsets) {
+			lineOffset = m.msgOffsets[idx]
+		}
+	} else {
+		evIdx := idx - len(m.userMessages)
+		if evIdx < len(m.eventSubOffsets) && len(m.eventSubOffsets[evIdx]) > 0 {
+			lineOffset = m.eventSubOffsets[evIdx][0]
+		}
+	}
+	if lineOffset >= 0 {
+		m.viewport.SetYOffset(lineOffset)
 		m.stickyBottom = m.viewport.AtBottom()
 	}
 }
 
-// ensureOutlineVisible adjusts outlineScrollTop so that idx is within the visible window.
+// NavigateSubMsg steps the sub-cursor within the focused event (e.g. through
+// consecutive edits to the same file that got merged into one outline row).
+// No-op when the cursor isn't on an event, or the focused event has only one
+// sub-block. Delta is +1 (next) or -1 (prev), clamped within bounds.
+func (m *DetailModel) NavigateSubMsg(delta int) {
+	if m.msgCursor < len(m.userMessages) {
+		return
+	}
+	evIdx := m.msgCursor - len(m.userMessages)
+	if evIdx >= len(m.eventSubOffsets) {
+		return
+	}
+	subs := m.eventSubOffsets[evIdx]
+	if len(subs) < 2 {
+		return
+	}
+	next := m.subCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(subs) {
+		next = len(subs) - 1
+	}
+	if next == m.subCursor {
+		return
+	}
+	m.subCursor = next
+	m.startCursorPulse()
+	if subs[next] >= 0 {
+		m.viewport.SetYOffset(subs[next])
+		m.stickyBottom = m.viewport.AtBottom()
+	}
+}
+
+// FocusedSubInfo reports the focused event's sub-cursor position (1-based) and
+// its sub-block total. Returns (0, 0) when the cursor isn't on a merged event
+// (so the renderer can skip the `(p/N)` indicator).
+func (m *DetailModel) FocusedSubInfo() (pos, total int) {
+	if m.msgCursor < len(m.userMessages) {
+		return 0, 0
+	}
+	evIdx := m.msgCursor - len(m.userMessages)
+	if evIdx >= len(m.eventSubOffsets) {
+		return 0, 0
+	}
+	n := len(m.eventSubOffsets[evIdx])
+	if n < 2 {
+		return 0, 0
+	}
+	return m.subCursor + 1, n
+}
+
+// ensureOutlineVisible adjusts outlineScrollTop so that idx is within the
+// visible window of past messages. The current-turn message (last index) is
+// always rendered, so no scrolling is needed when the cursor lands there.
 func (m *DetailModel) ensureOutlineVisible(idx int) {
+	lastIdx := len(m.userMessages) - 1
+	if idx >= lastIdx {
+		return
+	}
 	if idx < m.outlineScrollTop {
 		m.outlineScrollTop = idx
 	} else if idx >= m.outlineScrollTop+maxOutlineMessages {
@@ -65,11 +183,19 @@ func (m *DetailModel) ensureOutlineVisible(idx int) {
 	m.outlineScrollTop = max(0, m.outlineScrollTop)
 }
 
-// outlineWindow returns the visible message range [start, end) for the chat outline.
-func (m *DetailModel) outlineWindow() (visStart, visEnd int) {
-	total := len(m.userMessages)
+// outlinePastWindow returns the visible past-message range [start, end) for
+// the chat outline scroll-back. The current turn (last index) is excluded —
+// it's always rendered separately below the scroll-back.
+func (m *DetailModel) outlinePastWindow() (visStart, visEnd int) {
+	pastCount := len(m.userMessages) - 1
+	if pastCount <= 0 {
+		return 0, 0
+	}
 	visStart = m.outlineScrollTop
-	visEnd = min(visStart+maxOutlineMessages, total)
+	if visStart > pastCount {
+		visStart = pastCount
+	}
+	visEnd = min(visStart+maxOutlineMessages, pastCount)
 	return
 }
 
@@ -140,37 +266,52 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 	msgWidth := max(1, innerWidth-outlineIndicatorWidth())
 	row := 2
 
-	// Account for scroll-up indicator line.
-	visStart, visEnd := m.outlineWindow()
+	visStart, visEnd := m.outlinePastWindow()
 	if visStart > 0 {
 		row++ // "↑ N more" line
 	}
-
 	for i := visStart; i < visEnd; i++ {
-		msg := m.userMessages[i]
 		if row > contentRow {
 			return -1
 		}
-		flat := stripOutlinePrefix(strings.ReplaceAll(msg, "\n", " "))
 		if contentRow == row {
 			return i
 		}
 		row++
-		if ansi.StringWidth(flat) > msgWidth {
-			if contentRow == row {
-				return i
-			}
-			row++
+	}
+	lastIdx := len(m.userMessages) - 1
+	if visEnd < lastIdx {
+		if contentRow == row {
+			return -1 // "↓ N more" line
 		}
-		// After the last user message, the reply block occupies extra rows.
-		// Clicks on those rows should not select any message.
-		// Must mirror the render condition: reply is only shown when NOT agent-turn.
-		if i == len(m.userMessages)-1 &&
-			m.session != nil &&
-			m.session.Status != claude.StatusAgentTurn &&
-			m.session.LastAssistantMessage != "" {
-			break
+		row++
+	}
+	// Separator row (only rendered when there's scroll-back) maps to nothing.
+	if lastIdx > 0 {
+		if contentRow == row {
+			return -1
 		}
+		row++
+	}
+	// Current user message spans up to outlineLastUserMaxLines rows; every
+	// row maps to the same lastIdx cursor stop.
+	flat := stripOutlinePrefix(strings.ReplaceAll(m.userMessages[lastIdx], "\n", " "))
+	wrapped := strings.Split(WordWrapContent(flat, msgWidth), "\n")
+	if len(wrapped) > outlineLastUserMaxLines {
+		wrapped = wrapped[:outlineLastUserMaxLines]
+	}
+	for range wrapped {
+		if contentRow == row {
+			return lastIdx
+		}
+		row++
+	}
+	// Current-turn events: 1 row per event, in order.
+	for ei := range m.currentTurn.Events {
+		if contentRow == row {
+			return lastIdx + 1 + ei
+		}
+		row++
 	}
 	return -1
 }
@@ -226,4 +367,55 @@ func findMsgLineOffsets(content string, messages []string) []int {
 	}
 
 	return offsets
+}
+
+// findEventSubOffsets returns per-event slices of `⏺ ` line offsets in the
+// captured pane content, after the last user-message line. Each inner slice
+// contains one entry per merged source block (length == BlockCount), so
+// ctrl+h/ctrl+l can step through merged edits. Missing offsets (event scrolled
+// past scrollback) are -1.
+func findEventSubOffsets(content string, lastUserLine int, events []claude.TurnEvent) [][]int {
+	out := make([][]int, len(events))
+	for i, ev := range events {
+		out[i] = make([]int, eventBlockCount(ev))
+		for j := range out[i] {
+			out[i][j] = -1
+		}
+	}
+	if content == "" || len(events) == 0 || lastUserLine < 0 {
+		return out
+	}
+	contentLines := strings.Split(content, "\n")
+	if lastUserLine >= len(contentLines) {
+		return out
+	}
+
+	eventIdx := 0
+	consumed := 0
+	need := eventBlockCount(events[0])
+	for li := lastUserLine + 1; li < len(contentLines) && eventIdx < len(events); li++ {
+		stripped := strings.TrimSpace(ansi.Strip(contentLines[li]))
+		if !strings.HasPrefix(stripped, "⏺") {
+			continue
+		}
+		if consumed < len(out[eventIdx]) {
+			out[eventIdx][consumed] = li
+		}
+		consumed++
+		if consumed >= need {
+			eventIdx++
+			consumed = 0
+			if eventIdx < len(events) {
+				need = eventBlockCount(events[eventIdx])
+			}
+		}
+	}
+	return out
+}
+
+func eventBlockCount(e claude.TurnEvent) int {
+	if e.BlockCount < 1 {
+		return 1
+	}
+	return e.BlockCount
 }

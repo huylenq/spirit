@@ -159,7 +159,7 @@ func luaCancelCommitDone(deps Deps) lua.LGFunction {
 func luaTranscript(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
-		msgs, err := deps.Client.Transcript(id)
+		msgs, _, err := deps.Client.Transcript(id)
 		if err != nil {
 			L.RaiseError("transcript: %v", err)
 			return 0

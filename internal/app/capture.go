@@ -90,8 +90,9 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 		m.detail.SetSession(&s, content)
 
 		if s.SessionID != "" {
-			msgs, _ := client.Transcript(s.SessionID)
+			msgs, turn, _ := client.Transcript(s.SessionID)
 			m.detail.SetUserMessages(msgs)
+			m.detail.SetCurrentTurn(turn)
 			summary, _ := client.Summary(s.SessionID)
 			m.detail.SetSummary(summary)
 			m.detail.SetDiffStats(selectedStats)

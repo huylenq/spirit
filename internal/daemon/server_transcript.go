@@ -13,7 +13,8 @@ func (d *Daemon) handleTranscript(data json.RawMessage) *Response {
 		return &r
 	}
 	msgs, _ := claude.ReadUserMessages(req.SessionID)
-	r := resultResponse(TranscriptData{Messages: msgs})
+	turn := claude.ReadCurrentTurn(req.SessionID)
+	r := resultResponse(TranscriptData{Messages: msgs, Turn: turn})
 	return &r
 }
 

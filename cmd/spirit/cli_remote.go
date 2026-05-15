@@ -489,7 +489,7 @@ func runTranscript() {
 		}
 		jsonOut(entries)
 	} else {
-		msgs, err := client.Transcript(id)
+		msgs, _, err := client.Transcript(id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "transcript: %v\n", err)
 			os.Exit(1)

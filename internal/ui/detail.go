@@ -36,10 +36,27 @@ type DetailModel struct {
 	content                  string
 	userMessages             []string
 	msgOffsets               []int // line index in content for each userMessage; -1 if not found
-	msgCursor                int   // which user message we last navigated to
-	outlineScrollTop         int   // index of first visible message in chat outline
+	// msgCursor indexes a unified [past user msgs..., current user msg, current-turn events...]
+	// list. Indices [0, len(userMessages)) → user messages. Indices
+	// [len(userMessages), len(userMessages)+len(currentTurn.Events)) → events,
+	// where the event index is `msgCursor - len(userMessages)`.
+	msgCursor                int
+	// eventSubOffsets[i] is the slice of `⏺` line offsets in the captured pane
+	// for the sub-blocks of currentTurn.Events[i]. For non-merged events the
+	// slice is length 1. -1 entries mean "not found" (scrolled past scrollback).
+	eventSubOffsets [][]int
+	subCursor       int // index into eventSubOffsets[evIdx] for the focused event
+	// Drives the cursor-row fade after navigation: >0 → bright/mid tint,
+	// 0 → permanent tint only. Decremented by CursorPulseTickMsg.
+	cursorPulseFrame int
+	// Wrap-output cache shared by every site that needs `wrapLines(content)`
+	// at the current viewport width — avoids redoing the wrap per poll.
+	wrappedContent      string
+	wrappedContentSrc   string
+	wrappedContentWidth int
+	outlineScrollTop         int   // index of first visible past message in chat outline
 	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
-	currentTurn              claude.CurrentTurn // latest user→agent turn snapshot (first reply, files)
+	currentTurn              claude.CurrentTurn // chronological event stream for the current turn
 	diffStats                map[string]claude.FileDiffStat
 	diffFiles                []diffFileStat // cached sorted file entries
 	summary                  *claude.SessionSummary
@@ -101,14 +118,20 @@ func (m *DetailModel) SetSize(w, h int) {
 		m.ready = true
 		m.stickyBottom = true
 		if m.content != "" {
-			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
+			m.viewport.SetContent(m.wrapForViewport())
 			m.viewport.GotoBottom() // content arrived before size was known
 		}
 	} else {
+		oldWidth := m.viewport.Width
 		m.viewport.Width = vpWidth
 		m.viewport.Height = contentHeight
 		if m.content != "" {
-			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
+			m.viewport.SetContent(m.wrapForViewport())
+			// Wrap changed → wrapped line indices changed too. Recompute so
+			// msgOffsets / eventSubOffsets stay in sync with viewport.YOffset.
+			if oldWidth != vpWidth {
+				m.recomputeOffsets()
+			}
 		}
 	}
 }
@@ -122,6 +145,41 @@ func (m *DetailModel) SetSizeFast(w, h int) {
 		m.viewport.Width = m.effectiveVPWidth(w)
 		m.viewport.Height = detailContentHeight(h)
 	}
+}
+
+// wrapForViewport returns m.content wrapped to the current viewport width,
+// memoized so the same (content, width) pair only pays the wrap cost once.
+func (m *DetailModel) wrapForViewport() string {
+	if m.content == "" || !m.ready {
+		return m.content
+	}
+	if m.wrappedContentSrc == m.content && m.wrappedContentWidth == m.viewport.Width {
+		return m.wrappedContent
+	}
+	wrapped := wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width))
+	m.wrappedContent = wrapped
+	m.wrappedContentSrc = m.content
+	m.wrappedContentWidth = m.viewport.Width
+	return wrapped
+}
+
+// 6 frames × ~60ms ≈ 360ms total fade.
+const cursorPulseFrames = 6
+
+func (m *DetailModel) AdvanceCursorPulse() bool {
+	if m.cursorPulseFrame <= 0 {
+		return false
+	}
+	m.cursorPulseFrame--
+	return m.cursorPulseFrame > 0
+}
+
+func (m *DetailModel) IsCursorPulsing() bool {
+	return m.cursorPulseFrame > 0
+}
+
+func (m *DetailModel) startCursorPulse() {
+	m.cursorPulseFrame = cursorPulseFrames
 }
 
 // detailContentHeight computes the viewport content height from the panel height.
@@ -302,7 +360,7 @@ func (m *DetailModel) SetChatOutlineWidth(w int) {
 		vpWidth := m.effectiveVPWidth(m.width)
 		m.viewport.Width = vpWidth
 		if m.content != "" {
-			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), vpWidth, m.effectiveDividerWidth(vpWidth)))
+			m.viewport.SetContent(m.wrapForViewport())
 		}
 	}
 }
@@ -422,7 +480,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 	}
 	m.content = content
 	if m.ready {
-		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
+		m.viewport.SetContent(m.wrapForViewport())
 		if isNew || m.stickyBottom {
 			m.viewport.GotoBottom()
 		}
@@ -447,7 +505,7 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 
 	m.recomputeOffsets()
 	if m.ready {
-		m.viewport.SetContent(wrapLines(trimTrailingBlanks(content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width)))
+		m.viewport.SetContent(m.wrapForViewport())
 		if isNewSession || m.stickyBottom {
 			m.viewport.GotoBottom()
 		}
@@ -511,7 +569,7 @@ func (m *DetailModel) SetChatOutlineMode(mode string) {
 		vpWidth := m.effectiveVPWidth(m.width)
 		m.viewport.Width = vpWidth
 		if m.content != "" {
-			m.viewport.SetContent(wrapLines(trimTrailingBlanks(m.content), vpWidth, m.effectiveDividerWidth(vpWidth)))
+			m.viewport.SetContent(m.wrapForViewport())
 		}
 	}
 }

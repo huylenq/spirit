@@ -22,10 +22,12 @@ type PreviewReadyMsg struct {
 	Err     error
 }
 
-// ChatOutlineReadyMsg is sent when user messages are extracted from a session transcript.
+// ChatOutlineReadyMsg is sent when user messages and the current-turn snapshot
+// are extracted from a session transcript.
 type ChatOutlineReadyMsg struct {
 	PaneID   string
 	Messages []string
+	Turn     claude.CurrentTurn
 }
 
 // HooksReadyMsg is sent when hook events are loaded for a pane.
@@ -83,6 +85,9 @@ type GlobalEffectsReadyMsg struct {
 
 // ClearFlashMsg auto-dismisses the error flash overlay.
 type ClearFlashMsg struct{}
+
+// CursorPulseTickMsg advances the cursor-row pulse in DetailModel by one frame.
+type CursorPulseTickMsg struct{}
 
 // ClearToastMsg pops the oldest entry from the toast queue after its TTL expires.
 type ClearToastMsg struct{}

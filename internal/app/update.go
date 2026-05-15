@@ -92,6 +92,20 @@ func killPaneCmd(paneID, sessionID string, pid int, laterID string) tea.Cmd {
 type flashInfoMsg string
 type flashErrorMsg string
 
+// ~60ms × 6 frames ≈ 360ms total — short, subtle.
+const cursorPulseTickInterval = 60 * time.Millisecond
+
+func cursorPulseTickCmd() tea.Cmd {
+	return tea.Tick(cursorPulseTickInterval, func(time.Time) tea.Msg { return CursorPulseTickMsg{} })
+}
+
+func maybeCursorPulseTickCmd(m *Model) tea.Cmd {
+	if m.detail.IsCursorPulsing() {
+		return cursorPulseTickCmd()
+	}
+	return nil
+}
+
 // reopenPopup schedules a new tmux popup to open after the current one closes.
 // It persists the new fullscreen state to prefs so `spirit popup` picks it up,
 // then uses run-shell with a short sleep so the new popup opens after the old one exits.
@@ -568,6 +582,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.toastQueue = append(m.toastQueue[:i], m.toastQueue[i+1:]...)
 			break
+		}
+		return m, nil
+
+	case CursorPulseTickMsg:
+		if m.detail.AdvanceCursorPulse() {
+			return m, cursorPulseTickCmd()
 		}
 		return m, nil
 

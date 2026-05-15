@@ -396,11 +396,6 @@ func (m *DetailModel) renderChatOutline(width int) string {
 		}
 	}
 
-	// Current-turn timeline: one row per event in chronological source order.
-	// Text events: `›` bullet + flattened-truncated first line.
-	// Edit/Write/MultiEdit: `⫶` bullet + bg-tinted band showing file + stats.
-	// Every row is a single nav stop; j/k cycles through them after the
-	// current user message. Recap lives in its own bottom-docked panel.
 	eventBase := lastIdx + 1 // first cursor index that lands on event 0
 	subPos, subTotal := m.FocusedSubInfo()
 	for ei, ev := range m.currentTurn.Events {

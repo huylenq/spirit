@@ -15,6 +15,8 @@ const (
 	IconFolder      = "\uf07b"     // folder
 	IconFile        = "\uf15b"     // file — diff file count
 	IconQuote       = "\uf10d"     // quote-left — user message subtitle
+	IconDiff        = "\uea7b"     // nf-cod-diff — files changed this turn (block bullet)
+	IconText        = "\uf105"     // nf-fa-angle_right — agent text event (single chevron)
 	IconGitCommit   = "\ue729"     // nf-dev-git_commit
 	// Subtitle icons
 	IconInput      = "\uf11c" // keyboard — last user message subtitle

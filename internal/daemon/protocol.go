@@ -183,7 +183,8 @@ type SessionsData struct {
 }
 
 type TranscriptData struct {
-	Messages []string `json:"messages"`
+	Messages []string            `json:"messages"`
+	Turn     claude.CurrentTurn  `json:"turn"`
 }
 
 type DiffStatsData struct {
