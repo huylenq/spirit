@@ -76,7 +76,7 @@ var avatarColorDefs = []avatarColorDef{
 	{
 		Fg:        lipgloss.AdaptiveColor{Light: "#4338ca", Dark: "#818cf8"},
 		BadgeBgDk: "#252535",
-		FillBg:    lipgloss.AdaptiveColor{Light: "#e0e7ff", Dark: "#1a152a"},
+		FillBg:    lipgloss.AdaptiveColor{Light: "#e0e7ff", Dark: "#2a2560"},
 	},
 	{
 		Fg:        lipgloss.AdaptiveColor{Light: "#be185d", Dark: "#f472b6"},
