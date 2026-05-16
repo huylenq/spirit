@@ -374,6 +374,12 @@ func findMsgLineOffsets(content string, messages []string) []int {
 // contains one entry per merged source block (length == BlockCount), so
 // ctrl+h/ctrl+l can step through merged edits. Missing offsets (event scrolled
 // past scrollback) are -1.
+//
+// The captured pane prints `⏺` for every assistant block AND every tool call
+// (Bash, Read, Grep, ...), but `events` only contains navigable kinds (text,
+// Edit, Write, MultiEdit). Markers that don't match the expected event kind
+// are skipped, so non-navigable tool calls in the stream don't desync the
+// offset alignment.
 func findEventSubOffsets(content string, lastUserLine int, events []claude.TurnEvent) [][]int {
 	out := make([][]int, len(events))
 	for i, ev := range events {
@@ -398,6 +404,9 @@ func findEventSubOffsets(content string, lastUserLine int, events []claude.TurnE
 		if !strings.HasPrefix(stripped, "⏺") {
 			continue
 		}
+		if !markerMatchesEventKind(stripped, events[eventIdx].Kind) {
+			continue
+		}
 		if consumed < len(out[eventIdx]) {
 			out[eventIdx][consumed] = li
 		}
@@ -411,6 +420,53 @@ func findEventSubOffsets(content string, lastUserLine int, events []claude.TurnE
 		}
 	}
 	return out
+}
+
+// markerMatchesEventKind reports whether a `⏺ ...` line from the captured pane
+// corresponds to the given event kind. Text events match lines that aren't a
+// `ToolName(...)` tool-call marker; file events match the specific tool names
+// Claude Code prints for that kind (e.g. Edit renders as `Update(path)`).
+func markerMatchesEventKind(line string, kind claude.TurnEventKind) bool {
+	toolName, isTool := parseMarkerToolName(line)
+	switch kind {
+	case claude.TurnEventText:
+		return !isTool
+	case claude.TurnEventEdit, claude.TurnEventMultiEdit:
+		if !isTool {
+			return false
+		}
+		return toolName == "Update" || toolName == "Edit" || toolName == "MultiEdit"
+	case claude.TurnEventWrite:
+		return isTool && toolName == "Write"
+	}
+	return false
+}
+
+// parseMarkerToolName extracts the tool name from a `⏺ Name(...)` line. It
+// returns (name, true) only when the content immediately after `⏺` is a
+// capitalized identifier followed by `(` — the shape Claude Code uses to
+// print every tool call. For prose text after `⏺`, returns ("", false).
+func parseMarkerToolName(line string) (string, bool) {
+	s := strings.TrimSpace(strings.TrimPrefix(line, "⏺"))
+	if s == "" {
+		return "", false
+	}
+	if s[0] < 'A' || s[0] > 'Z' {
+		return "", false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '(' {
+			if i == 0 {
+				return "", false
+			}
+			return s[:i], true
+		}
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+			return "", false
+		}
+	}
+	return "", false
 }
 
 func eventBlockCount(e claude.TurnEvent) int {

@@ -99,6 +99,7 @@ func (m *DetailModel) View() string {
 		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
 	}
 	vpRaw = m.highlightCursorAnchorRow(vpRaw)
+	vpRaw = m.paintCursorGutter(vpRaw)
 	// Use the session's avatar color for the preview border
 	contentStyle := DetailContentStyle.BorderForeground(avatarColor)
 
@@ -494,12 +495,16 @@ func renderTurnFileEntry(ev claude.TurnEvent, width int, bg lipgloss.TerminalCol
 	return out
 }
 
-// highlightCursorAnchorRow tints the main viewport row corresponding to the
-// outline cursor's anchor line (user message or current sub-cursor sub-edit),
-// re-applying the bg after every inline reset so claude's per-segment ANSI
-// styling doesn't drop the tint mid-row. No-op when the anchor scrolled out
-// of the viewport or the line offset isn't known.
+// highlightCursorAnchorRow flashes the cursor's anchor row with a fading bg
+// during the navigation pulse. The resting indicator is paintCursorGutter.
 func (m *DetailModel) highlightCursorAnchorRow(vpView string) string {
+	if m.cursorPulseFrame <= 0 {
+		return vpView
+	}
+	bg, ok := m.cursorRowBg()
+	if !ok {
+		return vpView
+	}
 	target := m.cursorAnchorLine()
 	if target < 0 {
 		return vpView
@@ -512,21 +517,22 @@ func (m *DetailModel) highlightCursorAnchorRow(vpView string) string {
 	if screenRow >= len(lines) {
 		return vpView
 	}
-	lines[screenRow] = reapplyBgToLine(lines[screenRow], m.cursorRowBg(), m.viewport.Width)
+	lines[screenRow] = reapplyBgToLine(lines[screenRow], bg, m.viewport.Width)
 	return strings.Join(lines, "\n")
 }
 
-// cursorRowBg picks the cursor-row bg based on the pulse phase. Frames decay
-// from CursorPulseHigh → CursorPulseMid → ColorSelectionBg over the pulse
-// budget, then stay at ColorSelectionBg as the permanent tint.
-func (m *DetailModel) cursorRowBg() lipgloss.TerminalColor {
+// cursorRowBg picks the pulse-row bg by frame. Returns (_, false) once the
+// pulse has decayed — the row gets no permanent tint.
+func (m *DetailModel) cursorRowBg() (lipgloss.TerminalColor, bool) {
 	switch {
 	case m.cursorPulseFrame >= cursorPulseFrames-1:
-		return CursorPulseHigh
+		return CursorPulseHigh, true
 	case m.cursorPulseFrame >= cursorPulseFrames-3:
-		return CursorPulseMid
+		return CursorPulseMid, true
+	case m.cursorPulseFrame > 0:
+		return ColorSelectionBg, true
 	default:
-		return ColorSelectionBg
+		return nil, false
 	}
 }
 
@@ -558,12 +564,106 @@ func (m *DetailModel) cursorAnchorLine() int {
 	return subs[sub]
 }
 
-// reapplyBgToLine paints `bg` as a persistent background across a possibly-
-// ANSI-styled line. Every inline reset (`\x1b[0m` / `\x1b[m`) is rewritten to
-// reset+bg so claude's per-segment styling doesn't drop the tint. The line is
-// padded to width with bg-spaces so the row reads as a continuous band.
+// cursorAnchorSpan returns the [startLine, endLine] captured-content range
+// occupied by the focused outline item. End is the line before the next entry
+// boundary (`⏺`, `❯`, or claude's prompt-box border) — past user messages
+// have no eventSubOffsets to bound them, so a stored-anchor scan alone would
+// extend the span through the following assistant turn.
+func (m *DetailModel) cursorAnchorSpan() (start, end int, ok bool) {
+	start = m.cursorAnchorLine()
+	if start < 0 {
+		return 0, 0, false
+	}
+	lines := m.wrappedContentLines
+	limit := m.viewport.YOffset + m.viewport.Height
+	if limit > len(lines) {
+		limit = len(lines)
+	}
+	end = nextEntryBoundary(lines, start, limit)
+	if end < 0 {
+		end = len(lines) - 1
+	} else {
+		end--
+	}
+	if end < start {
+		end = start
+	}
+	return start, end, true
+}
+
+// nextEntryBoundary scans `lines[after+1:limit]` for the next outline-entry
+// boundary line. Returns -1 when none is found in range.
+func nextEntryBoundary(lines []string, after, limit int) int {
+	for i := after + 1; i < limit; i++ {
+		stripped := strings.TrimSpace(ansi.Strip(lines[i]))
+		if stripped == "" {
+			continue
+		}
+		if strings.HasPrefix(stripped, "⏺") || strings.HasPrefix(stripped, "❯") {
+			return i
+		}
+		switch classifyLine(stripped) {
+		case lineBox, lineHRule:
+			return i
+		}
+	}
+	return -1
+}
+
+// paintCursorGutter paints a 1-cell vertical bar at column 0 across the
+// continuation rows of the focused outline item's span. Anchor row is skipped
+// (so claude's `⏺`/`❯` glyph stays visible); rows whose column 0 is non-
+// blank are skipped for the same reason. Gutter color is sniffed from the
+// anchor line's leading SGR so the bar inherits Claude's own marker color.
+func (m *DetailModel) paintCursorGutter(vpView string) string {
+	start, end, ok := m.cursorAnchorSpan()
+	if !ok {
+		return vpView
+	}
+	vpStart := start - m.viewport.YOffset
+	vpEnd := end - m.viewport.YOffset
+	if vpEnd < 0 || vpStart >= m.viewport.Height {
+		return vpView
+	}
+	if vpStart < 0 {
+		vpStart = 0
+	}
+	if vpEnd >= m.viewport.Height {
+		vpEnd = m.viewport.Height - 1
+	}
+	var anchorANSI string
+	if start >= 0 && start < len(m.wrappedContentLines) {
+		anchorANSI = extractLeadingANSI(m.wrappedContentLines[start])
+	}
+	cell := anchorANSI + "▌" + "\x1b[m"
+	anchorRow := start - m.viewport.YOffset
+	lines := strings.Split(vpView, "\n")
+	for r := vpStart; r <= vpEnd; r++ {
+		if r >= len(lines) {
+			break
+		}
+		if r == anchorRow {
+			continue
+		}
+		if !lineCol0Blank(lines[r]) {
+			continue
+		}
+		lines[r] = cell + ansi.TruncateLeft(lines[r], 1, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func lineCol0Blank(line string) bool {
+	first := ansi.Truncate(line, 1, "")
+	return strings.TrimSpace(ansi.Strip(first)) == ""
+}
+
+// reapplyBgToLine paints `bg` as the row background. Inline `\x1b[0m`/`\x1b[m`
+// resets are rewritten to reset+bg so claude's per-segment styling doesn't
+// drop the tint. Pulse-only — claude's own SGR bg on user-message rows wins
+// over the text portion, which is fine for the brief flash.
 func reapplyBgToLine(line string, bg lipgloss.TerminalColor, width int) string {
-	// Extract just the bg open/close escapes by rendering a sentinel.
+	// Sentinel trick: render a marker char to extract just the open/close SGRs.
 	rendered := lipgloss.NewStyle().Background(bg).Render("\x00")
 	parts := strings.SplitN(rendered, "\x00", 2)
 	if len(parts) != 2 {

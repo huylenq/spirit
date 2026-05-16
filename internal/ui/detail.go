@@ -52,6 +52,7 @@ type DetailModel struct {
 	// Wrap-output cache shared by every site that needs `wrapLines(content)`
 	// at the current viewport width — avoids redoing the wrap per poll.
 	wrappedContent      string
+	wrappedContentLines []string
 	wrappedContentSrc   string
 	wrappedContentWidth int
 	outlineScrollTop         int   // index of first visible past message in chat outline
@@ -158,6 +159,7 @@ func (m *DetailModel) wrapForViewport() string {
 	}
 	wrapped := wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width))
 	m.wrappedContent = wrapped
+	m.wrappedContentLines = strings.Split(wrapped, "\n")
 	m.wrappedContentSrc = m.content
 	m.wrappedContentWidth = m.viewport.Width
 	return wrapped
