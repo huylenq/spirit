@@ -42,7 +42,7 @@ func NewCopilotRelayModel() RelayModel {
 
 func NewLaterRelayModel() RelayModel {
 	ti := textinput.New()
-	ti.Placeholder = "empty = forever"
+	ti.Placeholder = "15 = 15m, empty = forever"
 	ti.Prompt = IconLater + " "
 	ti.PromptStyle = StatLaterStyle
 	ti.CharLimit = 16
