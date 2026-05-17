@@ -57,6 +57,18 @@ func loadPrefBool(key string) bool {
 	return prefs[key] == "true"
 }
 
+// loadPrefBoolDefault returns the pref value when present, else defaultVal.
+// Use for prefs that default to true; loadPrefBool collapses "missing" and
+// "false" together, which is the wrong behavior for opt-out toggles.
+func loadPrefBoolDefault(key string, defaultVal bool) bool {
+	prefs := loadPrefs()
+	v, ok := prefs[key]
+	if !ok {
+		return defaultVal
+	}
+	return v == "true"
+}
+
 func savePrefBool(key string, val bool) {
 	prefs := loadPrefs()
 	if prefs == nil {

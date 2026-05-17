@@ -57,6 +57,17 @@ func (m Model) execToggleDiffs() (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) execToggleInterleavedMessages() (Model, tea.Cmd) {
+	next := !m.detail.HideInterleavedMessages()
+	m.detail.SetHideInterleavedMessages(next)
+	savePrefBool("hideInterleavedMessages", next)
+	verb := "hidden"
+	if !next {
+		verb = "shown"
+	}
+	return m, func() tea.Msg { return flashInfoMsg("interleaved messages " + verb) }
+}
+
 func (m Model) execToggleRawTranscript() (Model, tea.Cmd) {
 	m.showRawTranscript = !m.showRawTranscript
 	m.showHooks = false

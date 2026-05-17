@@ -34,6 +34,7 @@ func (m *DetailModel) SetUserMessages(msgs []string) {
 // per-event line offsets used for navigation.
 func (m *DetailModel) SetCurrentTurn(t claude.CurrentTurn) {
 	m.currentTurn = t
+	m.recomputeVisibleEvents()
 	m.recomputeEventOffsets(m.wrapForViewport())
 	// Clamp cursor in case the event count shrank (e.g., session switch).
 	maxIdx := m.navStopCount() - 1
@@ -41,6 +42,97 @@ func (m *DetailModel) SetCurrentTurn(t claude.CurrentTurn) {
 		m.msgCursor = 0
 	} else if m.msgCursor > maxIdx {
 		m.msgCursor = maxIdx
+	}
+}
+
+// recomputeVisibleEvents rebuilds visibleEvents/visibleSources/hiddenMessageCount
+// from the current raw events and the hide pref. Must be called whenever either
+// changes.
+func (m *DetailModel) recomputeVisibleEvents() {
+	m.visibleEvents, m.visibleSources, m.hiddenMessageCount =
+		claude.FilteredEvents(m.currentTurn.Events, m.hideInterleavedMessages)
+}
+
+// SetHideInterleavedMessages toggles the outline filter and preserves the
+// cursor's position relative to the underlying raw event when possible.
+func (m *DetailModel) SetHideInterleavedMessages(hide bool) {
+	if m.hideInterleavedMessages == hide {
+		return
+	}
+	rawIdx, rawSub, onEvent := m.cursorRawPosition()
+	m.hideInterleavedMessages = hide
+	m.recomputeVisibleEvents()
+	m.recomputeEventOffsets(m.wrapForViewport())
+	if onEvent {
+		m.restoreCursorFromRaw(rawIdx, rawSub)
+	}
+	maxIdx := m.navStopCount() - 1
+	if maxIdx < 0 {
+		m.msgCursor = 0
+	} else if m.msgCursor > maxIdx {
+		m.msgCursor = maxIdx
+	}
+	m.ensureOutlineVisible(m.msgCursor)
+}
+
+// HideInterleavedMessages reports the current pref state.
+func (m *DetailModel) HideInterleavedMessages() bool { return m.hideInterleavedMessages }
+
+// cursorRawPosition maps the current (msgCursor, subCursor) back to a raw
+// event index and intra-event sub-block. onEvent=false when the cursor is on
+// a user message (no event-level position).
+func (m *DetailModel) cursorRawPosition() (rawIdx, rawSub int, onEvent bool) {
+	if m.msgCursor < len(m.userMessages) {
+		return 0, 0, false
+	}
+	visIdx := m.msgCursor - len(m.userMessages)
+	if visIdx >= len(m.visibleSources) || len(m.visibleSources[visIdx]) == 0 {
+		return 0, 0, false
+	}
+	sub := m.subCursor
+	for _, srcIdx := range m.visibleSources[visIdx] {
+		bc := eventBlockCount(m.currentTurn.Events[srcIdx])
+		if sub < bc {
+			return srcIdx, sub, true
+		}
+		sub -= bc
+	}
+	last := m.visibleSources[visIdx][len(m.visibleSources[visIdx])-1]
+	return last, 0, true
+}
+
+// restoreCursorFromRaw repositions msgCursor/subCursor to the visible row that
+// contains rawIdx. If rawIdx was dropped by the filter, snaps forward to the
+// next visible event (fallback: last visible).
+func (m *DetailModel) restoreCursorFromRaw(rawIdx, rawSub int) {
+	for visIdx, srcs := range m.visibleSources {
+		subAccum := 0
+		for _, srcIdx := range srcs {
+			bc := eventBlockCount(m.currentTurn.Events[srcIdx])
+			if srcIdx == rawIdx {
+				if rawSub >= bc {
+					rawSub = bc - 1
+				}
+				if rawSub < 0 {
+					rawSub = 0
+				}
+				m.msgCursor = len(m.userMessages) + visIdx
+				m.subCursor = subAccum + rawSub
+				return
+			}
+			subAccum += bc
+		}
+	}
+	for visIdx, srcs := range m.visibleSources {
+		if len(srcs) > 0 && srcs[0] > rawIdx {
+			m.msgCursor = len(m.userMessages) + visIdx
+			m.subCursor = 0
+			return
+		}
+	}
+	if n := len(m.visibleEvents); n > 0 {
+		m.msgCursor = len(m.userMessages) + n - 1
+		m.subCursor = 0
 	}
 }
 
@@ -64,13 +156,13 @@ func (m *DetailModel) recomputeEventOffsets(searchContent string) {
 	if n := len(m.msgOffsets); n > 0 {
 		lastUserLine = m.msgOffsets[n-1]
 	}
-	m.eventSubOffsets = findEventSubOffsets(searchContent, lastUserLine, m.currentTurn.Events)
+	m.eventSubOffsets = findEventSubOffsets(searchContent, lastUserLine, m.visibleEvents)
 }
 
 // navStopCount is the total number of cursor positions: every user message
 // plus every event in the current turn.
 func (m *DetailModel) navStopCount() int {
-	return len(m.userMessages) + len(m.currentTurn.Events)
+	return len(m.userMessages) + len(m.visibleEvents)
 }
 
 // NavigateMsg moves the message cursor by delta and scrolls the viewport to
@@ -306,8 +398,8 @@ func (m *DetailModel) ChatOutlineMsgAt(localX, localY int) int {
 		}
 		row++
 	}
-	// Current-turn events: 1 row per event, in order.
-	for ei := range m.currentTurn.Events {
+	// Current-turn events: 1 row per visible event, in order.
+	for ei := range m.visibleEvents {
 		if contentRow == row {
 			return lastIdx + 1 + ei
 		}

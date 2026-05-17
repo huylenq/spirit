@@ -58,6 +58,13 @@ type DetailModel struct {
 	outlineScrollTop         int   // index of first visible past message in chat outline
 	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
 	currentTurn              claude.CurrentTurn // chronological event stream for the current turn
+	// visibleEvents is the presentation slice for the outline — currentTurn.Events
+	// with interleaved-text hiding + post-hide same-file merging applied. Equal
+	// to currentTurn.Events when hideInterleavedMessages is false.
+	visibleEvents      []claude.TurnEvent
+	visibleSources     [][]int // visibleSources[v] = raw event indices composing visibleEvents[v]
+	hiddenMessageCount int     // number of raw text events dropped by the filter
+	hideInterleavedMessages bool
 	diffStats                map[string]claude.FileDiffStat
 	diffFiles                []diffFileStat // cached sorted file entries
 	summary                  *claude.SessionSummary

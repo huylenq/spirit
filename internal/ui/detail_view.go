@@ -328,10 +328,15 @@ func (m *DetailModel) renderChatOutline(width int) string {
 		len(m.userMessages) > 0
 
 	var lines []string
-	lines = append(lines,
-		TranscriptTitleStyle.Foreground(ColorBorder).Render(" "+IconInput+"  Your Messages"),
-		"",
-	)
+	title := TranscriptTitleStyle.Foreground(ColorBorder).Render(" " + IconInput + "  Your Messages")
+	if m.hiddenMessageCount > 0 {
+		noun := "messages"
+		if m.hiddenMessageCount == 1 {
+			noun = "message"
+		}
+		title += "  " + ItemDetailStyle.Render(fmt.Sprintf("·· %d %s hidden", m.hiddenMessageCount, noun))
+	}
+	lines = append(lines, title, "")
 
 	if len(m.userMessages) == 0 {
 		return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
@@ -399,7 +404,7 @@ func (m *DetailModel) renderChatOutline(width int) string {
 
 	eventBase := lastIdx + 1 // first cursor index that lands on event 0
 	subPos, subTotal := m.FocusedSubInfo()
-	for ei, ev := range m.currentTurn.Events {
+	for ei, ev := range m.visibleEvents {
 		focused := m.msgCursor == eventBase+ei
 		switch ev.Kind {
 		case claude.TurnEventText:

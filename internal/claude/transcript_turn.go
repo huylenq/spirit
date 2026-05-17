@@ -154,6 +154,72 @@ func appendFileEvent(events *[]TurnEvent, ev TurnEvent) {
 	*events = append(*events, ev)
 }
 
+// isFileToolEvent reports whether ev is a file-mutating tool call.
+func isFileToolEvent(ev TurnEvent) bool {
+	switch ev.Kind {
+	case TurnEventEdit, TurnEventWrite, TurnEventMultiEdit:
+		return true
+	}
+	return false
+}
+
+// FilteredEvents returns a presentation slice for the chat outline.
+//
+// When hideInterleaved is false: returns the input slice with identity sources
+// (sources[i] = [i]) and hidden=0.
+//
+// When hideInterleaved is true: drops "interleaved" text events — text events
+// that have a file-tool event both before and after them — then re-runs the
+// same-file merge over the filtered slice (using appendFileEvent's rule). Texts
+// at the beginning or end of the turn are preserved; pure-text turns are
+// untouched.
+//
+// `sources[v]` is the list of raw event indices that compose visibleEvents[v].
+// For non-merged events it has length 1; for merged events its length matches
+// the number of source events combined. Used to map cursor positions across
+// the toggle.
+func FilteredEvents(events []TurnEvent, hideInterleaved bool) (visible []TurnEvent, sources [][]int, hidden int) {
+	if !hideInterleaved {
+		sources = make([][]int, len(events))
+		for i := range events {
+			sources[i] = []int{i}
+		}
+		return events, sources, 0
+	}
+	n := len(events)
+	hasToolBefore := make([]bool, n)
+	seen := false
+	for i := 0; i < n; i++ {
+		hasToolBefore[i] = seen
+		if isFileToolEvent(events[i]) {
+			seen = true
+		}
+	}
+	hasToolAfter := make([]bool, n)
+	seen = false
+	for i := n - 1; i >= 0; i-- {
+		hasToolAfter[i] = seen
+		if isFileToolEvent(events[i]) {
+			seen = true
+		}
+	}
+
+	for i, ev := range events {
+		if ev.Kind == TurnEventText && hasToolBefore[i] && hasToolAfter[i] {
+			hidden++
+			continue
+		}
+		preLen := len(visible)
+		appendFileEvent(&visible, ev)
+		if len(visible) == preLen {
+			sources[len(sources)-1] = append(sources[len(sources)-1], i)
+		} else {
+			sources = append(sources, []int{i})
+		}
+	}
+	return visible, sources, hidden
+}
+
 func appendAssistantEvents(line []byte, events *[]TurnEvent) {
 	var tl transcriptLine
 	if json.Unmarshal(line, &tl) != nil || tl.Type != "assistant" {

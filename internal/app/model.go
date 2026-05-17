@@ -339,6 +339,7 @@ func NewModel(client *daemon.Client) Model {
 	if w := loadPrefInt("chatOutlineWidth", 0); w > 0 {
 		m.detail.SetChatOutlineWidth(w)
 	}
+	m.detail.SetHideInterleavedMessages(loadPrefBoolDefault("hideInterleavedMessages", true))
 	// Restore copilot input to visible-but-unfocused on TUI reopen.
 	// Normally Activate() fires inside execOpenCopilot/execToggleCopilot, but
 	// those never run on restart — the pref already has copilotVisible=true.
