@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/huylenq/spirit/internal/app"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
@@ -127,6 +128,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer client.Close()
+
+	// Pin the background to dark. lipgloss's OSC auto-detection is unreliable
+	// inside bubbletea's alt-screen (it intermittently reports light on a dark
+	// terminal), which makes AdaptiveColors resolve to their pale Light variants
+	// — most visibly the selected-card FillBg and diff backgrounds rendering as
+	// bright boxes on the otherwise dark UI. Spirit's theme is dark-by-design.
+	lipgloss.SetHasDarkBackground(true)
 
 	p := tea.NewProgram(
 		app.NewModel(client),
