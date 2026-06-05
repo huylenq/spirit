@@ -6,6 +6,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -454,30 +455,36 @@ var sectionPalette = [5]struct {
 }
 
 // gutterGlyphs[order][kind][muted] holds the pre-rendered string for every
-// possible section gutter cell. Built once at init so renderGutter is a
-// constant-time lookup with zero per-frame allocs.
-var gutterGlyphs = func() [5][3][2]string {
-	var table [5][3][2]string
+// possible section gutter cell, plus the dim fallbacks. Built lazily on the
+// first render (via gutterOnce) rather than at package init: AdaptiveColors
+// must resolve against the dark background pinned in main(), which runs *after*
+// this package's vars initialize. Baking at init froze the unreliable
+// auto-detected variant, leaving these glyphs on their Light shades while the
+// per-frame-rendered edges used Dark — the "too white" / mismatched outline.
+var (
+	gutterGlyphs [5][3][2]string
+	gutterDim    string
+	gutterTee    string
+	gutterOnce   sync.Once
+)
+
+func buildGutterGlyphs() {
 	glyphs := [3]string{kindBody: "┃", kindTop: "┓", kindBottom: "┛"}
 	for ord, entry := range sectionPalette {
 		if entry.label == "" {
 			continue // OrderOther — skip
 		}
 		for k := range glyphs {
-			table[ord][k][0] = lipgloss.NewStyle().Foreground(entry.color).Render(glyphs[k])
-			table[ord][k][1] = lipgloss.NewStyle().Foreground(entry.mutedColor).Render(glyphs[k])
+			gutterGlyphs[ord][k][0] = lipgloss.NewStyle().Foreground(entry.color).Render(glyphs[k])
+			gutterGlyphs[ord][k][1] = lipgloss.NewStyle().Foreground(entry.mutedColor).Render(glyphs[k])
 		}
 	}
-	return table
-}()
-
-// Dim fallbacks for non-section rows (orders outside the palette).
-var (
 	gutterDim = lipgloss.NewStyle().Foreground(ColorBorder).Render("│")
 	gutterTee = lipgloss.NewStyle().Foreground(ColorBorder).Render("┤")
-)
+}
 
 func renderGutter(g gutterInfo) string {
+	gutterOnce.Do(buildGutterGlyphs)
 	// Only YOUR TURN renders the colored outline glyphs. Every other section
 	// falls back to the dim │ (or ┤ on a separator row) so the surrounding
 	// chrome reads as a simple horizontal-divider layout.

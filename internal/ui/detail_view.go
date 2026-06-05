@@ -12,7 +12,6 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
-var diffStatSeparator = BorderCharStyle.Render(" │ ")
 
 // EmptyView renders the "no session selected" placeholder at the given size.
 func (m *DetailModel) EmptyView(w, h int) string {
@@ -86,7 +85,9 @@ func (m *DetailModel) View() string {
 		}
 
 		if len(entries) > 0 {
-			diffStatsStr = "  " + strings.Join(entries, diffStatSeparator)
+			// Rendered here (not a package var) so ColorBorder resolves against
+			// the dark background pinned in main(), which runs after init.
+			diffStatsStr = "  " + strings.Join(entries, BorderCharStyle.Render(" │ "))
 		}
 	}
 

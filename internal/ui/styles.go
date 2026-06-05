@@ -45,7 +45,7 @@ var (
 	ColorMuted       = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#9ca3af"} // gray
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
-	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#4b5563"} // border gray
+	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#334155"} // border: light gray / slate-700 (cool, recedes on dark bg)
 	ColorSelectionBg = lipgloss.AdaptiveColor{Light: "#e8ecf5", Dark: "#312e81"} // selection row bg (indigo-900, toned down)
 	// Cursor-row pulse colors: brighter shades that decay back to
 	// ColorSelectionBg over a few frames after navigation.
