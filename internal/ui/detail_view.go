@@ -794,7 +794,9 @@ func (m *DetailModel) renderRecapPanel(width int) string {
 
 	var rendered []string
 	if r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		// Pin dark — see detail.go: AutoStyle's render-time OSC detection
+		// intermittently resolves to the light theme on our dark UI.
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(innerWidth),
 	); err == nil {
 		if out, gerr := r.Render(raw); gerr == nil {

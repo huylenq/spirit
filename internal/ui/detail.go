@@ -230,7 +230,11 @@ func (m *DetailModel) updateRenderedInsight(s *claude.ClaudeSession) {
 	}
 
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		// Pin dark: glamour's AutoStyle re-runs termenv's unreliable OSC
+		// background detection at render time and ignores our pinned
+		// lipgloss.SetHasDarkBackground(true), so it intermittently picks the
+		// light theme (dark text invisible on the dark UI). See cmd/spirit/main.go.
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(renderWidth),
 	)
 	if err != nil {
