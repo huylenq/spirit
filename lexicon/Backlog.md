@@ -1,0 +1,2 @@
+- auto-corrective feedback on term alignments
+- tag-based color for the session, along with color-coded “timeline” for when tags are switched
