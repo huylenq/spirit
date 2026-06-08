@@ -258,7 +258,7 @@ var commitDoneFrames = []string{"◐", "◓", "◑", "◒"}
 // Each frame is one spinner tick (~80ms).
 const (
 	JumpAnimFrames     = 4 // autojump (bar-only flash)
-	ActivateAnimFrames = 8 // TUI reveal (ctrl+tab / ctrl+space)
+	ActivateAnimFrames = 6 // TUI reveal (ctrl+tab / ctrl+space)
 	SearchFlashFrames  = 5 // search-confirm Enter
 )
 
