@@ -8,12 +8,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
 )
+
+// ptyCols is the width of the hidden PTY used to scrape /usage. The screen
+// emulator in stripANSI must use the same width so absolute column addressing
+// (\x1b[NG) lands where Claude Code intended.
+const ptyCols = 220
 
 // usageCachePath is the on-disk location for the last-known UsageStats.
 // Persisting across daemon restarts means the TUI can show the previous
@@ -78,7 +84,7 @@ func launchUsagePTY() (snapshot func() string, cleanup func(), err error) {
 	// Unset env vars that trigger nested-session detection
 	cmd.Env = filterEnv(filterEnv(os.Environ(), "CLAUDECODE"), "CLAUDE_CODE_ENTRYPOINT")
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 50, Cols: 220})
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 50, Cols: ptyCols})
 	if err != nil {
 		return nil, nil, fmt.Errorf("start pty: %w", err)
 	}
@@ -200,24 +206,172 @@ func pollFor(snapshotFn func() string, needle string, timeout time.Duration) err
 	return fmt.Errorf("timed out waiting for %q", needle)
 }
 
-var (
-	// Cursor-right movement: \x1b[<N>C → replace with N spaces
-	reCursorRight = regexp.MustCompile(`\x1b\[(\d+)C`)
-	// All other ANSI: CSI sequences, DEC private modes, OSC (title), etc.
-	reANSI = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])`)
-)
-
+// stripANSI renders a PTY byte stream to its final visible text.
+//
+// Claude Code's TUI doesn't emit a clean stream of characters and spaces — it
+// positions text with absolute cursor addressing (CHA \x1b[NG, CUP \x1b[r;cH),
+// repaints with screen/line clears (\x1b[2J, \x1b[K), and moves the cursor
+// freely (\x1b[A/B/C/D). A regex that merely deletes escape sequences collapses
+// inter-word spacing and lets stale frames bleed into the result. So we run a
+// minimal terminal emulator over a cell grid and read back the final screen,
+// which is exactly what a human sees and what the parsers below expect.
 func stripANSI(s string) string {
-	// First, replace cursor-right movements with actual spaces
-	s = reCursorRight.ReplaceAllStringFunc(s, func(m string) string {
-		sub := reCursorRight.FindStringSubmatch(m)
-		n := 1
-		if len(sub) > 1 {
-			fmt.Sscanf(sub[1], "%d", &n)
+	g := newScreen(ptyCols)
+	g.feed(s)
+	return g.text()
+}
+
+// screen is a minimal VT cell grid: enough of an emulator to faithfully
+// reconstruct horizontally- and vertically-addressed TUI layout.
+type screen struct {
+	rows [][]rune
+	r, c int
+	cols int
+}
+
+func newScreen(cols int) *screen { return &screen{cols: cols} }
+
+func (s *screen) ensureRow(r int) {
+	for len(s.rows) <= r {
+		row := make([]rune, s.cols)
+		for i := range row {
+			row[i] = ' '
 		}
-		return strings.Repeat(" ", n)
-	})
-	return reANSI.ReplaceAllString(s, "")
+		s.rows = append(s.rows, row)
+	}
+}
+
+func (s *screen) put(ch rune) {
+	if s.c >= s.cols { // autowrap
+		s.c = 0
+		s.r++
+	}
+	if s.c < 0 {
+		s.c = 0
+	}
+	s.ensureRow(s.r)
+	s.rows[s.r][s.c] = ch
+	s.c++
+}
+
+func (s *screen) eraseLine(mode int) {
+	s.ensureRow(s.r)
+	row := s.rows[s.r]
+	switch mode {
+	case 0: // cursor → end of line
+		for i := s.c; i < s.cols; i++ {
+			row[i] = ' '
+		}
+	case 1: // start of line → cursor
+		for i := 0; i <= s.c && i < s.cols; i++ {
+			row[i] = ' '
+		}
+	case 2: // whole line
+		for i := range row {
+			row[i] = ' '
+		}
+	}
+}
+
+func atoiDefault(p string, def int) int {
+	if p == "" {
+		return def
+	}
+	if v, err := strconv.Atoi(p); err == nil {
+		return v
+	}
+	return def
+}
+
+func (s *screen) feed(in string) {
+	rs := []rune(in)
+	n := len(rs)
+	for i := 0; i < n; i++ {
+		r := rs[i]
+		switch {
+		case r == 0x1b:
+			if i+1 >= n {
+				return
+			}
+			switch rs[i+1] {
+			case '[': // CSI: params (0x20-0x3f) then a final byte (0x40-0x7e)
+				j := i + 2
+				for j < n && rs[j] >= 0x20 && rs[j] <= 0x3f {
+					j++
+				}
+				if j >= n {
+					return
+				}
+				params := string(rs[i+2 : j])
+				p0, p1 := params, ""
+				if k := strings.IndexByte(params, ';'); k >= 0 {
+					p0, p1 = params[:k], params[k+1:]
+				}
+				switch rs[j] {
+				case 'H', 'f': // cursor position (row;col, 1-based)
+					s.r = atoiDefault(p0, 1) - 1
+					s.c = atoiDefault(p1, 1) - 1
+				case 'A': // up
+					s.r -= atoiDefault(p0, 1)
+				case 'B': // down
+					s.r += atoiDefault(p0, 1)
+				case 'C': // forward
+					s.c += atoiDefault(p0, 1)
+				case 'D': // back
+					s.c -= atoiDefault(p0, 1)
+				case 'G': // horizontal absolute
+					s.c = atoiDefault(p0, 1) - 1
+				case 'd': // vertical absolute
+					s.r = atoiDefault(p0, 1) - 1
+				case 'J': // erase display (2/3 = clear all)
+					if m := atoiDefault(p0, 0); m == 2 || m == 3 {
+						s.rows, s.r, s.c = nil, 0, 0
+					}
+				case 'K': // erase line
+					s.eraseLine(atoiDefault(p0, 0))
+				}
+				if s.r < 0 {
+					s.r = 0
+				}
+				if s.c < 0 {
+					s.c = 0
+				}
+				i = j
+			case ']': // OSC: consume until BEL or ST (ESC \)
+				j := i + 2
+				for j < n && rs[j] != 0x07 {
+					if rs[j] == 0x1b && j+1 < n && rs[j+1] == '\\' {
+						j++
+						break
+					}
+					j++
+				}
+				i = j
+			default: // two-byte escape (charset selectors, etc.)
+				i++
+			}
+		case r == '\r':
+			s.c = 0
+		case r == '\n':
+			s.r++
+			s.ensureRow(s.r)
+		case r == '\t':
+			s.c = (s.c/8 + 1) * 8
+		default:
+			s.put(r)
+		}
+	}
+}
+
+func (s *screen) text() string {
+	var b strings.Builder
+	for i, row := range s.rows {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.TrimRight(string(row), " "))
+	}
+	return b.String()
 }
 
 // parseUsageDialog extracts usage % and reset times from the /usage dialog text.
