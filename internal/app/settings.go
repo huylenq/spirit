@@ -30,6 +30,7 @@ type SettingDef struct {
 // SettingsRegistry is the ordered list of all settings shown in the overlay (P key).
 var SettingsRegistry = []SettingDef{
 	{Key: "groupByProject", Label: "Group by project", Kind: SettingBool, Default: "false"},
+	{Key: "showLastMessage", Label: "Show last message in outline", Kind: SettingBool, Default: "true"},
 	{Key: "minimap", Label: "Show minimap", Kind: SettingBool, Default: "false"},
 	{Key: "minimapMode", Label: "Minimap mode", Kind: SettingEnum, Default: "auto", Options: []string{"auto", "docked", "float", "smart"}},
 	{Key: "minimapMaxH", Label: "Minimap max height", Kind: SettingInt, Default: "14", Min: 5, Max: 30},
@@ -112,6 +113,8 @@ func (m *Model) applySettingToModel(key string, prefs map[string]string) {
 	switch key {
 	case "groupByProject":
 		m.sidebar.SetGroupByProject(prefs[key] == "true")
+	case "showLastMessage":
+		m.sidebar.SetHideLastMessage(prefs[key] != "true")
 	case "minimap":
 		m.showMinimap = prefs[key] == "true"
 	case "minimapMode":

@@ -87,6 +87,7 @@ type SidebarModel struct {
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
 	flaggedProjects     map[string]bool  // project name → flagged
 	focusMode           bool             // when true, only show effectively-flagged sessions
+	hideLastMessage     bool             // when true, suppress the last-message subtitle on items
 	numberSlots         map[int]string   // slot (1-9) → PaneID
 }
 
@@ -539,6 +540,11 @@ func (m *SidebarModel) SetFocusMode(v bool) {
 // FocusMode returns whether focus mode is active.
 func (m SidebarModel) FocusMode() bool {
 	return m.focusMode
+}
+
+// SetHideLastMessage controls whether item rows show the last-message subtitle.
+func (m *SidebarModel) SetHideLastMessage(v bool) {
+	m.hideLastMessage = v
 }
 
 // FocusedCount returns the number of effectively-flagged sessions.

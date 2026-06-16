@@ -184,7 +184,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
-	if s.LastUserMessage != "" {
+	if s.LastUserMessage != "" && !m.hideLastMessage {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
 		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isAutoJump, doHL, s.AvatarColorIdx, barSt)
@@ -542,7 +542,7 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		count++
 	}
 
-	if s.LastUserMessage != "" {
+	if s.LastUserMessage != "" && !m.hideLastMessage {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		// subtitleMsgWidth returns identical width for selected/unselected
 		msgWidth := m.subtitleMsgWidth(IconQuote, false)
