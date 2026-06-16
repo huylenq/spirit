@@ -70,6 +70,7 @@ type SidebarModel struct {
 	claudingExpanded    bool             // true = CLAUDING section visible
 	laterCount          int              // cached count of Later sessions (updated in applyNarrow)
 	claudingCount       int              // cached count of Clauding sessions (updated in applyNarrow)
+	claudingEntries     []ClaudingEntry  // cached glyph+name of collapsed Clauding sessions (updated in applyNarrow)
 	singleProject       bool             // cached: `p:` filter narrowed visible set to one project (updated in applyNarrow)
 	landPaneID          string           // pane most recently jumped to (landing flash)
 	landBacklogID       string           // backlog item most recently jumped to (landing flash)
@@ -208,9 +209,23 @@ func (m SidebarModel) ClaudingExpanded() bool {
 	return m.claudingExpanded
 }
 
-func (m SidebarModel) ClaudingCount() int { return m.claudingCount }
-func (m SidebarModel) LaterCount() int    { return m.laterCount }
-func (m SidebarModel) BacklogCount() int  { return len(m.backlogs) }
+func (m SidebarModel) ClaudingSessions() []ClaudingEntry { return m.claudingEntries }
+func (m SidebarModel) LaterCount() int                   { return m.laterCount }
+func (m SidebarModel) BacklogCount() int                 { return len(m.backlogs) }
+
+// claudingEntry builds a ClaudingEntry for a collapsed Clauding session shown
+// in the all-quiet dashboard: a colored avatar glyph + the plain display title.
+func claudingEntry(s claude.ClaudeSession) ClaudingEntry {
+	name := s.DisplayName()
+	if name == "" {
+		name = "(New session)"
+	}
+	name = strings.ReplaceAll(name, "\n", " ")
+	return ClaudingEntry{
+		Glyph: AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)),
+		Name:  name,
+	}
+}
 
 // IsAllQuiet returns true when sessions exist but none are cursor-navigable
 // (all hidden behind collapsed sections, no YOUR TURN items, not in search mode).
@@ -742,11 +757,13 @@ func (m *SidebarModel) applyNarrow() {
 	}
 	// Count Clauding sessions and remove them from the cursor-navigable list when collapsed
 	m.claudingCount = 0
+	m.claudingEntries = nil
 	if !m.claudingExpanded {
 		n := 0
 		for _, s := range m.filtered {
 			if sessionOrder(s) == OrderAgentTurn {
 				m.claudingCount++
+				m.claudingEntries = append(m.claudingEntries, claudingEntry(s))
 			} else {
 				m.filtered[n] = s
 				n++

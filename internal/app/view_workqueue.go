@@ -74,10 +74,22 @@ func (m *Model) syncWorkQueueSelection() tea.Cmd {
 // allQuietCounts returns the counts for the all-quiet detail view.
 func (m Model) allQuietCounts() ui.AllQuietCounts {
 	return ui.AllQuietCounts{
-		Clauding: m.sidebar.ClaudingCount(),
-		Later:    m.sidebar.LaterCount(),
-		Backlog:  m.sidebar.BacklogCount(),
+		ClaudingSessions: m.sidebar.ClaudingSessions(),
+		Later:            m.sidebar.LaterCount(),
+		Backlog:          m.sidebar.BacklogCount(),
 	}
+}
+
+// renderAllQuietPanel renders the full-bleed all-quiet detail panel at the
+// given width. DetailPanelStyle pads 1 col each side, so the scene is rendered
+// at detailWidth-2 to center within the full panel rather than the stale
+// (with-sidebar) detail width cached on the detail model.
+func (m Model) renderAllQuietPanel(detailWidth, contentHeight int) string {
+	return ui.DetailPanelStyle.
+		Width(detailWidth).
+		Height(contentHeight).
+		MaxHeight(contentHeight).
+		Render(m.detail.ViewAllQuietSized(detailWidth-2, contentHeight, m.allQuietCounts()))
 }
 
 // renderDockedCopilot renders the copilot docked panel if visible, or empty string.
@@ -99,8 +111,19 @@ func (m Model) renderDockedCopilot(copilotDockedW, contentHeight int) string {
 
 // viewSidebarLayout renders the traditional sidebar + detail panel layout.
 func (m Model) viewSidebarLayout(innerWidth, contentHeight int) string {
-	sidebarWidth := m.sidebarPanelWidth()
 	copilotDockedW := m.copilotDockedWidth()
+
+	// All-quiet: hide the sidebar so the mobile animation gets the full width.
+	if m.sidebar.IsAllQuiet() {
+		detailPanel := m.renderAllQuietPanel(innerWidth-copilotDockedW, contentHeight)
+		copilotDockedPanel := m.renderDockedCopilot(copilotDockedW, contentHeight)
+		if copilotDockedPanel != "" {
+			return lipgloss.JoinHorizontal(lipgloss.Top, detailPanel, copilotDockedPanel)
+		}
+		return detailPanel
+	}
+
+	sidebarWidth := m.sidebarPanelWidth()
 	detailWidth := innerWidth - sidebarWidth - copilotDockedW
 
 	sidebarContent := m.sidebar.View()

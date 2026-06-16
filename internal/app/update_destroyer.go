@@ -10,17 +10,6 @@ import (
 // DestroyerTickMsg advances the destroyer animation.
 type DestroyerTickMsg struct{}
 
-// DestroyerAutoStartMsg is fired after AllQuiet has been active long enough.
-type DestroyerAutoStartMsg struct{}
-
-const destroyerAutoDelay = 20 * time.Second
-
-func scheduleDestroyerAutoStart() tea.Cmd {
-	return tea.Tick(destroyerAutoDelay, func(time.Time) tea.Msg {
-		return DestroyerAutoStartMsg{}
-	})
-}
-
 func tickDestroyer() tea.Cmd {
 	return tea.Tick(destroyer.Interval, func(time.Time) tea.Msg {
 		return DestroyerTickMsg{}

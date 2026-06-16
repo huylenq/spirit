@@ -254,19 +254,35 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, meta string) string 
 	return strings.Repeat(" ", gap) + meta
 }
 
-// AllQuietCounts holds per-section counts for the all-quiet dashboard.
+// ClaudingEntry is one collapsed Clauding session shown in the all-quiet
+// dashboard: a colored avatar glyph plus its (plain) display title, which the
+// dashboard renders with a shimmer effect.
+type ClaudingEntry struct {
+	Glyph string // styled colored avatar glyph
+	Name  string // plain display title
+}
+
+// AllQuietCounts holds per-section counts for the all-quiet dashboard. The
+// running-session count is derivable as len(ClaudingSessions).
 type AllQuietCounts struct {
-	Clauding int
-	Later    int
-	Backlog  int
+	ClaudingSessions []ClaudingEntry
+	Later            int
+	Backlog          int
 }
 
 // ViewAllQuiet renders the animated mobile scene with a contextual dashboard.
 func (m *DetailModel) ViewAllQuiet(counts AllQuietCounts) string {
+	return m.ViewAllQuietSized(m.width, m.height, counts)
+}
+
+// ViewAllQuietSized renders the all-quiet scene at explicit dimensions. The
+// full-bleed sidebar layout uses this because the detail model's cached width
+// still reflects the (now-hidden) sidebar, which would left-shift the scene.
+func (m *DetailModel) ViewAllQuietSized(w, h int, counts AllQuietCounts) string {
 	if m.allQuiet.Active() {
-		return m.allQuiet.Render(m.width, m.height, counts)
+		return m.allQuiet.Render(w, h, counts)
 	}
-	return renderStaticDashboard(m.width, m.height, counts)
+	return renderStaticDashboard(w, h, counts)
 }
 
 // maxOutlineMessages is the maximum number of past user messages visible in the

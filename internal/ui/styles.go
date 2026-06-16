@@ -77,6 +77,14 @@ var (
 	OverlapStyle      = lipgloss.NewStyle().Foreground(ColorOverlap)
 	DriftStyle        = lipgloss.NewStyle().Foreground(ColorWorking) // amber — title needs /rename
 
+	// All-quiet shimmer ramp: a grayscale band sweeps over the normal muted text
+	// color to signal a listed session is actively working. Base = ColorMuted
+	// (normal text); the band brightens toward white at its center.
+	shimmerBaseStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	shimmerMidStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#4b5563", Dark: "#c5cbd3"})
+	shimmerWarmStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
+	shimmerHotStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#111827", Dark: "#ffffff"}).Bold(true)
+
 	// Sidebar panel — the right-edge separator is drawn as a per-row colored
 	// gutter inside sidebar.View(), so the panel itself has no border.
 	SidebarPanelStyle = lipgloss.NewStyle()

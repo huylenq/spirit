@@ -55,6 +55,7 @@ type AllQuietAnim struct {
 	pends     [numPendulums]quietPendulum
 	particles []quietParticle
 	active    bool
+	frame     int // monotonically increasing tick counter (drives the shimmer)
 }
 
 // Active reports whether the animation is running.
@@ -135,6 +136,7 @@ func (a *AllQuietAnim) Tick() tea.Cmd {
 	if !a.active {
 		return nil
 	}
+	a.frame++
 	for i := range a.pends {
 		p := &a.pends[i]
 		p.x, p.xVel = p.spring.Update(p.x, p.xVel, p.targetX)
@@ -183,13 +185,23 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 		put(row, col, p.style.Render(p.char), 1)
 	}
 
+	// Dashboard is built first so the whole mobile+dashboard block can be
+	// vertically centered as one unit.
+	dash := renderQuietDashboard(counts, a.frame)
+	dashLines := strings.Split(dash, "\n")
+	dashH := len(dashLines)
+
 	// --- Mobile ---
 	barW := min(36, width*45/100)
 	if barW < 14 {
 		barW = 14
 	}
 	barLeft := (width - barW) / 2
-	barRow := height / 5
+
+	// Vertically center the composition: mobile (bar + strings + bob) spans
+	// pendStringH+2 rows, then a 3-row gap, then the dashboard.
+	blockH := (pendStringH + 2) + 3 + dashH
+	barRow := (height - blockH) / 2
 	if barRow < 2 {
 		barRow = 2
 	}
@@ -289,12 +301,10 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	bg := strings.Join(lines, "\n")
 
 	// --- Dashboard overlay (centered below mobile) ---
-	dash := renderQuietDashboard(counts)
 	dashRow := barRow + pendStringH + 4
-	if dashRow > height-8 {
-		dashRow = max(barRow+pendStringH+3, height-8)
+	if dashRow+dashH > height {
+		dashRow = max(barRow+pendStringH+3, height-dashH)
 	}
-	dashLines := strings.Split(dash, "\n")
 	dashMaxW := 0
 	for _, l := range dashLines {
 		if w := lipgloss.Width(l); w > dashMaxW {
@@ -308,24 +318,35 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	return OverlayAt(bg, dash, dashRow, dashCol)
 }
 
-// renderQuietDashboard builds the section counts + keybinding hints.
-func renderQuietDashboard(counts AllQuietCounts) string {
+// renderQuietDashboard builds the running-session list + section counts.
+// phase drives the shimmer animation on the Clauding session names.
+func renderQuietDashboard(counts AllQuietCounts, phase int) string {
 	var lines []string
-	if counts.Clauding > 0 {
+	if n := len(counts.ClaudingSessions); n > 0 {
 		lines = append(lines, GroupHeaderWorkingStyle.Render(
-			fmt.Sprintf("%d sessions running", counts.Clauding)))
+			fmt.Sprintf("%d sessions running", n)))
 	} else {
 		lines = append(lines, GroupHeaderDoneStyle.Render("All clear"))
 	}
 	lines = append(lines, "")
 
+	// Clauding sessions are listed individually: a static colored avatar glyph
+	// followed by a shimmering display name. The shimmer offset is staggered per
+	// row so the rows don't pulse in lockstep.
+	for i, e := range counts.ClaudingSessions {
+		lines = append(lines, "  "+e.Glyph+"  "+shimmer(e.Name, phase+i*3))
+	}
+	// Blank line separates the running sessions from the section counts below.
+	if len(counts.ClaudingSessions) > 0 {
+		lines = append(lines, "")
+	}
+
 	sections := []struct {
-		icon, label, key string
-		count            int
+		icon, label string
+		count       int
 	}{
-		{IconWand, "clauding", "alt+c", counts.Clauding},
-		{IconLater, "marked later", "alt+w", counts.Later},
-		{IconBacklog, "in backlog", "alt+b", counts.Backlog},
+		{IconLater, "marked later", counts.Later},
+		{IconBacklog, "in backlog", counts.Backlog},
 	}
 	for _, s := range sections {
 		if s.count > 0 {
@@ -333,17 +354,44 @@ func renderQuietDashboard(counts AllQuietCounts) string {
 				fmt.Sprintf("  %s  %d %s", s.icon, s.count, s.label)))
 		}
 	}
-	lines = append(lines, "")
-	for _, s := range sections {
-		if s.count > 0 {
-			lines = append(lines, ItemDetailStyle.Render(
-				fmt.Sprintf("  %s  expand %s", s.key, s.label)))
-		}
-	}
 	return strings.Join(lines, "\n")
+}
+
+// shimmer renders text with a bright band sweeping left→right across it, on a
+// muted amber base — the visual cue that a listed session is actively working.
+func shimmer(text string, phase int) string {
+	runes := []rune(text)
+	n := len(runes)
+	if n == 0 {
+		return text
+	}
+	// The band center sweeps across the text plus a trailing gap so there's a
+	// brief dark pause between passes.
+	span := n + 10
+	center := ((phase % span) + span) % span
+	var b strings.Builder
+	for i, r := range runes {
+		d := i - center
+		if d < 0 {
+			d = -d
+		}
+		var st lipgloss.Style
+		switch {
+		case d == 0:
+			st = shimmerHotStyle
+		case d <= 1:
+			st = shimmerWarmStyle
+		case d <= 3:
+			st = shimmerMidStyle
+		default:
+			st = shimmerBaseStyle
+		}
+		b.WriteString(st.Render(string(r)))
+	}
+	return b.String()
 }
 
 // renderStaticDashboard is the fallback when the pane is too small for animation.
 func renderStaticDashboard(width, height int, counts AllQuietCounts) string {
-	return EmptyStyle.Width(width).Height(height).Render(renderQuietDashboard(counts))
+	return EmptyStyle.Width(width).Height(height).Render(renderQuietDashboard(counts, 0))
 }

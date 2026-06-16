@@ -368,11 +368,10 @@ func (m *Model) shouldShowMobile() bool {
 func (m *Model) syncAllQuietAnim() tea.Cmd {
 	show := m.shouldShowMobile()
 	if show && !m.detail.AllQuietAnimActive() {
-		animCmd := m.detail.StartAllQuietAnim()
-		// Schedule auto-destroyer after pendulums swing a while.
-		// Destroyer only auto-fires from true IsAllQuiet (see AllQuietTickMsg
-		// handler), so an empty work queue won't trigger it.
-		return tea.Batch(animCmd, scheduleDestroyerAutoStart())
+		// Auto-destroyer is intentionally not scheduled here — the quiet view
+		// stays a calm mobile scene. The destroyer is still reachable manually
+		// via the `gxx` keybinding.
+		return m.detail.StartAllQuietAnim()
 	}
 	if !show && m.detail.AllQuietAnimActive() {
 		m.detail.StopAllQuietAnim()

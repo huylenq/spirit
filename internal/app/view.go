@@ -38,6 +38,12 @@ func (m Model) autoJumpIndicator() string {
 func (m Model) viewInner() string {
 	innerWidth := m.innerWidth()
 	contentHeight := m.contentHeight() - 1 // subtract divider line, matching normal View() path
+
+	// All-quiet: full-width animation, sidebar hidden (matches viewSidebarLayout).
+	if m.sidebar.IsAllQuiet() {
+		return m.renderAllQuietPanel(innerWidth-m.copilotDockedWidth(), contentHeight)
+	}
+
 	sidebarWidth := m.sidebarPanelWidth()
 	detailWidth := innerWidth - sidebarWidth - m.copilotDockedWidth()
 
@@ -48,17 +54,11 @@ func (m Model) viewInner() string {
 		MaxHeight(contentHeight).
 		Render(sidebarContent)
 
-	var detailContent string
-	if m.sidebar.IsAllQuiet() {
-		detailContent = m.detail.ViewAllQuiet(m.allQuietCounts())
-	} else {
-		detailContent = m.detail.View()
-	}
 	detailPanel := ui.DetailPanelStyle.
 		Width(detailWidth).
 		Height(contentHeight).
 		MaxHeight(contentHeight).
-		Render(detailContent)
+		Render(m.detail.View())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, detailPanel)
 }
@@ -127,18 +127,25 @@ func (m Model) View() string {
 		return topBorder + "\n" + bordered + "\n" + bottomBorder
 	}
 
+	// All-quiet sidebar mode hides the sidebar AND the footer so the mobile
+	// animation gets the full content area.
+	fullQuiet := m.viewMode != ViewWorkQueue && m.sidebar.IsAllQuiet()
+
 	// If minimap should be docked, render it first to reserve vertical space
 	minimapDocked := false
 	var minimapView string
-	if m.shouldDockMinimap() {
+	if !fullQuiet && m.shouldDockMinimap() {
 		minimapView = m.minimap.ViewDocked(innerWidth)
 		if minimapView != "" {
 			minimapDocked = true
 			contentHeight -= lipgloss.Height(minimapView)
 		}
 	}
-	// Divider line between content and footer (shown when minimap isn't docked above footer)
-	if !minimapDocked {
+	if fullQuiet {
+		// Reclaim the divider + footer rows for the full-bleed animation.
+		contentHeight += 1
+	} else if !minimapDocked {
+		// Divider line between content and footer (shown when minimap isn't docked above footer)
 		contentHeight -= 1
 	}
 
@@ -310,7 +317,9 @@ func (m Model) View() string {
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization
 	var inner string
-	if minimapDocked {
+	if fullQuiet {
+		inner = labelLine + "\n" + content
+	} else if minimapDocked {
 		inner = labelLine + "\n" + content + "\n" + minimapView + "\n" + footer
 	} else {
 		divider := ui.FooterDivider(innerWidth)

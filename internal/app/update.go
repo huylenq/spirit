@@ -349,14 +349,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.detail.TickAllQuiet()
 		return m, cmd
 
-	case DestroyerAutoStartMsg:
-		// Auto-start destroyer if still in AllQuiet state (pendulums visible)
-		if m.sidebar.IsAllQuiet() && m.state == StateNormal && m.destroyer == nil {
-			nm, cmd := m.execDestroyer()
-			return nm, cmd
-		}
-		return m, nil
-
 	case DestroyerTickMsg:
 		if m.state == StateDestroyer && m.destroyer != nil {
 			m.destroyer.Tick()
