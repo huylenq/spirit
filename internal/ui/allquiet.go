@@ -3,14 +3,21 @@ package ui
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
+
+// claudingDetailWidth caps the per-session recap/assistant subtitle so a long
+// recap doesn't blow out the centered dashboard width.
+const claudingDetailWidth = 72
 
 const (
 	allQuietFPS      = 12
@@ -18,6 +25,32 @@ const (
 	pendStringH      = 3 // rows of string between bar and bob
 	numPendulums     = 3
 )
+
+// Intro explosion: when quiet mode is entered, the dashboard text shatters
+// outward — letters burst from screen center on a light gravity arc — before
+// the calm pendulum mobile takes over.
+const (
+	explodeFrames   = 16   // explosion duration in frames before the mobile reveals
+	explodeGravity  = 0.12 // per-frame downward pull on debris
+	explodeMinSpeed = 1.8  // minimum outward burst speed (cells/frame)
+	explodeSpeedVar = 2.4  // additional speed spread on top of the minimum
+	explodeLift     = 0.8  // initial upward kick so debris arcs before falling
+)
+
+type quietPhase int
+
+const (
+	phaseMobile quietPhase = iota // calm pendulum scene (steady state)
+	phaseExplode                  // intro: dashboard text bursting apart
+)
+
+// debrisParticle is one styled rune flung outward during the intro explosion.
+type debrisParticle struct {
+	x, y   float64
+	vx, vy float64
+	cell   string // pre-rendered "ansiPrefix + rune + reset"
+	ttl    int    // frames remaining before the rune vanishes
+}
 
 // AllQuietTickMsg advances the all-quiet animation by one frame.
 type AllQuietTickMsg struct{}
@@ -56,13 +89,22 @@ type AllQuietAnim struct {
 	particles []quietParticle
 	active    bool
 	frame     int // monotonically increasing tick counter (drives the shimmer)
+
+	// Intro explosion state (phaseExplode → phaseMobile).
+	phase   quietPhase
+	debris  []debrisParticle
+	introFr int
 }
 
 // Active reports whether the animation is running.
 func (a *AllQuietAnim) Active() bool { return a.active }
 
-// Init starts the animation and returns the first tick command.
-func (a *AllQuietAnim) Init() tea.Cmd {
+// Init starts the animation and returns the first tick command. When intro is
+// true, counts and the w×h canvas size seed the entrance explosion — the quiet
+// dashboard is laid out, shattered into debris, and flung outward before the
+// mobile scene settles in. When false (e.g. the TUI simply opened into a quiet
+// state), the calm mobile renders straight away with no explosion.
+func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool) tea.Cmd {
 	if a.active {
 		return nil
 	}
@@ -102,14 +144,37 @@ func (a *AllQuietAnim) Init() tea.Cmd {
 		dim                bool
 	}
 	pcs := []qcfg{
-		{0.05, 0.10, 1.5, 2.0, 0.22, "·", true},
-		{0.08, 0.62, 1.0, 2.8, 0.26, "✧", false},
-		{0.12, 0.87, 1.5, 1.8, 0.20, "·", true},
-		{0.15, 0.35, 1.0, 3.0, 0.30, "∘", true},
-		{0.72, 0.08, 1.5, 2.2, 0.22, "·", true},
-		{0.76, 0.55, 1.0, 3.2, 0.28, "∘", false},
-		{0.80, 0.90, 1.5, 1.8, 0.18, "✧", true},
-		{0.88, 0.25, 1.0, 2.5, 0.24, "·", false},
+		// Top band
+		{0.04, 0.08, 1.5, 2.0, 0.22, "·", true},
+		{0.05, 0.30, 1.0, 3.1, 0.28, "∘", true},
+		{0.06, 0.52, 1.5, 2.4, 0.24, "·", true},
+		{0.07, 0.72, 1.0, 2.8, 0.26, "✧", false},
+		{0.08, 0.93, 1.5, 1.9, 0.20, "·", true},
+		{0.12, 0.18, 1.0, 3.0, 0.30, "∘", true},
+		{0.13, 0.45, 1.5, 2.2, 0.21, "·", true},
+		{0.14, 0.66, 1.0, 2.6, 0.27, "·", false},
+		{0.15, 0.87, 1.5, 1.8, 0.20, "✧", true},
+		{0.18, 0.05, 1.5, 2.3, 0.23, "·", true},
+		{0.19, 0.38, 1.0, 2.9, 0.29, "∘", true},
+		{0.20, 0.78, 1.5, 2.1, 0.22, "·", true},
+		// Mid band (around the mobile edges)
+		{0.40, 0.06, 1.5, 2.2, 0.22, "·", true},
+		{0.44, 0.94, 1.0, 2.7, 0.26, "·", true},
+		{0.50, 0.04, 1.5, 1.9, 0.20, "∘", true},
+		{0.54, 0.96, 1.5, 2.4, 0.23, "·", true},
+		// Bottom band
+		{0.70, 0.10, 1.5, 2.2, 0.22, "·", true},
+		{0.72, 0.33, 1.0, 2.9, 0.28, "∘", true},
+		{0.74, 0.55, 1.0, 3.2, 0.28, "∘", false},
+		{0.76, 0.78, 1.5, 2.0, 0.21, "·", true},
+		{0.78, 0.92, 1.5, 1.8, 0.18, "✧", true},
+		{0.82, 0.20, 1.0, 2.5, 0.24, "·", false},
+		{0.84, 0.43, 1.5, 2.3, 0.22, "·", true},
+		{0.86, 0.64, 1.0, 2.7, 0.26, "·", true},
+		{0.88, 0.85, 1.5, 1.9, 0.20, "·", true},
+		{0.92, 0.14, 1.5, 2.1, 0.23, "∘", true},
+		{0.94, 0.50, 1.0, 2.8, 0.27, "·", false},
+		{0.95, 0.73, 1.5, 2.0, 0.21, "·", true},
 	}
 	a.particles = make([]quietParticle, len(pcs))
 	for i, pc := range pcs {
@@ -125,7 +190,61 @@ func (a *AllQuietAnim) Init() tea.Cmd {
 			char:    pc.ch, style: st,
 		}
 	}
+
+	// Seed the intro explosion. If the canvas is too small to lay out the
+	// dashboard, skip straight to the calm scene.
+	a.phase = phaseMobile
+	a.debris = nil
+	a.introFr = 0
+	if intro && w >= 24 && h >= 12 {
+		a.initExplosion(counts, w, h)
+	}
 	return tickAllQuiet()
+}
+
+// initExplosion lays out the quiet dashboard centered in the canvas, decomposes
+// it into styled runes, and gives each an outward velocity from screen center.
+// Every invocation draws a fresh random seed plus a randomized "flavor" — overall
+// speed, rotational swirl, and upward bias — so no two bursts look alike.
+func (a *AllQuietAnim) initExplosion(counts AllQuietCounts, w, h int) {
+	dash := renderQuietDashboard(counts, 0)
+	src := lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, dash)
+	frags := decomposeStyled(src, w, h)
+	if len(frags) == 0 {
+		return
+	}
+	a.phase = phaseExplode
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Per-burst flavor: a global speed scale, a tangential swirl that bends the
+	// debris into a rotation (sign = direction), and an upward-kick multiplier
+	// that ranges from a slight downward slump to a strong fountain.
+	speedMul := 0.8 + rng.Float64()*0.7
+	swirl := (rng.Float64()*2 - 1) * 0.7
+	liftMul := rng.Float64()*1.6 - 0.2
+
+	cx, cy := float64(w)/2, float64(h)/2
+	a.debris = make([]debrisParticle, len(frags))
+	for i, f := range frags {
+		dx, dy := float64(f.x)-cx, float64(f.y)-cy
+		dist := math.Hypot(dx, dy)
+		if dist < 0.001 {
+			dist = 0.001
+		}
+		ux, uy := dx/dist, dy/dist
+		// Tangent (perpendicular) for the swirl component.
+		tx, ty := -uy, ux
+		speed := (explodeMinSpeed + rng.Float64()*explodeSpeedVar) * speedMul
+		a.debris[i] = debrisParticle{
+			x: float64(f.x), y: float64(f.y),
+			vx: (ux+tx*swirl)*speed + (rng.Float64()-0.5)*1.5,
+			// Cells are ~2× taller than wide, so halve vertical speed to keep
+			// the burst circular in screen space; add a randomized upward kick.
+			vy:   (uy+ty*swirl)*speed*0.5 - explodeLift*liftMul - rng.Float64()*0.6,
+			cell: f.styled,
+			ttl:  explodeFrames + int(rng.Float64()*5),
+		}
+	}
 }
 
 // Stop halts the animation.
@@ -137,6 +256,10 @@ func (a *AllQuietAnim) Tick() tea.Cmd {
 		return nil
 	}
 	a.frame++
+	if a.phase == phaseExplode {
+		a.tickExplosion()
+		return tickAllQuiet()
+	}
 	for i := range a.pends {
 		p := &a.pends[i]
 		p.x, p.xVel = p.spring.Update(p.x, p.xVel, p.targetX)
@@ -156,6 +279,26 @@ func (a *AllQuietAnim) Tick() tea.Cmd {
 	return tickAllQuiet()
 }
 
+// tickExplosion advances debris by one frame and hands off to the mobile scene
+// once the burst has run its course.
+func (a *AllQuietAnim) tickExplosion() {
+	a.introFr++
+	for i := range a.debris {
+		d := &a.debris[i]
+		if d.ttl <= 0 {
+			continue
+		}
+		d.vy += explodeGravity
+		d.x += d.vx
+		d.y += d.vy
+		d.ttl--
+	}
+	if a.introFr >= explodeFrames {
+		a.phase = phaseMobile
+		a.debris = nil
+	}
+}
+
 // ---- rendering ----
 
 // placed is a styled text fragment at a specific column.
@@ -167,6 +310,9 @@ type placed struct {
 
 // Render draws the full animated scene (mobile + particles + dashboard text).
 func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
+	if a.phase == phaseExplode {
+		return a.renderExplosion(width, height)
+	}
 	if height < 12 || width < 24 {
 		return renderStaticDashboard(width, height, counts)
 	}
@@ -331,10 +477,23 @@ func renderQuietDashboard(counts AllQuietCounts, phase int) string {
 	lines = append(lines, "")
 
 	// Clauding sessions are listed individually: a static colored avatar glyph
-	// followed by a shimmering display name. The shimmer offset is staggered per
-	// row so the rows don't pulse in lockstep.
+	// followed by a shimmering display name (shimmer offset staggered per row so
+	// they don't pulse in lockstep). Below each: the recap rendered in full
+	// (★-marked, word-wrapped, when the session has an away_summary) and the
+	// latest assistant message (chevron-marked, single line) — both dim and
+	// indented under the name.
 	for i, e := range counts.ClaudingSessions {
 		lines = append(lines, "  "+e.Glyph+"  "+shimmer(e.Name, phase+i*3))
+		for j, wl := range e.RecapLines {
+			if j == 0 {
+				lines = append(lines, "     "+recapMarkerStyle.Render("★ ")+ItemDetailStyle.Render(wl))
+			} else {
+				lines = append(lines, "       "+ItemDetailStyle.Render(wl)) // align under recap text past "★ "
+			}
+		}
+		if e.Assistant != "" {
+			lines = append(lines, "     "+ItemDetailStyle.Render(IconText+" "+e.Assistant))
+		}
 	}
 	// Blank line separates the running sessions from the section counts below.
 	if len(counts.ClaudingSessions) > 0 {
@@ -346,7 +505,6 @@ func renderQuietDashboard(counts AllQuietCounts, phase int) string {
 		count       int
 	}{
 		{IconLater, "marked later", counts.Later},
-		{IconBacklog, "in backlog", counts.Backlog},
 	}
 	for _, s := range sections {
 		if s.count > 0 {
@@ -394,4 +552,100 @@ func shimmer(text string, phase int) string {
 // renderStaticDashboard is the fallback when the pane is too small for animation.
 func renderStaticDashboard(width, height int, counts AllQuietCounts) string {
 	return EmptyStyle.Width(width).Height(height).Render(renderQuietDashboard(counts, 0))
+}
+
+// renderExplosion stamps live debris onto a cell grid — overlapping particles
+// resolve cleanly (last writer wins) and dead runes leave empty space.
+func (a *AllQuietAnim) renderExplosion(width, height int) string {
+	grid := make([][]string, height)
+	for y := range grid {
+		grid[y] = make([]string, width)
+	}
+	for i := range a.debris {
+		d := &a.debris[i]
+		if d.ttl <= 0 {
+			continue
+		}
+		px, py := int(math.Round(d.x)), int(math.Round(d.y))
+		if px >= 0 && px < width && py >= 0 && py < height {
+			grid[py][px] = d.cell
+		}
+	}
+	var sb strings.Builder
+	for y := 0; y < height; y++ {
+		if y > 0 {
+			sb.WriteByte('\n')
+		}
+		row := grid[y]
+		last := width - 1
+		for last >= 0 && row[last] == "" {
+			last--
+		}
+		for x := 0; x <= last; x++ {
+			if row[x] == "" {
+				sb.WriteByte(' ')
+			} else {
+				sb.WriteString(row[x])
+			}
+		}
+	}
+	return sb.String()
+}
+
+// styledFrag is a positioned rune carrying its active ANSI style, ready to print.
+type styledFrag struct {
+	x, y   int
+	styled string // ansiPrefix + rune + reset
+}
+
+// decomposeStyled walks rendered TUI output, tracking the active ANSI SGR state,
+// and emits one styledFrag per visible non-space rune with its color preserved.
+func decomposeStyled(rendered string, width, height int) []styledFrag {
+	lines := strings.Split(rendered, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	var frags []styledFrag
+	for y, line := range lines {
+		col := 0
+		var style string
+		b := []byte(line)
+		i := 0
+		for i < len(b) {
+			// ANSI escape sequence: \x1b[ ... <terminator letter>
+			if b[i] == 0x1b && i+1 < len(b) && b[i+1] == '[' {
+				j := i + 2
+				for j < len(b) && !isSGRTerminator(b[j]) {
+					j++
+				}
+				if j < len(b) {
+					if b[j] == 'm' {
+						if seq := string(b[i : j+1]); seq == "\x1b[0m" || seq == "\x1b[m" {
+							style = "" // reset clears all
+						} else {
+							style += seq
+						}
+					}
+					i = j + 1
+					continue
+				}
+				i++ // malformed — skip the ESC byte
+				continue
+			}
+			r, size := utf8.DecodeRune(b[i:])
+			if r == utf8.RuneError && size <= 1 {
+				i++
+				continue
+			}
+			if col >= width {
+				break
+			}
+			if r != ' ' && r != '\t' {
+				frags = append(frags, styledFrag{x: col, y: y, styled: style + string(r) + "\x1b[0m"})
+			}
+			col += runewidth.RuneWidth(r)
+			i += size
+		}
+	}
+	return frags
 }

@@ -255,11 +255,14 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, meta string) string 
 }
 
 // ClaudingEntry is one collapsed Clauding session shown in the all-quiet
-// dashboard: a colored avatar glyph plus its (plain) display title, which the
-// dashboard renders with a shimmer effect.
+// dashboard: a colored avatar glyph + shimmering display title, plus two
+// secondary lines kept fresh on each poll — the recap (away_summary, when
+// present) and the latest assistant message (live).
 type ClaudingEntry struct {
-	Glyph string // styled colored avatar glyph
-	Name  string // plain display title
+	Glyph      string   // styled colored avatar glyph
+	Name       string   // plain display title
+	RecapLines []string // away_summary recap, word-wrapped to claudingDetailWidth (nil when none)
+	Assistant  string   // latest assistant message, truncated to claudingDetailWidth (empty when none)
 }
 
 // AllQuietCounts holds per-section counts for the all-quiet dashboard. The
@@ -267,7 +270,6 @@ type ClaudingEntry struct {
 type AllQuietCounts struct {
 	ClaudingSessions []ClaudingEntry
 	Later            int
-	Backlog          int
 }
 
 // ViewAllQuiet renders the animated mobile scene with a contextual dashboard.

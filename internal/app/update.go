@@ -366,6 +366,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.Err
 			return m, nil
 		}
+		// Snapshot navigable (your-turn) count before the refresh so we can detect
+		// the last one draining away — the trigger for the quiet-mode explosion.
+		prevNavigable := m.sidebar.NavigableCount()
 		// Detect auto-synthesis completions: SynthesizePending was true, now false
 		prevSynth := make(map[string]bool, len(m.sessions))
 		for _, s := range m.sessions {
@@ -433,8 +436,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Always discover backlog items so the collapsed badge count stays accurate
 		cmds = append(cmds, m.discoverBacklogs(msg.Sessions))
-		// Start/stop all-quiet animation based on sidebar state
-		if cmd := m.syncAllQuietAnim(); cmd != nil {
+		// Start/stop all-quiet animation based on sidebar state. Play the intro
+		// explosion only when the last your-turn session just completed (had
+		// navigable items, now all quiet) — not when the TUI merely polled while
+		// already quiet or opened straight into a quiet state.
+		intro := prevNavigable > 0 && m.sidebar.IsAllQuiet()
+		if cmd := m.syncAllQuietAnimIntro(intro); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		// Auto-synthesis completion toasts

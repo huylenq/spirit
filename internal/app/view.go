@@ -15,6 +15,10 @@ var autoJumpDimStyle = lipgloss.NewStyle().Foreground(ui.ColorMuted)
 var autoJumpOnStyle = lipgloss.NewStyle().Foreground(ui.ColorAutoJump)
 var focusModeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
 
+// userTurnStyle tints the YOUR-TURN-only filter glyph blue, matching the
+// YOUR TURN sidebar section (ColorDone).
+var userTurnStyle = lipgloss.NewStyle().Foreground(ui.ColorDone)
+
 // autoJumpIndicator renders the autojump glyph for the header label line.
 // Solid flash when ON, hollow outline when OFF. Shows text briefly after toggling.
 func (m Model) autoJumpIndicator() string {
@@ -86,6 +90,9 @@ func (m Model) View() string {
 		left := m.autoJumpIndicator()
 		if m.sidebar.FocusMode() {
 			left += " " + focusModeStyle.Render(ui.IconFlag+" FOCUS")
+		}
+		if m.sidebar.UserTurnOnly() {
+			left += " " + userTurnStyle.Render(ui.IconHandRaise)
 		}
 		right := m.usageBar.LabelView()
 		leftW := lipgloss.Width(left)

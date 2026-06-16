@@ -193,6 +193,13 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.setFlash(flashText, false, 2*time.Second)
 
+	case key.Matches(msg, Keys.UserTurnOnly):
+		newVal := !m.sidebar.UserTurnOnly()
+		m.sidebar.SetUserTurnOnly(newVal)
+		savePrefBool("userTurnOnly", newVal)
+		m.syncWorkQueue()
+		return m, nil
+
 	case isSlotKey(msg.String()):
 		n := slotKeyNum(msg.String())
 		paneID := m.sidebar.PaneIDForSlot(n)

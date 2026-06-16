@@ -103,10 +103,10 @@ func Summarize(sessionID string) (*SessionSummary, bool, error) {
 		prevTitle = cached.SynthesizedTitle
 	}
 
-	titleInstruction := "<objective condensed to a single short phrase under 60 chars, no quotes, no period>"
+	titleInstruction := "<MAX 3 WORDS, caveman style: drop articles/verbs/filler, just essential keywords. lowercase, no quotes, no period. e.g. 'sidebar toggle', 'fix auth crash', 'lua sandbox'>"
 	if prevTitle != "" {
 		titleInstruction = fmt.Sprintf(
-			"<keep %q if the conversation goal is the same; only change if the purpose shifted significantly>",
+			"<keep %q if the goal is the same; only change if the purpose shifted. MAX 3 WORDS, caveman style, lowercase>",
 			prevTitle)
 	}
 

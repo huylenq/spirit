@@ -76,7 +76,6 @@ func (m Model) allQuietCounts() ui.AllQuietCounts {
 	return ui.AllQuietCounts{
 		ClaudingSessions: m.sidebar.ClaudingSessions(),
 		Later:            m.sidebar.LaterCount(),
-		Backlog:          m.sidebar.BacklogCount(),
 	}
 }
 
@@ -155,9 +154,9 @@ func (m Model) viewSidebarLayout(innerWidth, contentHeight int) string {
 		detailContent = m.renderBacklogEditor(project, detailWidth, detailH)
 	} else if backlog, ok := m.sidebar.SelectedBacklog(); ok {
 		detailContent = m.renderBacklogPreview(backlog, detailWidth, detailH, m.backlogScroll)
-	} else if m.sidebar.IsAllQuiet() {
-		detailContent = m.detail.ViewAllQuiet(m.allQuietCounts())
 	} else {
+		// All-quiet is handled by the early full-bleed return above, so the
+		// detail panel here is always the normal session view.
 		detailContent = m.detail.View()
 	}
 	detailPanel := ui.DetailPanelStyle.

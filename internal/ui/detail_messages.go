@@ -12,16 +12,18 @@ import (
 func (m *DetailModel) SetUserMessages(msgs []string) {
 	m.userMessages = msgs
 	m.recomputeOffsets()
-	if m.pendingMsgReset {
-		m.pendingMsgReset = false
-		m.msgCursor = len(msgs) - 1
-		if m.msgCursor < 0 {
-			m.msgCursor = 0
-		}
-	}
-	// Keep scroll position valid and cursor visible. The window indexes past
-	// messages only — the current-turn block is always pinned at the bottom.
+	// The window indexes past messages only — the current-turn block is always
+	// pinned at the bottom.
 	pastCount := len(msgs) - 1
+	if m.pendingMsgReset {
+		// On session switch, scroll the past-message window to the bottom so it
+		// shows the most recent messages adjacent to the current turn. Cursor is
+		// finalized in SetCurrentTurn (called right after) once the current-turn
+		// events are known; flag stays set until then.
+		m.outlineScrollTop = max(pastCount-maxOutlineMessages, 0)
+		return
+	}
+	// Keep scroll position valid and cursor visible.
 	if pastCount > maxOutlineMessages {
 		m.outlineScrollTop = min(m.outlineScrollTop, pastCount-maxOutlineMessages)
 	} else {
@@ -36,6 +38,14 @@ func (m *DetailModel) SetCurrentTurn(t claude.CurrentTurn) {
 	m.currentTurn = t
 	m.recomputeVisibleEvents()
 	m.recomputeEventOffsets(m.wrapForViewport())
+	if m.pendingMsgReset {
+		// On session switch, land on the latest entry (current turn) rather
+		// than the last user message.
+		m.pendingMsgReset = false
+		m.msgCursor = max(m.navStopCount()-1, 0)
+		m.ensureOutlineVisible(m.msgCursor)
+		return
+	}
 	// Clamp cursor in case the event count shrank (e.g., session switch).
 	maxIdx := m.navStopCount() - 1
 	if maxIdx < 0 {

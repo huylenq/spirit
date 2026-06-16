@@ -60,7 +60,7 @@ func (m *SidebarModel) selectByBacklogID(id string) bool {
 // applyNarrowBacklog filters backlog items by the current narrow query and
 // sorts them by project, then CreatedAt.
 func (m *SidebarModel) applyNarrowBacklog() {
-	if !m.backlogExpanded {
+	if !m.backlogExpanded || m.userTurnOnly {
 		m.filteredBacklog = nil
 		return
 	}

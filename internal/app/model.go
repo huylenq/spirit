@@ -287,6 +287,7 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
 	sidebar.SetFocusMode(loadPrefBool("focusMode"))
+	sidebar.SetUserTurnOnly(loadPrefBool("userTurnOnly"))
 	sidebar.SetHideLastMessage(!Flag("showLastMessage"))
 	autoJump := Flag("autoJump")
 	sidebar.ShowAutoJump = autoJump
@@ -365,13 +366,27 @@ func (m *Model) shouldShowMobile() bool {
 }
 
 // syncAllQuietAnim starts or stops the mobile animation based on layout state.
+// This is the plain form used by UI toggles (view switches, section collapse,
+// the TUI opening into a quiet state) — it never plays the intro explosion.
 func (m *Model) syncAllQuietAnim() tea.Cmd {
+	return m.syncAllQuietAnimIntro(false)
+}
+
+// syncAllQuietAnimIntro is syncAllQuietAnim with control over the entrance
+// explosion. intro is true only when the quiet state was reached by a session
+// completing its turn (no your-turn sessions left) — never on a UI toggle.
+func (m *Model) syncAllQuietAnimIntro(intro bool) tea.Cmd {
 	show := m.shouldShowMobile()
 	if show && !m.detail.AllQuietAnimActive() {
 		// Auto-destroyer is intentionally not scheduled here — the quiet view
 		// stays a calm mobile scene. The destroyer is still reachable manually
 		// via the `gxx` keybinding.
-		return m.detail.StartAllQuietAnim()
+		//
+		// Pass the same canvas size the quiet panel renders at (DetailPanelStyle
+		// pads 1 col each side → -2) so the intro explosion is laid out and
+		// flung over the exact area the mobile will occupy.
+		w := m.innerWidth() - m.copilotDockedWidth() - 2
+		return m.detail.StartAllQuietAnim(m.allQuietCounts(), w, m.contentHeight(), intro)
 	}
 	if !show && m.detail.AllQuietAnimActive() {
 		m.detail.StopAllQuietAnim()

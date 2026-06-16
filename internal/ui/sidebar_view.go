@@ -43,6 +43,9 @@ func (m *SidebarModel) renderItemWithStats(isSelected, isAutoJump bool, s claude
 // their visible rows and line counts stay aligned.
 func (m SidebarModel) passesViewFilters(s claude.ClaudeSession, projectFilter string) bool {
 	order := sessionOrder(s)
+	if m.userTurnOnly && order != OrderUserTurn {
+		return false
+	}
 	if !m.claudingExpanded && order == OrderAgentTurn {
 		return false
 	}
@@ -138,7 +141,9 @@ func (m *SidebarModel) View() string {
 		// Only YOUR TURN owns a closing line — its full outline must terminate
 		// with a heavy ━ + ┛ corner. Non-YT sections have no closing chrome;
 		// the next section's addTopRule (or nothing) handles the boundary.
-		if order != OrderUserTurn {
+		// In YOUR-TURN-only mode the whole list IS the section, so the closing
+		// boundary is dropped for a simpler, chrome-free look.
+		if order != OrderUserTurn || m.userTurnOnly {
 			return
 		}
 		muted := mutedFor(order)
@@ -163,6 +168,11 @@ func (m *SidebarModel) View() string {
 	// catastrophic, so we hard-block it here.
 	emittedHeader := map[int]bool{}
 	addHeader := func(order int) {
+		// YOUR-TURN-only mode hides the section title — the whole list is YOUR
+		// TURN, so the header is redundant chrome.
+		if m.userTurnOnly && order == OrderUserTurn {
+			return
+		}
 		if emittedHeader[order] {
 			return
 		}
@@ -349,12 +359,6 @@ func (m *SidebarModel) View() string {
 	// the sidebar floor) without a closing rule, matching the pre-outline look.
 	if currentOrder == OrderUserTurn {
 		addSeparator(currentOrder)
-	}
-
-	// Skeleton placeholder when all sections are collapsed
-	if len(lines) == 0 && m.IsAllQuiet() {
-		add("", gutterInfo{order: -1})
-		add(ItemDetailStyle.Render("    All clear"), gutterInfo{order: -1})
 	}
 
 	// Compose the bottom-pinned region: pulse (if cached) above the collapsed
@@ -595,7 +599,7 @@ func truncateToVisualBudget(rows []string, budget int) []string {
 // italicized once the pulse is older than an hour so stale state is visually
 // demoted without disappearing.
 func (m *SidebarModel) pulseBlock() []string {
-	if m.width <= 0 || m.height <= 0 {
+	if m.width <= 0 || m.height <= 0 || m.userTurnOnly {
 		return nil
 	}
 	pulse := claude.ReadCachedPulse()
@@ -626,7 +630,7 @@ func (m *SidebarModel) pulseBlock() []string {
 // badges to pin to the floor of the sidebar. Returns nil when no sections
 // are collapsed.
 func (m *SidebarModel) collapsedBadgesBlock() []string {
-	if m.height <= 0 {
+	if m.height <= 0 || m.userTurnOnly {
 		return nil
 	}
 	claudingCount := m.claudingCount

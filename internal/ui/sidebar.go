@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/huylenq/spirit/internal/claude"
 )
@@ -88,6 +89,7 @@ type SidebarModel struct {
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
 	flaggedProjects     map[string]bool  // project name → flagged
 	focusMode           bool             // when true, only show effectively-flagged sessions
+	userTurnOnly        bool             // when true, collapse all sections except YOUR TURN
 	hideLastMessage     bool             // when true, suppress the last-message subtitle on items
 	numberSlots         map[int]string   // slot (1-9) → PaneID
 }
@@ -211,28 +213,50 @@ func (m SidebarModel) ClaudingExpanded() bool {
 
 func (m SidebarModel) ClaudingSessions() []ClaudingEntry { return m.claudingEntries }
 func (m SidebarModel) LaterCount() int                   { return m.laterCount }
-func (m SidebarModel) BacklogCount() int                 { return len(m.backlogs) }
 
 // claudingEntry builds a ClaudingEntry for a collapsed Clauding session shown
 // in the all-quiet dashboard: a colored avatar glyph + the plain display title.
 func claudingEntry(s claude.ClaudeSession) ClaudingEntry {
-	name := s.DisplayName()
+	oneLine := func(t string) string {
+		return strings.ReplaceAll(strings.TrimSpace(t), "\n", " ")
+	}
+	name := oneLine(s.DisplayName())
 	if name == "" {
 		name = "(New session)"
 	}
-	name = strings.ReplaceAll(name, "\n", " ")
+	// Wrap/truncate the secondary lines here (once per poll) rather than in the
+	// 12 FPS dashboard render — they're static between polls.
+	var recapLines []string
+	if recap := oneLine(s.LastRecap); recap != "" {
+		recapLines = strings.Split(ansi.Wordwrap(recap, claudingDetailWidth, " "), "\n")
+	}
+	var assistant string
+	if a := oneLine(s.LastAssistantMessage); a != "" {
+		assistant = ansi.Truncate(a, claudingDetailWidth, "…")
+	}
 	return ClaudingEntry{
-		Glyph: AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)),
-		Name:  name,
+		Glyph:      AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)),
+		Name:       name,
+		RecapLines: recapLines,
+		Assistant:  assistant,
 	}
 }
 
 // IsAllQuiet returns true when sessions exist but none are cursor-navigable
 // (all hidden behind collapsed sections, no YOUR TURN items, not in search mode).
-// Focus mode is excluded — an empty focused set is intentional filtering, not "all quiet".
+// Focus mode is excluded — an empty focused set is intentional filtering, not
+// "all quiet". YOUR-TURN-only is NOT excluded: zero YOUR TURN sessions means
+// nothing needs you, which is exactly the all-quiet condition. Backlog items
+// don't count either — they're passive ideas, not active work, so the quiet
+// scene takes over even when the BACKLOG section is non-empty.
 func (m SidebarModel) IsAllQuiet() bool {
-	return len(m.items) > 0 && len(m.filtered) == 0 && len(m.filteredBacklog) == 0 && m.narrow == "" && !m.focusMode
+	return len(m.items) > 0 && len(m.filtered) == 0 && m.narrow == "" && !m.focusMode
 }
+
+// NavigableCount returns the number of cursor-navigable (your-turn / active)
+// items currently visible. Used to detect the moment the last one drains away —
+// the trigger for the quiet-mode intro explosion.
+func (m SidebarModel) NavigableCount() int { return len(m.filtered) }
 
 func NewSidebarModel() SidebarModel {
 	return SidebarModel{
@@ -557,6 +581,17 @@ func (m SidebarModel) FocusMode() bool {
 	return m.focusMode
 }
 
+// SetUserTurnOnly toggles YOUR-TURN-only mode and re-applies the filter.
+func (m *SidebarModel) SetUserTurnOnly(v bool) {
+	m.userTurnOnly = v
+	m.applyNarrow()
+}
+
+// UserTurnOnly returns whether YOUR-TURN-only mode is active.
+func (m SidebarModel) UserTurnOnly() bool {
+	return m.userTurnOnly
+}
+
 // SetHideLastMessage controls whether item rows show the last-message subtitle.
 func (m *SidebarModel) SetHideLastMessage(v bool) {
 	m.hideLastMessage = v
@@ -749,6 +784,17 @@ func (m *SidebarModel) applyNarrow() {
 		n := 0
 		for _, s := range m.filtered {
 			if m.IsEffectivelyFlagged(s) {
+				m.filtered[n] = s
+				n++
+			}
+		}
+		m.filtered = m.filtered[:n]
+	}
+	// YOUR TURN only: collapse every other section
+	if m.userTurnOnly {
+		n := 0
+		for _, s := range m.filtered {
+			if sessionOrder(s) == OrderUserTurn {
 				m.filtered[n] = s
 				n++
 			}

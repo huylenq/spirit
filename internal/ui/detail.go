@@ -639,8 +639,12 @@ func (m *DetailModel) SetShowRawTranscript(show bool) {
 	}
 }
 
-// StartAllQuietAnim initializes and starts the mobile animation.
-func (m *DetailModel) StartAllQuietAnim() tea.Cmd { return m.allQuiet.Init() }
+// StartAllQuietAnim starts the quiet scene. When intro is true it opens with the
+// dashboard-text explosion (sized to the w×h canvas) before settling into the
+// mobile; otherwise the mobile renders immediately.
+func (m *DetailModel) StartAllQuietAnim(counts AllQuietCounts, w, h int, intro bool) tea.Cmd {
+	return m.allQuiet.Init(counts, w, h, intro)
+}
 
 // StopAllQuietAnim halts the mobile animation.
 func (m *DetailModel) StopAllQuietAnim() { m.allQuiet.Stop() }

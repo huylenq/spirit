@@ -14,15 +14,62 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+// titleLayout decides how a session's display name is laid out on its row.
+// It returns the (possibly truncated) first line, the second-line remainder
+// ("" when the title fits on one line), and whether the session is the
+// "(New session)" placeholder. The title only wraps to a second line when the
+// last-message subtitle is hidden; otherwise it is truncated to a single line.
+// During search (query != "") the last-message subtitle is always shown, so the
+// title truncates rather than wraps regardless of the hideLastMessage pref.
+// Width math here MUST mirror renderItem's prefix/icon/detail accounting.
+func (m SidebarModel) titleLayout(s claude.ClaudeSession, query string) (line1, rest string, isNew bool) {
+	name := s.DisplayName()
+	if name == "" {
+		return "", "", true
+	}
+	name = strings.ReplaceAll(name, "\n", " ")
+
+	detailWidth := lipgloss.Width(m.renderDetail(s, false))
+	prefixWidth := 4
+	if m.cardMode {
+		prefixWidth = 1
+	}
+	var worktreeIcon string
+	if s.IsWorktree {
+		worktreeIcon = worktreeIconRendered
+	}
+	iconWidth := lipgloss.Width(AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)+"  ") + worktreeIcon)
+
+	// 2 for outer padding, 2 for minimum gap
+	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4
+	if maxNameWidth < 4 {
+		maxNameWidth = 4
+	}
+	if lipgloss.Width(name) <= maxNameWidth {
+		return name, "", false
+	}
+	if m.hideLastMessage && query == "" {
+		l1, r := wordWrapFirst(name, maxNameWidth)
+		if r != "" {
+			// Second line spans the full row (no detail column on its right).
+			restWidth := m.width - prefixWidth - iconWidth - 2
+			if restWidth < 1 {
+				restWidth = 1
+			}
+			return l1, ansi.Truncate(r, restWidth, "…"), false
+		}
+	}
+	return ansi.Truncate(name, maxNameWidth, "…"), "", false
+}
+
 func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSession, query string) string {
 
-	// Display name priority: custom title → synthesized title → first message → (new session)
-	displayName := s.DisplayName()
-	isNewSession := displayName == ""
+	// Display name priority: custom title → synthesized title → first message → (new session).
+	// When the last-message subtitle is hidden, a long title wraps onto a second
+	// line (titleRest) instead of being truncated to one.
+	displayName, titleRest, isNewSession := m.titleLayout(s, query)
 	if isNewSession {
 		displayName = lipgloss.NewStyle().Italic(true).Render("(New session)")
-	} else {
-		displayName = strings.ReplaceAll(displayName, "\n", " ")
 	}
 
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)
@@ -66,15 +113,6 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph+"  ") + worktreeIcon
 	iconWidth := lipgloss.Width(iconStr)
-
-	// 2 for outer padding, 2 for minimum gap
-	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4
-	if maxNameWidth < 4 {
-		maxNameWidth = 4
-	}
-	if lipgloss.Width(displayName) > maxNameWidth {
-		displayName = ansi.Truncate(displayName, maxNameWidth, "…")
-	}
 
 	// Geometric gap — computed once before styling branches to prevent ANSI width drift
 	displayNameWidth := lipgloss.Width(displayName)
@@ -146,6 +184,11 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	line := namePart + gapStr + detail
 
+	// Wrapped title second line (only present when the last-message subtitle is hidden).
+	if titleRest != "" {
+		line += "\n" + m.renderTitleContinuation(titleRest, query, isSelected, isAutoJump, isTrail, hasQuery && !isNewSession, prefixWidth+iconWidth, s.AvatarColorIdx, barSt, autoJumpBarSt, trailBarSt)
+	}
+
 	// selSubtitle wraps a subtitle content string with the selection bar at col 2.
 	// In card mode: no bar prefix, just indent.
 	selSubPrefixW := 5 // "  ▌" + padding = 5 cells consumed before content
@@ -184,7 +227,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	}
 
 	// Show last user message as subtitle (up to two lines, word-wrapped)
-	if s.LastUserMessage != "" && !m.hideLastMessage {
+	if s.LastUserMessage != "" && (!m.hideLastMessage || hasQuery) {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		doHL := hasQuery && matchesNarrow(s.LastUserMessage, query)
 		line += "\n" + m.renderSubtitleTwoLines(rawMsg, query, IconQuote, isSelected, isAutoJump, doHL, s.AvatarColorIdx, barSt)
@@ -356,6 +399,58 @@ func (m SidebarModel) renderSubtitleTwoLines(text, query, icon string, isSelecte
 	blankIcon := strings.Repeat(" ", lipgloss.Width(icon))
 	second := m.renderSubtitleLine(rest, query, blankIcon, isSelected, isAutoJump, doHighlight, avatarColorIdx, barSt)
 	return first + "\n" + second
+}
+
+// renderTitleContinuation renders the wrapped-over tail of a long session title
+// on a second line, aligned under where the title text begins on line 1 (indent
+// = prefix + icon width). Styled like the title — selection-tinted, not dimmed
+// like a subtitle. Only invoked when the last-message subtitle is hidden.
+func (m SidebarModel) renderTitleContinuation(rest, query string, isSelected, isAutoJump, isTrail, doHighlight bool, indent, avatarColorIdx int, barSt, autoJumpBarSt, trailBarSt lipgloss.Style) string {
+	highlighted := func(base lipgloss.Style) string {
+		if doHighlight && query != "" {
+			return highlightMatch(rest, query, base)
+		}
+		return base.Render(rest)
+	}
+
+	if m.cardMode {
+		if isSelected {
+			bg := lipgloss.NewStyle().Background(AvatarFillBg(avatarColorIdx))
+			padWidth := m.width - 1 - indent - lipgloss.Width(rest)
+			if padWidth < 0 {
+				padWidth = 0
+			}
+			return bg.Render(strings.Repeat(" ", indent)) + highlighted(bg) + bg.Render(strings.Repeat(" ", padWidth))
+		}
+		return strings.Repeat(" ", indent) + highlighted(lipgloss.NewStyle())
+	}
+
+	if isSelected {
+		bg := lipgloss.NewStyle().Background(AvatarFillBg(avatarColorIdx))
+		// "  " + bar = 3 cells; fill bg up to the title column, then pad to full width.
+		fill := indent - 3
+		if fill < 0 {
+			fill = 0
+		}
+		padWidth := m.width - indent - lipgloss.Width(rest)
+		if padWidth < 0 {
+			padWidth = 0
+		}
+		return "  " + barSt.Render("▌") + bg.Render(strings.Repeat(" ", fill)) + highlighted(bg) + bg.Render(strings.Repeat(" ", padWidth))
+	}
+
+	// Unselected — preserve the auto-jump / trail bar at col 2 when present.
+	fill := indent - 3
+	if fill < 0 {
+		fill = 0
+	}
+	if isAutoJump {
+		return "  " + autoJumpBarSt.Render("▯") + strings.Repeat(" ", fill) + highlighted(lipgloss.NewStyle())
+	}
+	if isTrail {
+		return "  " + trailBarSt.Render("▯") + strings.Repeat(" ", fill) + highlighted(lipgloss.NewStyle())
+	}
+	return strings.Repeat(" ", indent) + highlighted(lipgloss.NewStyle())
 }
 
 // renderBadges returns inline outcome indicators for a session entry.
@@ -534,6 +629,11 @@ func FormatCountdown(target time.Time) string {
 func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 	count := 1 // main line
 
+	// Wrapped title second line (only when the last-message subtitle is hidden).
+	if _, rest, _ := m.titleLayout(s, query); rest != "" {
+		count++
+	}
+
 	if m.summaryLoadingPanes[s.PaneID] {
 		count++
 	}
@@ -542,7 +642,7 @@ func (m SidebarModel) itemLineCount(s claude.ClaudeSession, query string) int {
 		count++
 	}
 
-	if s.LastUserMessage != "" && !m.hideLastMessage {
+	if s.LastUserMessage != "" && (!m.hideLastMessage || query != "") {
 		rawMsg := strings.ReplaceAll(s.LastUserMessage, "\n", " ")
 		// subtitleMsgWidth returns identical width for selected/unselected
 		msgWidth := m.subtitleMsgWidth(IconQuote, false)
