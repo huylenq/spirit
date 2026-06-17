@@ -13,6 +13,7 @@ func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 	t.RawSetString("id", lua.LString(s.SessionID))
 	t.RawSetString("pane_id", lua.LString(s.PaneID))
 	t.RawSetString("project", lua.LString(s.Project))
+	t.RawSetString("project_code", lua.LString(s.ProjectCode))
 	t.RawSetString("cwd", lua.LString(s.CWD))
 	t.RawSetString("git_branch", lua.LString(s.GitBranch))
 	t.RawSetString("tmux_session", lua.LString(s.TmuxSession))

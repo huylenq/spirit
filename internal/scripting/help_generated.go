@@ -143,7 +143,7 @@ toast(msg)
 
 ### Session Fields
 
-id, pane_id, project, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, synthesized_title, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, created_at, last_changed, display_name
+id, pane_id, project, project_code, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, synthesized_title, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, created_at, last_changed, display_name
 
 ### Backlog Fields
 

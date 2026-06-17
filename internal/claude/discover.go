@@ -120,6 +120,9 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	// Single ps call replaces all per-pane pgrep+ps invocations
 	procTree := buildProcessTree()
 
+	// Load project codes once for the whole discover cycle.
+	projectCodes := ProjectCodes()
+
 	var sessions []ClaudeSession
 	for _, p := range panes {
 		sessionID := ReadSessionID(p.PaneID)
@@ -140,7 +143,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			}
 			if _, hasLater := laterByPane[p.PaneID]; hasLater {
 				// Marked later: keep session visible regardless of status
-				s := buildSession(p, 0, status, laterByPane)
+				s := buildSession(p, 0, status, laterByPane, projectCodes)
 				sessions = append(sessions, s)
 			} else {
 				// No Later record, no process: clean up
@@ -158,7 +161,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			status = StatusUserTurn
 		}
 
-		s := buildSession(p, pid, status, laterByPane)
+		s := buildSession(p, pid, status, laterByPane, projectCodes)
 		sessions = append(sessions, s)
 	}
 
@@ -188,6 +191,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 			PaneID:           bm.PaneID,
 			Status:           StatusUserTurn,
 			Project:          bm.Project,
+			ProjectCode:      projectCodes[bm.Project],
 			CWD:              bm.CWD,
 			SynthesizedTitle: bm.SynthesizedTitle,
 			CustomTitle:      bm.CustomTitle,
@@ -226,7 +230,7 @@ func parseWorktreeCWD(cwd string) (rootPath, name string, ok bool) {
 	return rootPath, name, true
 }
 
-func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[string]LaterRecord) ClaudeSession {
+func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[string]LaterRecord, projectCodes map[string]string) ClaudeSession {
 	sessionID := ReadSessionID(p.PaneID)
 	s := ClaudeSession{
 		PaneID:      p.PaneID,
@@ -249,6 +253,10 @@ func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[strin
 		s.WorktreeRootProjectPath = rootPath
 		s.Project = filepath.Base(rootPath)
 	}
+
+	// Stamp the project code after Project is finalized (incl. worktree
+	// resolution) so worktrees inherit their repo's code.
+	s.ProjectCode = projectCodes[s.Project]
 
 	if sessionID != "" {
 		s.LastChanged = getStatusModTime(sessionID)
