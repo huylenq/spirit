@@ -176,8 +176,6 @@ func (m Model) View() string {
 		m.detail.SetRelayView(m.relay.ViewWithWidth(vpW))
 	case StateRenamePrompt:
 		m.detail.SetRelayView(m.renamePrompt.ViewWithWidth(vpW))
-	case StateProjectCodeEdit:
-		m.detail.SetRelayView(m.projectCodeRelay.ViewWithWidth(vpW))
 	case StateQueueRelay:
 		m.detail.SetRelayView(m.queueRelay.ViewWithWidth(vpW))
 	default:

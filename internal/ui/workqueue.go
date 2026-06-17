@@ -350,17 +350,16 @@ func (m *WorkQueueModel) renderBench(sidebar *SidebarModel) string {
 			title = "(New session)"
 		}
 		title = strings.ReplaceAll(title, "\n", " ")
-		title = s.Titled(title)
 
-		// Truncate title to fit available width
-		titleW := m.benchWidth() - prefixCols
+		// Truncate title to fit available width (reserve the "[CODE] " prefix).
+		titleW := m.benchWidth() - prefixCols - projectCodeWidth(s)
 		if titleW > 0 {
 			title = ansi.Truncate(title, titleW, "…")
 		} else {
 			title = ""
 		}
 
-		line := styled + " " + indicator + " " + ItemDetailStyle.Render(title)
+		line := styled + " " + indicator + " " + renderProjectCode(s) + ItemDetailStyle.Render(title)
 		lines = append(lines, line)
 	}
 

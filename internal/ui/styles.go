@@ -43,6 +43,7 @@ var (
 	ColorLater       = lipgloss.AdaptiveColor{Light: "#7c3aed", Dark: "#a78bfa"} // purple
 	ColorPlan        = lipgloss.AdaptiveColor{Light: "#006666", Dark: "#48968c"} // teal (plan mode, matches Claude Code)
 	ColorMuted       = lipgloss.AdaptiveColor{Light: "#6b7280", Dark: "#9ca3af"} // gray
+	ColorFaint       = lipgloss.AdaptiveColor{Light: "#cbd5e1", Dark: "#4b5563"} // fainter than muted (project-code brackets)
 	ColorAccent      = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#60a5fa"} // blue
 	ColorGreen       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10b981"} // green
 	ColorBorder      = lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#334155"} // border: light gray / slate-700 (cool, recedes on dark bg)

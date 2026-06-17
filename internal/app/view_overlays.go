@@ -287,9 +287,11 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("esc") + " cancel"
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateProjectCodeEdit:
-		h := ui.FooterKeyStyle.Render("enter") + " set code  " +
+		h := m.projectCodeRelay.View() + "  " +
+			ui.FooterDimStyle.Render(m.projectCodeProject) + "   " +
+			ui.FooterKeyStyle.Render("enter") + " set  " +
 			ui.FooterKeyStyle.Render("esc") + " cancel  " +
-			ui.FooterDimStyle.Render("(blank clears · "+m.projectCodeProject+")")
+			ui.FooterDimStyle.Render("(blank clears)")
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateNewSessionPathInput:
 		h := ui.FooterKeyStyle.Render("enter") + " next  " +

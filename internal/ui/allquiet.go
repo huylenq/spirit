@@ -534,7 +534,7 @@ func renderQuietDashboard(counts AllQuietCounts, phase int) string {
 	// latest assistant message (chevron-marked, single line) — both dim and
 	// indented under the name.
 	for i, e := range counts.ClaudingSessions {
-		lines = append(lines, "  "+e.Glyph+"  "+shimmer(e.Name, phase+i*3))
+		lines = append(lines, "  "+e.Glyph+"  "+e.CodePrefix+shimmer(e.Name, phase+i*3))
 		for j, wl := range e.RecapLines {
 			if j == 0 {
 				lines = append(lines, "     "+recapMarkerStyle.Render("★ ")+ItemDetailStyle.Render(wl))

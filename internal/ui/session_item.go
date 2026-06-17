@@ -28,7 +28,6 @@ func (m SidebarModel) titleLayout(s claude.ClaudeSession, query string) (line1, 
 		return "", "", true
 	}
 	name = strings.ReplaceAll(name, "\n", " ")
-	name = s.Titled(name)
 
 	detailWidth := lipgloss.Width(m.renderDetail(s, false))
 	prefixWidth := 4
@@ -41,8 +40,8 @@ func (m SidebarModel) titleLayout(s claude.ClaudeSession, query string) (line1, 
 	}
 	iconWidth := lipgloss.Width(AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)+"  ") + worktreeIcon)
 
-	// 2 for outer padding, 2 for minimum gap
-	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4
+	// 2 for outer padding, 2 for minimum gap; reserve the "[CODE] " prefix width.
+	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4 - projectCodeWidth(s)
 	if maxNameWidth < 4 {
 		maxNameWidth = 4
 	}
@@ -70,7 +69,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// line (titleRest) instead of being truncated to one.
 	displayName, titleRest, isNewSession := m.titleLayout(s, query)
 	if isNewSession {
-		displayName = lipgloss.NewStyle().Italic(true).Render(s.Titled("(New session)"))
+		displayName = lipgloss.NewStyle().Italic(true).Render("(New session)")
 	}
 
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)
@@ -117,7 +116,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 
 	// Geometric gap — computed once before styling branches to prevent ANSI width drift
 	displayNameWidth := lipgloss.Width(displayName)
-	gap := m.width - prefixWidth - iconWidth - displayNameWidth - detailWidth - 2
+	gap := m.width - prefixWidth - iconWidth - projectCodeWidth(s) - displayNameWidth - detailWidth - 2
 	if gap < 1 {
 		gap = 1
 	}
@@ -146,6 +145,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		} else {
 			styledName = bg.Render(displayName)
 		}
+		styledName = renderProjectCodeBg(s, avatarBg) + styledName
 		var selWorktreeIcon string
 		if s.IsWorktree {
 			selWorktreeIcon = worktreeIconStyle.Background(avatarBg).Render(IconWorktree) + bg.Render(" ")
@@ -171,6 +171,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		} else {
 			styledName = displayName
 		}
+		styledName = renderProjectCode(s) + styledName
 		if m.cardMode {
 			namePart = " " + iconStr + styledName
 		} else if isAutoJump {

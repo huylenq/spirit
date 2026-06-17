@@ -40,13 +40,12 @@ func (m *DetailModel) View() string {
 	titleLeft := avatar + " " + projectLabel
 	if name := s.DisplayName(); name != "" {
 		name = strings.ReplaceAll(name, "\n", " ")
-		name = s.Titled(name)
 		prefixWidth := lipgloss.Width(titleLeft) + 1
-		maxNameWidth := m.width - prefixWidth - gitInfoWidth - 4 // 2 gap to git + 2 padding
+		maxNameWidth := m.width - prefixWidth - gitInfoWidth - 4 - projectCodeWidth(*s) // 2 gap to git + 2 padding
 		if maxNameWidth > 0 {
 			name = ansi.Truncate(name, maxNameWidth, "…")
 		}
-		titleLeft += " " + name
+		titleLeft += " " + renderProjectCode(*s) + name
 	}
 	titleLeftWidth := lipgloss.Width(titleLeft)
 	titleGap := m.width - titleLeftWidth - gitInfoWidth - 2
@@ -261,6 +260,7 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, meta string) string 
 // present) and the latest assistant message (live).
 type ClaudingEntry struct {
 	Glyph      string   // styled colored avatar glyph
+	CodePrefix string   // colored "[CODE] " project-code prefix (empty when none)
 	Name       string   // plain display title
 	RecapLines []string // away_summary recap, word-wrapped to claudingDetailWidth (nil when none)
 	Assistant  string   // latest assistant message, truncated to claudingDetailWidth (empty when none)

@@ -119,17 +119,6 @@ func (s ClaudeSession) DisplayName() string {
 	}
 }
 
-// Titled prepends the project-code prefix ("[SPR] ") to an already-resolved
-// display string (post-placeholder), when this session's project has a code.
-// It takes the resolved name rather than calling DisplayName so callers can
-// prefix their own "(New session)" placeholder too. No code → name unchanged.
-func (s ClaudeSession) Titled(name string) string {
-	if s.ProjectCode == "" || name == "" {
-		return name
-	}
-	return "[" + s.ProjectCode + "] " + name
-}
-
 // LaterRecord is the persistent on-disk record for a Later session.
 type LaterRecord struct {
 	ID               string     `json:"id"`
