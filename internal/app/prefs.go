@@ -117,3 +117,20 @@ func savePrefString(key, val string) {
 	prefs[key] = val
 	savePrefs(prefs)
 }
+
+// saveProjectCode persists (or clears, when code == "") a project's code
+// assignment under the "projectcode.<project>" key. The daemon re-stamps
+// sessions from this on its next poll.
+func saveProjectCode(project, code string) {
+	prefs := loadPrefs()
+	if prefs == nil {
+		prefs = map[string]string{}
+	}
+	key := claude.ProjectCodeKey(project)
+	if code == "" {
+		delete(prefs, key)
+	} else {
+		prefs[key] = code
+	}
+	savePrefs(prefs)
+}

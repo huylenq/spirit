@@ -76,6 +76,15 @@ func NewTagRelayModel() RelayModel {
 	return RelayModel{input: ti, origPrompt: "# "}
 }
 
+func NewProjectCodeRelayModel() RelayModel {
+	ti := textinput.New()
+	ti.Placeholder = "ABC"
+	ti.Prompt = "▣ "
+	ti.PromptStyle = TagPromptStyle
+	ti.CharLimit = 3
+	return RelayModel{input: ti, origPrompt: "▣ "}
+}
+
 func (m *RelayModel) Activate() {
 	m.active = true
 	m.bangMode = false

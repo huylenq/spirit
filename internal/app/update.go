@@ -838,6 +838,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMacroEdit(msg)
 	case StateNoteEdit:
 		return m.handleKeyNoteEdit(msg)
+	case StateProjectCodeEdit:
+		return m.handleKeyProjectCodeEdit(msg)
 	case StateCopilot:
 		return m.handleKeyCopilot(msg)
 	case StateCopilotConfirm:

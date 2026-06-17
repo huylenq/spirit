@@ -141,6 +141,9 @@ type KeyMap struct {
 	// Session note editor
 	Note key.Binding
 
+	// Project code editor (per-project 3-char title prefix)
+	ProjectCode key.Binding
+
 	// View mode toggle (sidebar ↔ work queue)
 	ViewMode key.Binding
 
@@ -518,6 +521,10 @@ var Keys = KeyMap{
 	Note: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "note"),
+	),
+	ProjectCode: key.NewBinding(
+		key.WithKeys("alt+p"),
+		key.WithHelp("alt+p", "project code"),
 	),
 	ViewMode: key.NewBinding(
 		key.WithKeys("v"),

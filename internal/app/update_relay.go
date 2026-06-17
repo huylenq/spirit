@@ -1,12 +1,66 @@
 package app
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/spirit/internal/claude"
 )
+
+// sanitizeProjectCode keeps only alphanumerics, uppercases, and caps at 3 chars.
+func sanitizeProjectCode(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			if b.Len() == 3 {
+				break
+			}
+		}
+	}
+	return b.String()
+}
+
+// handleKeyProjectCodeEdit handles the per-project code editor: Esc cancels,
+// Enter saves (blank clears) to prefs, all else edits the input (sanitized to
+// ≤3 uppercase alphanumerics).
+func (m Model) handleKeyProjectCodeEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, Keys.Escape):
+		m.state = StateNormal
+		m.projectCodeRelay.Deactivate()
+		return m, nil
+	case key.Matches(msg, Keys.Enter):
+		code := sanitizeProjectCode(m.projectCodeRelay.Confirm())
+		project := m.projectCodeProject
+		m.state = StateNormal
+		if project == "" {
+			return m, nil
+		}
+		saveProjectCode(project, code)
+		// Optimistically reflect on every session in this project; the next
+		// discover pass re-stamps from prefs.
+		for i := range m.sessions {
+			if m.sessions[i].Project == project {
+				m.sessions[i].ProjectCode = code
+			}
+		}
+		flashText := project + " → [" + code + "]"
+		if code == "" {
+			flashText = project + " code cleared"
+		}
+		return m, m.setFlash(flashText, false, 3*time.Second)
+	default:
+		ti := m.projectCodeRelay.TextInput()
+		newTI, cmd := ti.Update(msg)
+		*ti = newTI
+		ti.SetValue(sanitizeProjectCode(ti.Value()))
+		ti.CursorEnd()
+		return m, cmd
+	}
+}
 
 func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {

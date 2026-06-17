@@ -53,6 +53,7 @@ const (
 	StateMacroEdit            // inline macro editor open
 	StateTagRelay             // tag input relay open
 	StateNoteEdit             // session note editor open
+	StateProjectCodeEdit      // per-project code editor open
 	StateCopilot              // copilot chat panel active
 	StateCopilotConfirm       // copilot tool confirmation pending
 	StateAdjustCopilot        // copilot overlay resize/reposition mode
@@ -183,7 +184,9 @@ type Model struct {
 	tagRelay             ui.RelayModel
 	laterRelay           ui.RelayModel
 	renamePrompt         ui.RelayModel
-	laterKillMode        bool // true when StateLaterWait was triggered by W (later+kill)
+	projectCodeRelay     ui.RelayModel
+	projectCodeProject   string // project basename being edited in StateProjectCodeEdit
+	laterKillMode        bool   // true when StateLaterWait was triggered by W (later+kill)
 	minimap              ui.MinimapModel
 	usageBar             ui.UsageBarModel
 	sessions             []claude.ClaudeSession
@@ -304,6 +307,7 @@ func NewModel(client *daemon.Client) Model {
 		tagRelay:          ui.NewTagRelayModel(),
 		laterRelay:        ui.NewLaterRelayModel(),
 		renamePrompt:      ui.NewRenameRelayModel(),
+		projectCodeRelay:  ui.NewProjectCodeRelayModel(),
 		palette:           ui.NewPaletteModel(),
 		commands:          buildCommands(),
 		minimap:           ui.NewMinimapModel(),

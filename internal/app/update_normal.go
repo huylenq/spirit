@@ -428,6 +428,9 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Note):
 		return m.execNoteEdit()
 
+	case key.Matches(msg, Keys.ProjectCode):
+		return m.execProjectCodeEdit()
+
 	case key.Matches(msg, Keys.Queue):
 		return m.execQueue()
 

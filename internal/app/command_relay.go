@@ -35,6 +35,23 @@ func (m Model) execTagRelay() (Model, tea.Cmd) {
 	return m, nil
 }
 
+// execProjectCodeEdit opens the per-project code editor for the selected
+// session's project, prefilled with the existing code or an auto-suggestion.
+func (m Model) execProjectCodeEdit() (Model, tea.Cmd) {
+	s, ok := m.sidebar.SelectedItem()
+	if !ok || s.Project == "" {
+		return m, nil
+	}
+	m.projectCodeProject = s.Project
+	prefill := s.ProjectCode
+	if prefill == "" {
+		prefill = claude.SuggestProjectCode(s.Project)
+	}
+	m.state = StateProjectCodeEdit
+	m.projectCodeRelay.ActivateWithValue(prefill)
+	return m, nil
+}
+
 func (m Model) execQueue() (Model, tea.Cmd) {
 	if _, ok := m.sidebar.SelectedItem(); ok {
 		m.state = StateQueueRelay
