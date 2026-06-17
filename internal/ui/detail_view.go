@@ -790,9 +790,11 @@ func (m *DetailModel) assembleAside(width int, outline, recap, note string, targ
 	return lipgloss.JoinVertical(lipgloss.Left, sections...), noteVertStart
 }
 
-// renderRecapPanel renders the bottom-docked session recap panel. Returns ""
-// when the session has no away_summary recap. Uses the same compact layout as
-// the sidebar pulse: top separator, single-line title, body indented by 1 col.
+// renderRecapPanel renders the session recap panel. Docked: the compact sidebar
+// pulse layout (top separator, single-line title, body indented by 1 col).
+// Floating (overlay): a bordered box matching the messages outline, so the two
+// asides read as the same kind of object. Returns "" when the session has no
+// away_summary recap.
 func (m *DetailModel) renderRecapPanel(width int) string {
 	if m.session == nil {
 		return ""
@@ -801,15 +803,16 @@ func (m *DetailModel) renderRecapPanel(width int) string {
 	if raw == "" {
 		return ""
 	}
-	if raw == m.cachedRecapSrc && width == m.cachedRecapWidth && m.cachedRecapBlock != "" {
+	floating := m.chatOutlineMode == chatOutlineOverlay
+	if raw == m.cachedRecapSrc && width == m.cachedRecapWidth && floating == m.cachedRecapFloat && m.cachedRecapBlock != "" {
 		return m.cachedRecapBlock
 	}
-	innerWidth := max(5, width-1) // PaddingLeft(1)
-
-	sep := BorderCharStyle.Render(strings.Repeat("─", width))
-	titleLine := lipgloss.NewStyle().Width(width).Render(
-		" " + TranscriptTitleStyle.Foreground(ColorLater).Render("★ Recap"),
-	)
+	// Inner text width: the bordered box reserves border(2)+padding(2); the
+	// docked pulse layout reserves only its 1-col left pad.
+	innerWidth := max(5, width-1)
+	if floating {
+		innerWidth = max(5, width-4)
+	}
 
 	var rendered []string
 	if r, err := glamour.NewTermRenderer(
@@ -841,10 +844,23 @@ func (m *DetailModel) renderRecapPanel(width int) string {
 		}
 		rendered[recapPanelMaxLines-1] = last + " ↩"
 	}
-	body := lipgloss.NewStyle().Width(width).PaddingLeft(1).Render(strings.Join(rendered, "\n"))
-	out := lipgloss.JoinVertical(lipgloss.Left, sep, titleLine, body)
+	var out string
+	if floating {
+		// Bordered box mirroring renderChatOutline: title, blank line, body.
+		title := TranscriptTitleStyle.Foreground(ColorLater).Render(" ★ Recap")
+		inner := lipgloss.JoinVertical(lipgloss.Left, title, "", strings.Join(rendered, "\n"))
+		out = TranscriptOverlayStyle.Width(width).Render(inner)
+	} else {
+		sep := BorderCharStyle.Render(strings.Repeat("─", width))
+		titleLine := lipgloss.NewStyle().Width(width).Render(
+			" " + TranscriptTitleStyle.Foreground(ColorLater).Render("★ Recap"),
+		)
+		body := lipgloss.NewStyle().Width(width).PaddingLeft(1).Render(strings.Join(rendered, "\n"))
+		out = lipgloss.JoinVertical(lipgloss.Left, sep, titleLine, body)
+	}
 	m.cachedRecapSrc = raw
 	m.cachedRecapWidth = width
+	m.cachedRecapFloat = floating
 	m.cachedRecapBlock = out
 	return out
 }

@@ -101,6 +101,7 @@ type DetailModel struct {
 	cachedRecapBlock         string  // glamour-rendered recap panel body (multi-line, ANSI-styled)
 	cachedRecapSrc           string  // raw recap text that produced cachedRecapBlock (change guard)
 	cachedRecapWidth         int     // panel width that produced cachedRecapBlock
+	cachedRecapFloat         bool    // floating (bordered box) vs docked (pulse) layout that produced cachedRecapBlock
 	pulsePhase               int     // animation phase for pulsing last user-message bullet (incremented on spinner tick)
 	width                    int
 	height                   int
