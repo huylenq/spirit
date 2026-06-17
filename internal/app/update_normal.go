@@ -71,6 +71,19 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Quiet scene: j/k adjust the background starfield density (no list to
+	// navigate when all sessions are quiet).
+	if m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
+		switch {
+		case key.Matches(msg, Keys.Down): // j → fewer
+			m.detail.FewerAllQuietParticles()
+			return m, nil
+		case key.Matches(msg, Keys.Up): // k → more
+			m.detail.MoreAllQuietParticles()
+			return m, nil
+		}
+	}
+
 	// Backlog-specific keys (when cursor is in backlog zone)
 	if m.sidebar.IsBacklogSelected() {
 		switch {

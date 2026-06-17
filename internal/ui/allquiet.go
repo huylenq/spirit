@@ -26,6 +26,14 @@ const (
 	numPendulums     = 3
 )
 
+// Background starfield density. The count is adjustable at runtime with j/k.
+const (
+	allQuietDefaultParticles = 28
+	allQuietMinParticles     = 0
+	allQuietMaxParticles     = 200
+	allQuietParticleStep     = 6
+)
+
 // Intro explosion: when quiet mode is entered, the dashboard text shatters
 // outward — letters burst from screen center on a light gravity arc — before
 // the calm pendulum mobile takes over.
@@ -80,15 +88,54 @@ type quietParticle struct {
 	xVel    float64
 	targetX float64
 	char    string
-	style   lipgloss.Style
+	hue     int     // index into twinkleStyles (the star's color)
+	phase   float64 // twinkle phase offset (radians)
+	speed   float64 // twinkle speed (radians per frame)
+}
+
+// twinkleStyles maps a star hue to its [dim, mid, bright] brightness tiers. A
+// particle pulses through the tiers as it twinkles, so the starfield shimmers
+// in assorted colors instead of a flat gray. Tuned for a dark terminal.
+var twinkleStyles = func() [][3]lipgloss.Style {
+	palettes := [][3]string{
+		{"#374151", "#6b7280", "#9ca3af"}, // cool gray
+		{"#3b4252", "#7c8aa5", "#c0caf5"}, // pale blue
+		{"#4a4036", "#9a7b4f", "#e7c08a"}, // amber
+		{"#3a3550", "#6d5a9c", "#c2adf0"}, // violet
+		{"#2f4a45", "#5e8a80", "#a6ddce"}, // teal
+		{"#4a3540", "#9c5e76", "#e8a6c2"}, // rose
+	}
+	out := make([][3]lipgloss.Style, len(palettes))
+	for i, pal := range palettes {
+		for t := 0; t < 3; t++ {
+			out[i][t] = lipgloss.NewStyle().Foreground(lipgloss.Color(pal[t]))
+		}
+	}
+	return out
+}()
+
+// styleAt returns the particle's style for the given frame, oscillating through
+// its hue's brightness tiers to mimic a star blinking.
+func (p *quietParticle) styleAt(frame int) lipgloss.Style {
+	b := 0.5 + 0.5*math.Sin(p.phase+float64(frame)*p.speed)
+	tiers := twinkleStyles[p.hue]
+	switch {
+	case b > 0.72:
+		return tiers[2]
+	case b > 0.38:
+		return tiers[1]
+	default:
+		return tiers[0]
+	}
 }
 
 // AllQuietAnim manages the animated mobile + starfield scene.
 type AllQuietAnim struct {
-	pends     [numPendulums]quietPendulum
-	particles []quietParticle
-	active    bool
-	frame     int // monotonically increasing tick counter (drives the shimmer)
+	pends         [numPendulums]quietPendulum
+	particles     []quietParticle
+	particleCount int // desired starfield density (adjusted via j/k)
+	active        bool
+	frame         int // monotonically increasing tick counter (drives the shimmer)
 
 	// Intro explosion state (phaseExplode → phaseMobile).
 	phase   quietPhase
@@ -135,61 +182,12 @@ func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool) tea.Cmd
 		}
 	}
 
-	// Background particles — dim stars scattered in top and bottom regions.
-	dimSt := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#d1d5db", Dark: "#374151"})
-	brSt := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#9ca3af", Dark: "#6b7280"})
-	type qcfg struct {
-		rF, cF, amp, aV, d float64
-		ch                 string
-		dim                bool
+	// Background particles — dim stars scattered above and below the dashboard.
+	// Count is adjustable at runtime via j/k (FewerParticles/MoreParticles).
+	if a.particleCount == 0 {
+		a.particleCount = allQuietDefaultParticles
 	}
-	pcs := []qcfg{
-		// Top band
-		{0.04, 0.08, 1.5, 2.0, 0.22, "·", true},
-		{0.05, 0.30, 1.0, 3.1, 0.28, "∘", true},
-		{0.06, 0.52, 1.5, 2.4, 0.24, "·", true},
-		{0.07, 0.72, 1.0, 2.8, 0.26, "✧", false},
-		{0.08, 0.93, 1.5, 1.9, 0.20, "·", true},
-		{0.12, 0.18, 1.0, 3.0, 0.30, "∘", true},
-		{0.13, 0.45, 1.5, 2.2, 0.21, "·", true},
-		{0.14, 0.66, 1.0, 2.6, 0.27, "·", false},
-		{0.15, 0.87, 1.5, 1.8, 0.20, "✧", true},
-		{0.18, 0.05, 1.5, 2.3, 0.23, "·", true},
-		{0.19, 0.38, 1.0, 2.9, 0.29, "∘", true},
-		{0.20, 0.78, 1.5, 2.1, 0.22, "·", true},
-		// Mid band (around the mobile edges)
-		{0.40, 0.06, 1.5, 2.2, 0.22, "·", true},
-		{0.44, 0.94, 1.0, 2.7, 0.26, "·", true},
-		{0.50, 0.04, 1.5, 1.9, 0.20, "∘", true},
-		{0.54, 0.96, 1.5, 2.4, 0.23, "·", true},
-		// Bottom band
-		{0.70, 0.10, 1.5, 2.2, 0.22, "·", true},
-		{0.72, 0.33, 1.0, 2.9, 0.28, "∘", true},
-		{0.74, 0.55, 1.0, 3.2, 0.28, "∘", false},
-		{0.76, 0.78, 1.5, 2.0, 0.21, "·", true},
-		{0.78, 0.92, 1.5, 1.8, 0.18, "✧", true},
-		{0.82, 0.20, 1.0, 2.5, 0.24, "·", false},
-		{0.84, 0.43, 1.5, 2.3, 0.22, "·", true},
-		{0.86, 0.64, 1.0, 2.7, 0.26, "·", true},
-		{0.88, 0.85, 1.5, 1.9, 0.20, "·", true},
-		{0.92, 0.14, 1.5, 2.1, 0.23, "∘", true},
-		{0.94, 0.50, 1.0, 2.8, 0.27, "·", false},
-		{0.95, 0.73, 1.5, 2.0, 0.21, "·", true},
-	}
-	a.particles = make([]quietParticle, len(pcs))
-	for i, pc := range pcs {
-		st := brSt
-		if pc.dim {
-			st = dimSt
-		}
-		a.particles[i] = quietParticle{
-			rowFrac: pc.rF, colFrac: pc.cF,
-			spring: harmonica.NewSpring(td, pc.aV, pc.d),
-			x:      0, xVel: 0,
-			targetX: pc.amp,
-			char:    pc.ch, style: st,
-		}
-	}
+	a.seedParticles(a.particleCount)
 
 	// Seed the intro explosion. If the canvas is too small to lay out the
 	// dashboard, skip straight to the calm scene.
@@ -200,6 +198,58 @@ func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool) tea.Cmd
 		a.initExplosion(counts, w, h)
 	}
 	return tickAllQuiet()
+}
+
+// seedParticles regenerates the background starfield with n dim stars scattered
+// in the bands above and below the centered dashboard (the mid rows are left
+// clear so dots don't litter the text). Positions are drawn from a fixed seed so
+// the field is stable across re-renders — only j/k changes it.
+func (a *AllQuietAnim) seedParticles(n int) {
+	if n < allQuietMinParticles {
+		n = allQuietMinParticles
+	} else if n > allQuietMaxParticles {
+		n = allQuietMaxParticles
+	}
+	a.particleCount = n
+
+	td := harmonica.FPS(allQuietFPS)
+	chars := []string{"·", "·", "·", "·", "∘", "✧", "✦"}
+
+	rng := rand.New(rand.NewSource(1))
+	a.particles = make([]quietParticle, n)
+	for i := range a.particles {
+		// Split between the top and bottom bands, skipping the center text area.
+		var rowFrac float64
+		if rng.Float64() < 0.5 {
+			rowFrac = 0.02 + rng.Float64()*0.26 // top band
+		} else {
+			rowFrac = 0.66 + rng.Float64()*0.31 // bottom band
+		}
+		a.particles[i] = quietParticle{
+			rowFrac: rowFrac,
+			colFrac: rng.Float64(),
+			spring:  harmonica.NewSpring(td, 1.8+rng.Float64()*1.5, 0.18+rng.Float64()*0.12),
+			targetX: 1.0 + rng.Float64()*0.8,
+			char:    chars[rng.Intn(len(chars))],
+			hue:     rng.Intn(len(twinkleStyles)),
+			phase:   rng.Float64() * 2 * math.Pi,
+			speed:   0.12 + rng.Float64()*0.33, // varied blink rates so they don't pulse in sync
+		}
+	}
+}
+
+// MoreParticles / FewerParticles step the starfield density up or down. They are
+// no-ops when the animation isn't active.
+func (a *AllQuietAnim) MoreParticles() {
+	if a.active {
+		a.seedParticles(a.particleCount + allQuietParticleStep)
+	}
+}
+
+func (a *AllQuietAnim) FewerParticles() {
+	if a.active {
+		a.seedParticles(a.particleCount - allQuietParticleStep)
+	}
 }
 
 // initExplosion lays out the quiet dashboard centered in the canvas, decomposes
@@ -325,10 +375,11 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	}
 
 	// --- Background particles ---
-	for _, p := range a.particles {
+	for i := range a.particles {
+		p := &a.particles[i]
 		row := int(p.rowFrac * float64(height))
 		col := int(p.colFrac*float64(width)) + int(math.Round(p.x))
-		put(row, col, p.style.Render(p.char), 1)
+		put(row, col, p.styleAt(a.frame).Render(p.char), 1)
 	}
 
 	// Dashboard is built first so the whole mobile+dashboard block can be

@@ -655,6 +655,10 @@ func (m *DetailModel) TickAllQuiet() tea.Cmd { return m.allQuiet.Tick() }
 // AllQuietAnimActive reports whether the animation is running.
 func (m *DetailModel) AllQuietAnimActive() bool { return m.allQuiet.Active() }
 
+// MoreAllQuietParticles / FewerAllQuietParticles adjust the quiet-scene starfield density.
+func (m *DetailModel) MoreAllQuietParticles()  { m.allQuiet.MoreParticles() }
+func (m *DetailModel) FewerAllQuietParticles() { m.allQuiet.FewerParticles() }
+
 // TickPulse advances the pulse animation phase for the chat outline.
 func (m *DetailModel) TickPulse() { m.pulsePhase++ }
 
