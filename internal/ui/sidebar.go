@@ -224,6 +224,7 @@ func claudingEntry(s claude.ClaudeSession) ClaudingEntry {
 	if name == "" {
 		name = "(New session)"
 	}
+	name = s.Titled(name)
 	// Wrap/truncate the secondary lines here (once per poll) rather than in the
 	// 12 FPS dashboard render — they're static between polls.
 	var recapLines []string

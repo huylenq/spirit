@@ -28,6 +28,7 @@ func (m SidebarModel) titleLayout(s claude.ClaudeSession, query string) (line1, 
 		return "", "", true
 	}
 	name = strings.ReplaceAll(name, "\n", " ")
+	name = s.Titled(name)
 
 	detailWidth := lipgloss.Width(m.renderDetail(s, false))
 	prefixWidth := 4
@@ -69,7 +70,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	// line (titleRest) instead of being truncated to one.
 	displayName, titleRest, isNewSession := m.titleLayout(s, query)
 	if isNewSession {
-		displayName = lipgloss.NewStyle().Italic(true).Render("(New session)")
+		displayName = lipgloss.NewStyle().Italic(true).Render(s.Titled("(New session)"))
 	}
 
 	glyph := AvatarGlyph(s.AvatarAnimalIdx)

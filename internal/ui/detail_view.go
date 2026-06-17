@@ -40,6 +40,7 @@ func (m *DetailModel) View() string {
 	titleLeft := avatar + " " + projectLabel
 	if name := s.DisplayName(); name != "" {
 		name = strings.ReplaceAll(name, "\n", " ")
+		name = s.Titled(name)
 		prefixWidth := lipgloss.Width(titleLeft) + 1
 		maxNameWidth := m.width - prefixWidth - gitInfoWidth - 4 // 2 gap to git + 2 padding
 		if maxNameWidth > 0 {

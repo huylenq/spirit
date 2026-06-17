@@ -350,6 +350,7 @@ func (m *WorkQueueModel) renderBench(sidebar *SidebarModel) string {
 			title = "(New session)"
 		}
 		title = strings.ReplaceAll(title, "\n", " ")
+		title = s.Titled(title)
 
 		// Truncate title to fit available width
 		titleW := m.benchWidth() - prefixCols
