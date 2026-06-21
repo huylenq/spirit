@@ -119,6 +119,16 @@ func HandleHook(hookType string) {
 		nd.IsWaiting = boolPtr(false)
 
 	case "PostToolUse":
+		// A completed tool result always flows back to the model — Claude is
+		// mid-turn. Re-assert agent-turn and clear any waiting state set by an
+		// elicitation/permission Notification (e.g. AskUserQuestion answered),
+		// which otherwise leaves the session stuck at "Your Turn".
+		nd.Status = StatusAgentTurn.String()
+		WriteStatus(sessionID, StatusAgentTurn)
+		effects = append(effects, "status → agent-turn")
+		RemoveWaiting(sessionID)
+		os.Remove(stopReasonFilePath(sessionID))
+		nd.IsWaiting = boolPtr(false)
 		// Detect git commit via Bash tool
 		if input.ToolName == "Bash" {
 			cmd := extractBashCommand(input.ToolInput)

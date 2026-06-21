@@ -184,7 +184,12 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 
 	if nudge.Status != "" && s.Status != status {
 		oldStatus := s.Status
-		if status == claude.StatusUserTurn && s.Status == claude.StatusAgentTurn {
+		// Only a genuine turn completion (Stop) should trigger auto-synthesis.
+		// A permission/elicitation Notification also flips to user-turn but carries
+		// IsWaiting=true — that's a mid-turn pause, not a finished turn, so exclude it
+		// or synthesis fires repeatedly while the user works through prompts.
+		if status == claude.StatusUserTurn && s.Status == claude.StatusAgentTurn &&
+			!(nudge.IsWaiting != nil && *nudge.IsWaiting) {
 			becameUserTurn = true
 		}
 		s.Status = status
