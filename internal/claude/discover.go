@@ -17,15 +17,18 @@ type processInfo struct {
 	Comm string
 }
 
-// buildProcessTree runs a single `ps` command and returns a map of PPID → children.
-// Replaces per-pane pgrep+ps calls with one subprocess.
-func buildProcessTree() map[int][]processInfo {
+// buildProcessTree runs a single `ps` command and returns a map of PPID →
+// children plus a map of PID → comm. Replaces per-pane pgrep+ps calls with one
+// subprocess. The comm map lets callers identify a process by its own PID
+// (e.g. a pane whose root process is claude itself, not a child).
+func buildProcessTree() (map[int][]processInfo, map[int]string) {
 	out, err := exec.Command("ps", "-eo", "pid,ppid,comm").Output()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
 	tree := make(map[int][]processInfo)
+	comm := make(map[int]string)
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
@@ -36,13 +39,22 @@ func buildProcessTree() map[int][]processInfo {
 		if err1 != nil || err2 != nil {
 			continue // skip header and malformed lines
 		}
-		comm := filepath.Base(strings.Join(fields[2:], " "))
-		tree[ppid] = append(tree[ppid], processInfo{PID: pid, Comm: comm})
+		c := filepath.Base(strings.Join(fields[2:], " "))
+		tree[ppid] = append(tree[ppid], processInfo{PID: pid, Comm: c})
+		comm[pid] = c
 	}
-	return tree
+	return tree, comm
 }
 
-func findClaudeInTree(tree map[int][]processInfo, parentPID int) int {
+// findClaudeInTree locates the claude process owned by a tmux pane. It matches
+// claude as a direct child of the pane's root process (the common case: a shell
+// runs claude), and also the pane's root process itself — when claude is exec'd
+// as the pane command (e.g. `cd dir && claude`), pane_pid IS the claude PID and
+// has no shell parent, so it would otherwise be invisible.
+func findClaudeInTree(tree map[int][]processInfo, comm map[int]string, parentPID int) int {
+	if comm[parentPID] == "claude" {
+		return parentPID
+	}
 	for _, child := range tree[parentPID] {
 		if child.Comm == "claude" {
 			return child.PID
@@ -118,7 +130,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	CleanStale(activeSessionIDs, activePaneIDs)
 
 	// Single ps call replaces all per-pane pgrep+ps invocations
-	procTree := buildProcessTree()
+	procTree, procComm := buildProcessTree()
 
 	// Load project codes once for the whole discover cycle.
 	projectCodes := ProjectCodes()
@@ -126,7 +138,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	var sessions []ClaudeSession
 	for _, p := range panes {
 		sessionID := ReadSessionID(p.PaneID)
-		pid := findClaudeInTree(procTree, p.PanePID)
+		pid := findClaudeInTree(procTree, procComm, p.PanePID)
 		if pid == 0 {
 			if sessionID == "" {
 				continue

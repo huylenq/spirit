@@ -60,7 +60,7 @@ func GatherAllClaudeWindowPanes(sessions []ClaudeSession, idleSessionName string
 		return nil, nil, err
 	}
 
-	procTree := buildProcessTree()
+	procTree, _ := buildProcessTree()
 
 	sessionByPane := make(map[string]*ClaudeSession, len(sessions))
 	for i := range sessions {
