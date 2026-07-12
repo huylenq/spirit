@@ -82,6 +82,15 @@ func findTranscriptPath(sessionID string) (string, error) {
 		transcriptPathCacheMu.Unlock()
 	}
 
+	if meta := ReadSessionMeta(sessionID); meta.TranscriptPath != "" {
+		if _, err := os.Stat(meta.TranscriptPath); err == nil {
+			transcriptPathCacheMu.Lock()
+			transcriptPathCache[sessionID] = meta.TranscriptPath
+			transcriptPathCacheMu.Unlock()
+			return meta.TranscriptPath, nil
+		}
+	}
+
 	home, _ := os.UserHomeDir()
 	projectsDir := filepath.Join(home, ".claude", "projects")
 	filename := sessionID + ".jsonl"
@@ -162,6 +171,7 @@ func ReadTranscriptEntries(sessionID string) ([]TranscriptEntry, error) {
 	}
 
 	rawLines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	isCodex := ReadSessionMeta(sessionID).Provider == ProviderCodex
 
 	// Single pass: accumulate tool_use_id → name map as we go (assistant entries
 	// always precede their tool_result responses in the transcript).
@@ -188,6 +198,9 @@ func ReadTranscriptEntries(sessionID string) ([]TranscriptEntry, error) {
 		entry.ContentType = extractContentType(raw)
 		entry.Timestamp = extractTimestamp(raw)
 		entry.Summary = buildEntrySummary(typ, raw, toolNames)
+		if isCodex {
+			entry.Type, entry.ContentType, entry.Summary = buildCodexEntry(raw)
+		}
 		entries = append(entries, entry)
 	}
 
@@ -422,7 +435,6 @@ func buildAssistantSummary(raw map[string]json.RawMessage) string {
 	return bestSummary
 }
 
-
 // extractFirstParam pulls the first short string value from a JSON object (for tool_use summary).
 func extractFirstParam(input json.RawMessage) string {
 	var m map[string]json.RawMessage
@@ -463,6 +475,9 @@ func flattenText(s string) string {
 // --- Text extraction helpers ---
 
 func extractAssistantText(line []byte) string {
+	if text, role := extractCodexMessage(line); role == "assistant" {
+		return text
+	}
 	var tl transcriptLine
 	if err := json.Unmarshal(line, &tl); err != nil {
 		return ""
@@ -532,6 +547,9 @@ func stripSystemText(s string) string {
 }
 
 func extractUserText(line []byte) string {
+	if text, role := extractCodexMessage(line); role == "user" {
+		return text
+	}
 	var tl transcriptLine
 	if err := json.Unmarshal(line, &tl); err != nil {
 		return ""
@@ -592,6 +610,74 @@ func extractUserText(line []byte) string {
 		return ""
 	}
 	return extractPlanTitle(result)
+}
+
+// extractCodexMessage reads the concise event_msg records from a Codex rollout.
+// These records avoid duplicating the richer response_item entries in the same file.
+func extractCodexMessage(line []byte) (text, role string) {
+	var outer struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+	if json.Unmarshal(line, &outer) != nil || outer.Type != "event_msg" {
+		return "", ""
+	}
+	var event struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+		Phase   string `json:"phase"`
+	}
+	if json.Unmarshal(outer.Payload, &event) != nil || event.Message == "" {
+		return "", ""
+	}
+	switch event.Type {
+	case "user_message":
+		return strings.TrimSpace(event.Message), "user"
+	case "agent_message":
+		return strings.TrimSpace(event.Message), "assistant"
+	default:
+		return "", ""
+	}
+}
+
+func buildCodexEntry(raw map[string]json.RawMessage) (typ, contentType, summary string) {
+	outerType := jsonString(raw["type"])
+	if outerType == "event_msg" {
+		var event struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+			Phase   string `json:"phase"`
+		}
+		if json.Unmarshal(raw["payload"], &event) == nil {
+			switch event.Type {
+			case "user_message":
+				return "user", "text", truncStr(flattenText(event.Message), 60)
+			case "agent_message":
+				ct := event.Phase
+				if ct == "" {
+					ct = "text"
+				}
+				return "assistant", ct, truncStr(flattenText(event.Message), 60)
+			case "task_started", "task_complete", "turn_aborted":
+				return "system", event.Type, ""
+			default:
+				return "event", event.Type, ""
+			}
+		}
+	}
+	if outerType == "response_item" {
+		var item struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw["payload"], &item) == nil {
+			if item.Name != "" {
+				return "tool", item.Type, truncStr(item.Name, 60)
+			}
+			return "item", item.Type, ""
+		}
+	}
+	return outerType, "", ""
 }
 
 // formatPlanTitle extracts a display title from raw plan content markdown.

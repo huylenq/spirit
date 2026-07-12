@@ -14,6 +14,31 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+const (
+	providerClaudeGlyph = "󰛄" // asterisk, matching Claude's mark
+	providerCodexGlyph  = "󰝨" // atom/knot, matching OpenAI's mark
+	providerPrefixWidth = 2   // one glyph + one trailing space
+)
+
+var (
+	providerClaudeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#D97757"))
+	providerCodexStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#3B82F6"))
+)
+
+func providerPrefix(s claude.ClaudeSession) string {
+	if s.Provider == claude.ProviderCodex {
+		return providerCodexStyle.Render(providerCodexGlyph) + " "
+	}
+	return providerClaudeStyle.Render(providerClaudeGlyph) + " "
+}
+
+func providerPrefixBg(s claude.ClaudeSession, bg lipgloss.TerminalColor) string {
+	if s.Provider == claude.ProviderCodex {
+		return providerCodexStyle.Background(bg).Render(providerCodexGlyph) + lipgloss.NewStyle().Background(bg).Render(" ")
+	}
+	return providerClaudeStyle.Background(bg).Render(providerClaudeGlyph) + lipgloss.NewStyle().Background(bg).Render(" ")
+}
+
 // titleLayout decides how a session's display name is laid out on its row.
 // It returns the (possibly truncated) first line, the second-line remainder
 // ("" when the title fits on one line), and whether the session is the
@@ -38,7 +63,7 @@ func (m SidebarModel) titleLayout(s claude.ClaudeSession, query string) (line1, 
 	if s.IsWorktree {
 		worktreeIcon = worktreeIconRendered
 	}
-	iconWidth := lipgloss.Width(AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)+"  ") + worktreeIcon)
+	iconWidth := lipgloss.Width(AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)+"  ") + providerPrefix(s) + worktreeIcon)
 
 	// 2 for outer padding, 2 for minimum gap; reserve the "[CODE] " prefix width.
 	maxNameWidth := m.width - prefixWidth - iconWidth - detailWidth - 4 - projectCodeWidth(s)
@@ -111,7 +136,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 	if s.IsWorktree {
 		worktreeIcon = worktreeIconRendered
 	}
-	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph+"  ") + worktreeIcon
+	iconStr := AvatarStyle(s.AvatarColorIdx).Render(glyph+"  ") + providerPrefix(s) + worktreeIcon
 	iconWidth := lipgloss.Width(iconStr)
 
 	// Geometric gap — computed once before styling branches to prevent ANSI width drift
@@ -153,6 +178,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 		if m.cardMode {
 			namePart = bg.Render(" ") +
 				AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
+				providerPrefixBg(s, avatarBg) +
 				selWorktreeIcon +
 				styledName
 		} else {
@@ -160,6 +186,7 @@ func (m SidebarModel) renderItem(isSelected, isAutoJump bool, s claude.ClaudeSes
 				barSt.Render("▌") +
 				bg.Render(" ") +
 				AvatarStyle(s.AvatarColorIdx).Background(avatarBg).Render(glyph+"  ") +
+				providerPrefixBg(s, avatarBg) +
 				selWorktreeIcon +
 				styledName
 		}

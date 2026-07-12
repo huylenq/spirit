@@ -27,6 +27,9 @@ func (m Model) execCommit() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if isCodexSession(s) {
+		return m, codexUnsupported("commit")
+	}
 	if s.Status != claude.StatusUserTurn {
 		return m, func() tea.Msg { return flashErrorMsg("session is busy") }
 	}

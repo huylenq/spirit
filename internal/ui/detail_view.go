@@ -197,6 +197,14 @@ func (m *DetailModel) View() string {
 
 	// Bottom bar: session title (left) + footer metadata (right-aligned)
 	var metaParts []string
+	provider := "Claude"
+	if s.Provider == claude.ProviderCodex {
+		provider = "Codex"
+	}
+	if s.Model != "" {
+		provider += "/" + s.Model
+	}
+	metaParts = append(metaParts, provider)
 	if s.SessionID != "" {
 		short := s.SessionID
 		if len(short) > 8 {

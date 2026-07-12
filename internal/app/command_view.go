@@ -23,6 +23,9 @@ func (m Model) execFullscreen() (Model, tea.Cmd) {
 
 func (m Model) execApplyTitle() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
+		if isCodexSession(s) {
+			return m, codexUnsupported("apply title")
+		}
 		return m, m.fetchApplyTitle(s.PaneID, s.SessionID)
 	}
 	return m, nil

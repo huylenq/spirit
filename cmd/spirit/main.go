@@ -48,7 +48,18 @@ func main() {
 				fmt.Fprintln(os.Stderr, "usage: spirit _hook <HookType>")
 				os.Exit(1)
 			}
-			claude.HandleHook(os.Args[2])
+			var provider *claude.Provider
+			for i := 3; i+1 < len(os.Args); i++ {
+				if os.Args[i] == "--provider" {
+					p := claude.ParseProvider(os.Args[i+1])
+					provider = &p
+				}
+			}
+			if provider != nil {
+				claude.HandleHook(os.Args[2], *provider)
+			} else {
+				claude.HandleHook(os.Args[2])
+			}
 			return
 		case "daemon":
 			runDaemon()
@@ -164,8 +175,8 @@ Usage:
   spirit orchestrator unregister <session-id>   Re-include session
   spirit agent <verb>  Machine-friendly session management (for AI agents)
   spirit capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
-  spirit setup            Install Claude Code hooks into ~/.claude/settings.json
-  spirit _hook <type>     Handle a Claude Code hook event (internal, called by hooks)
+  spirit setup            Install Claude Code and Codex hooks
+  spirit _hook <type>     Handle a coding-agent hook event (internal, called by hooks)
   spirit daemon           Start the background daemon
   spirit daemon --check   Exit 0 if daemon is running, 1 otherwise
   spirit daemon --stop    Stop the running daemon
@@ -230,6 +241,11 @@ const hookMarker = "#spirit-hook"
 // oldHookMarker is the pre-rebrand marker, used for migration.
 const oldHookMarker = "#cmc-hook"
 
+type hookRegistration struct {
+	HookType string
+	Matcher  string
+}
+
 func runSetup() {
 	// Resolve the absolute path to our own binary
 	exe, err := os.Executable()
@@ -243,22 +259,7 @@ func runSetup() {
 		os.Exit(1)
 	}
 
-	settingsPath := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
-
-	// Read existing settings or start fresh
-	settings := map[string]any{}
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		if err := json.Unmarshal(data, &settings); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", settingsPath, err)
-			os.Exit(1)
-		}
-	}
-
-	type hookRegistration struct {
-		HookType string
-		Matcher  string // empty = catch-all
-	}
-	regs := []hookRegistration{
+	claudeRegs := []hookRegistration{
 		{"PreToolUse", ""},
 		{"PostToolUse", "Bash|Edit|Write"},
 		{"UserPromptSubmit", ""},
@@ -268,46 +269,66 @@ func runSetup() {
 		{"SessionEnd", ""},
 		{"PreCompact", ""},
 	}
+	codexRegs := []hookRegistration{
+		{"PreToolUse", ""}, {"PostToolUse", "Bash|Edit|Write"},
+		{"UserPromptSubmit", ""}, {"Stop", ""},
+		{"SessionStart", ""}, {"PreCompact", ""},
+	}
+	targets := []struct {
+		path     string
+		provider claude.Provider
+		regs     []hookRegistration
+	}{
+		{filepath.Join(os.Getenv("HOME"), ".claude", "settings.json"), claude.ProviderClaude, claudeRegs},
+		{filepath.Join(os.Getenv("HOME"), ".codex", "hooks.json"), claude.ProviderCodex, codexRegs},
+	}
+	for _, target := range targets {
+		changed, err := installHooks(target.path, exe, target.provider, target.regs)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error installing hooks in %s: %v\n", target.path, err)
+			os.Exit(1)
+		}
+		if changed {
+			fmt.Printf("Hooks installed in %s\n", target.path)
+		}
+	}
+	fmt.Printf("Hook command: %s _hook <type>\n", exe)
+}
 
+func installHooks(settingsPath, exe string, provider claude.Provider, regs []hookRegistration) (bool, error) {
+	settings := map[string]any{}
+	if data, err := os.ReadFile(settingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return false, err
+		}
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
 	hooksMap, _ := settings["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
-
 	changed := false
 	for _, reg := range regs {
-		cmd := exe + " _hook " + reg.HookType + " " + hookMarker
+		cmd := exe + " _hook " + reg.HookType + " --provider " + string(provider) + " " + hookMarker
 		newGroups, modified := upsertHookCmd(hooksMap[reg.HookType], cmd, reg.Matcher)
 		if modified {
 			hooksMap[reg.HookType] = newGroups
 			changed = true
 		}
 	}
-
 	if !changed {
-		// Will flash on the tmux view, not nice!
-		// fmt.Println("Hooks already up to date.")
-		return
+		return false, nil
 	}
-
 	settings["hooks"] = hooksMap
-
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating directory: %v\n", err)
-		os.Exit(1)
+		return false, err
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error marshaling settings: %v\n", err)
-		os.Exit(1)
+		return false, err
 	}
-	if err := os.WriteFile(settingsPath, append(data, '\n'), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", settingsPath, err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Hooks installed in %s\n", settingsPath)
-	fmt.Printf("Hook command: %s _hook <type>\n", exe)
+	return true, os.WriteFile(settingsPath, append(data, '\n'), 0o644)
 }
 
 // upsertHookCmd inserts or updates a spirit hook command in a hook type's group list.

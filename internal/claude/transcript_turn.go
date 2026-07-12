@@ -102,9 +102,16 @@ func ReadCurrentTurn(sessionID string) CurrentTurn {
 		return turn
 	}
 
+	isCodex := ReadSessionMeta(sessionID).Provider == ProviderCodex
 	for i := lastUserIdx + 1; i < len(lines); i++ {
 		line := lines[i]
 		if len(line) == 0 {
+			continue
+		}
+		if isCodex {
+			if text := extractAssistantText(line); text != "" {
+				appendTextEvent(&turn.Events, text, 1)
+			}
 			continue
 		}
 		if !bytes.Contains(line, []byte(`"type":"assistant"`)) {
@@ -117,6 +124,19 @@ func ReadCurrentTurn(sessionID string) CurrentTurn {
 	currentTurnCache[sessionID] = currentTurnCacheEntry{turn: turn, modTime: info.ModTime()}
 	currentTurnCacheMu.Unlock()
 	return turn
+}
+
+func appendTextEvent(events *[]TurnEvent, text string, blockCount int) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if n := len(*events); n > 0 && (*events)[n-1].Kind == TurnEventText {
+		(*events)[n-1].Text += "\n\n" + text
+		(*events)[n-1].BlockCount += blockCount
+		return
+	}
+	*events = append(*events, TurnEvent{Kind: TurnEventText, Text: text, BlockCount: blockCount})
 }
 
 // turnBlock is a unified content-block decoder that handles both text and

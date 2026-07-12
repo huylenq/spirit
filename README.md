@@ -1,6 +1,6 @@
 # Spirit
 
-A TUI for running many Claude Code sessions in parallel without losing track of any of them.
+A TUI for monitoring Claude Code and Codex CLI sessions in parallel without losing track of any of them.
 
 You spawn agents across tmux panes — one per task, one per worktree, one per stray idea. Spirit watches them all, tells you which ones are waiting on you, and lets you send work, switch, rename, or kill from a single keystroke.
 
@@ -74,13 +74,13 @@ Then add to `~/.tmux.conf`:
 run-shell ~/.tmux/plugins/spirit/spirit.tmux
 ```
 
-Wire up Claude Code hooks (once after install, and after updates):
+Wire up Claude Code and Codex hooks (once after install, and after updates):
 
 ```bash
 ~/.tmux/plugins/spirit/bin/spirit setup
 ```
 
-This auto-patches `~/.claude/settings.json` with the hooks Spirit needs to track session status.
+This auto-patches `~/.claude/settings.json` and `~/.codex/hooks.json` with the hooks Spirit needs to track session status. Existing unrelated hooks are preserved.
 
 ## Keybindings
 
@@ -115,11 +115,13 @@ Inside the TUI:
 
 ## How it works
 
-Spirit is a daemon + TUI client. The daemon polls tmux panes every second and pushes updates to connected clients over a Unix socket. Session status comes from [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks):
+Spirit is a daemon + TUI client. The daemon polls tmux panes every second and pushes updates to connected clients over a Unix socket. Claude Code and Codex hooks feed the same lifecycle:
 
-- `PreToolUse` → "agent-turn" (Claude is working)
+- `PreToolUse` → "agent-turn" (the coding agent is working)
 - `UserPromptSubmit` → "agent-turn" + captures your prompt
-- `Stop` → "user-turn" (Claude is waiting on you)
+- `Stop` → "user-turn" (the coding agent is waiting on you)
+
+Codex v1 supports discovery, status, transcripts, switching, direct relay, kill, notes, tags, and Spirit-local synthesis. A newly started Codex process appears immediately; its session ID and transcript attach after its first trusted hook. Sidebar rows use fixed-width provider glyphs: coral asterisk for Claude and blue atom/knot for OpenAI Codex. Codex spawning/resume, queue/Later, models, approvals, usage, and worktrees are deferred.
 
 Status files live in `~/.spirit/`. The daemon auto-shuts down after 10 minutes with no clients.
 

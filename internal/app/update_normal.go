@@ -635,24 +635,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.Commit):
-		if s, ok := m.sidebar.SelectedItem(); ok {
-			if s.Status != claude.StatusUserTurn {
-				return m, func() tea.Msg { return flashErrorMsg("session is busy") }
-			}
-			if s.CommitDonePending {
-				return m, func() tea.Msg { return flashInfoMsg("commit already pending") }
-			}
-			paneID, sessionID, pid := s.PaneID, s.SessionID, s.PID
-			cmds := []tea.Cmd{func() tea.Msg {
-				if err := m.client.CommitOnly(paneID, sessionID, pid); err != nil {
-					return flashErrorMsg("commit failed: " + err.Error())
-				}
-				return flashInfoMsg("commit started")
-			}}
-			cmds = append(cmds, m.autoJump(s.PaneID)...)
-			return m, tea.Batch(cmds...)
-		}
-		return m, nil
+		return m.execCommit()
 
 	case key.Matches(msg, Keys.Debug):
 		return m.execDebug()
@@ -687,10 +670,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.resizeChatOutline(+chatOutlineResizeStep)
 
 	case key.Matches(msg, Keys.ApplyTitle):
-		if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
-			return m, m.fetchApplyTitle(s.PaneID, s.SessionID)
-		}
-		return m, nil
+		return m.execApplyTitle()
 
 	case key.Matches(msg, Keys.RenamePrompt):
 		return m.execRenamePrompt()

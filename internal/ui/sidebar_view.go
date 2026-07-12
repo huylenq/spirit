@@ -77,7 +77,7 @@ func transitionLines(prev, next int) int {
 
 func (m *SidebarModel) View() string {
 	if len(m.items) == 0 {
-		return EmptyStyle.Width(m.width).Render("No Claude sessions found\n\nStart Claude in a tmux pane to see it here.")
+		return EmptyStyle.Width(m.width).Render("No coding sessions found\n\nStart Claude or Codex in a tmux pane to see it here.")
 	}
 
 	dw := m.computeDiffColWidths()

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # spirit
 
-Go TUI for monitoring and orchestrating Claude Code sessions across tmux panes.
+Go TUI for monitoring Claude Code and Codex CLI sessions across tmux panes.
 
 ## Build & Run
 
@@ -28,8 +28,8 @@ spirit popup              # Open TUI in tmux display-popup
 spirit daemon             # Start background daemon
 spirit daemon --check     # Exit 0 if daemon running
 spirit daemon --stop      # Stop daemon
-spirit setup              # Install Claude Code hooks into ~/.claude/settings.json
-spirit _hook <type>       # Handle a hook event (called by Claude Code hooks)
+spirit setup              # Install Claude Code and Codex hooks
+spirit _hook <type>       # Handle a provider hook event
 spirit eval -e '<lua>'    # Evaluate inline Lua script against daemon
 spirit eval <file.lua>    # Evaluate Lua file
 spirit orchestrator register|unregister <id>

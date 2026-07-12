@@ -5,6 +5,22 @@ import (
 	"time"
 )
 
+type Provider string
+
+const (
+	ProviderClaude Provider = "claude"
+	ProviderCodex  Provider = "codex"
+)
+
+func ParseProvider(s string) Provider {
+	switch s {
+	case string(ProviderCodex):
+		return ProviderCodex
+	default:
+		return ProviderClaude
+	}
+}
+
 type Status int
 
 const (
@@ -53,6 +69,10 @@ type Location struct {
 }
 
 type ClaudeSession struct {
+	Provider             Provider
+	Model                string
+	TurnID               string
+	TranscriptPath       string
 	PaneID               string
 	Status               Status
 	Project              string // basename of cwd

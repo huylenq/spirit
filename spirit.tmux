@@ -59,7 +59,7 @@ fi
 
 [ -f "$BINARY" ] || { echo "spirit: binary not available" >&2; exit 0; }
 
-# Auto-install Claude Code hooks (idempotent — skips if already up to date)
+# Auto-install Claude Code and Codex hooks (idempotent)
 "$BINARY" setup 2>/dev/null || true
 
 # Ctrl-Space (prefix-less) → popup with active pane selected (zoom state from prefs)

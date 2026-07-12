@@ -241,6 +241,7 @@ func ReadLastAssistantInfo(sessionID string) AssistantInfo {
 	lines := strings.Split(raw, "\n")
 	assistantTag := []byte(`"type":"assistant"`)
 	awaySummaryTag := []byte(`"away_summary"`)
+	isCodex := ReadSessionMeta(sessionID).Provider == ProviderCodex
 	// Reverse scan: collect last message + all insights + most recent recap
 	for i := len(lines) - 1; i >= 0; i-- {
 		if lines[i] == "" {
@@ -258,7 +259,7 @@ func ReadLastAssistantInfo(sessionID string) AssistantInfo {
 			}
 		}
 		// Cheap pre-filter: skip JSON unmarshal for non-assistant lines
-		if !bytes.Contains(line, assistantTag) {
+		if !isCodex && !bytes.Contains(line, assistantTag) {
 			continue
 		}
 		text := extractAssistantText(line)

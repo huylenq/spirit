@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -14,8 +15,10 @@ import (
 // hookInput is the JSON payload Claude Code sends to hooks on stdin.
 type hookInput struct {
 	SessionID      string          `json:"session_id"`
+	TurnID         string          `json:"turn_id"`
 	TranscriptPath string          `json:"transcript_path"`
 	CWD            string          `json:"cwd"`
+	Model          string          `json:"model"`
 	PermissionMode string          `json:"permission_mode"`
 	HookEventName  string          `json:"hook_event_name"`
 	Prompt         string          `json:"prompt,omitempty"`            // UserPromptSubmit
@@ -30,7 +33,7 @@ type hookInput struct {
 
 // HandleHook processes a Claude Code hook event. This replaces claude-status.sh.
 // It resolves the current tmux pane, reads stdin JSON, and writes status files.
-func HandleHook(hookType string) {
+func HandleHook(hookType string, providers ...Provider) {
 	if os.Getenv("TMUX") == "" {
 		return // not in tmux, nothing to do
 	}
@@ -59,6 +62,16 @@ func HandleHook(hookType string) {
 	if sessionID == "" {
 		return
 	}
+	provider := ProviderClaude
+	if len(providers) > 0 {
+		provider = providers[0]
+	} else if strings.Contains(input.TranscriptPath, string(filepath.Separator)+".codex"+string(filepath.Separator)) || input.TurnID != "" {
+		provider = ProviderCodex
+	}
+	WriteSessionMeta(SessionMeta{
+		Provider: provider, SessionID: sessionID, TurnID: input.TurnID,
+		TranscriptPath: input.TranscriptPath, CWD: input.CWD, Model: input.Model,
+	}) // best-effort: status tracking must continue if metadata persistence fails
 
 	// Persist pane→session mapping (pane-keyed reverse lookup)
 	os.WriteFile(sessionFilePath(paneID), []byte(sessionID+"\n"), 0o644)

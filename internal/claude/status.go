@@ -70,6 +70,65 @@ func sessionFilePath(paneID string) string {
 	return filepath.Join(statusDir(), paneID+".session")
 }
 
+type SessionMeta struct {
+	Provider       Provider `json:"provider"`
+	SessionID      string   `json:"sessionID"`
+	TurnID         string   `json:"turnID,omitempty"`
+	TranscriptPath string   `json:"transcriptPath,omitempty"`
+	CWD            string   `json:"cwd,omitempty"`
+	Model          string   `json:"model,omitempty"`
+}
+
+func metaFilePath(sessionID string) string {
+	return filepath.Join(statusDir(), sessionID+".meta.json")
+}
+
+func ReadSessionMeta(sessionID string) SessionMeta {
+	data, err := os.ReadFile(metaFilePath(sessionID))
+	if err != nil {
+		return SessionMeta{Provider: ProviderClaude, SessionID: sessionID}
+	}
+	var meta SessionMeta
+	if json.Unmarshal(data, &meta) != nil {
+		return SessionMeta{Provider: ProviderClaude, SessionID: sessionID}
+	}
+	meta.Provider = ParseProvider(string(meta.Provider))
+	if meta.SessionID == "" {
+		meta.SessionID = sessionID
+	}
+	return meta
+}
+
+func WriteSessionMeta(meta SessionMeta) error {
+	if meta.SessionID == "" {
+		return fmt.Errorf("session ID is required")
+	}
+	previous := ReadSessionMeta(meta.SessionID)
+	if meta.Provider == "" {
+		meta.Provider = previous.Provider
+	}
+	if meta.TurnID == "" {
+		meta.TurnID = previous.TurnID
+	}
+	if meta.TranscriptPath == "" {
+		meta.TranscriptPath = previous.TranscriptPath
+	}
+	if meta.CWD == "" {
+		meta.CWD = previous.CWD
+	}
+	if meta.Model == "" {
+		meta.Model = previous.Model
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(statusDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(metaFilePath(meta.SessionID), data, 0o644)
+}
+
 func ReadSessionID(paneID string) string {
 	data, err := os.ReadFile(sessionFilePath(paneID))
 	if err != nil {
@@ -416,6 +475,7 @@ func RemoveSessionFiles(sessionID string) {
 	os.Remove(skillFilePath(sessionID))
 	os.Remove(tagsFilePath(sessionID))
 	os.Remove(noteFilePath(sessionID))
+	os.Remove(metaFilePath(sessionID))
 }
 
 // RemovePaneMapping removes the pane→session reverse mapping file.
@@ -430,7 +490,7 @@ func MigrateToSessionKey(paneID, sessionID string) {
 		return
 	}
 	dir := statusDir()
-	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags", ".note"}
+	exts := []string{".status", ".hooks", ".lastmsg", ".queue", ".stopreason", ".waiting", ".compactcount", ".lastaction", ".skill", ".tags", ".note", ".meta.json"}
 	for _, ext := range exts {
 		oldPath := filepath.Join(dir, paneID+ext)
 		newPath := filepath.Join(dir, sessionID+ext)

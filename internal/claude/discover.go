@@ -52,13 +52,22 @@ func buildProcessTree() (map[int][]processInfo, map[int]string) {
 // as the pane command (e.g. `cd dir && claude`), pane_pid IS the claude PID and
 // has no shell parent, so it would otherwise be invisible.
 func findClaudeInTree(tree map[int][]processInfo, comm map[int]string, parentPID int) int {
-	if comm[parentPID] == "claude" {
+	return findProviderInTree(tree, comm, parentPID, ProviderClaude)
+}
+
+func findProviderInTree(tree map[int][]processInfo, comm map[int]string, parentPID int, provider Provider) int {
+	target := string(provider)
+	if comm[parentPID] == target {
 		return parentPID
 	}
-	for _, child := range tree[parentPID] {
-		if child.Comm == "claude" {
+	queue := append([]processInfo(nil), tree[parentPID]...)
+	for len(queue) > 0 {
+		child := queue[0]
+		queue = queue[1:]
+		if child.Comm == target {
 			return child.PID
 		}
+		queue = append(queue, tree[child.PID]...)
 	}
 	return 0
 }
@@ -138,7 +147,14 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	var sessions []ClaudeSession
 	for _, p := range panes {
 		sessionID := ReadSessionID(p.PaneID)
-		pid := findClaudeInTree(procTree, procComm, p.PanePID)
+		if sessionID == "" {
+			if pid := findProviderInTree(procTree, procComm, p.PanePID, ProviderCodex); pid != 0 {
+				sessions = append(sessions, buildUnregisteredCodexSession(p, pid, projectCodes))
+			}
+			continue
+		}
+		meta := ReadSessionMeta(sessionID)
+		pid := findProviderInTree(procTree, procComm, p.PanePID, meta.Provider)
 		if pid == 0 {
 			if sessionID == "" {
 				continue
@@ -219,6 +235,25 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 	return sessions, nil
 }
 
+func buildUnregisteredCodexSession(p tmux.PaneInfo, pid int, projectCodes map[string]string) ClaudeSession {
+	project := filepath.Base(p.CurrentPath)
+	return ClaudeSession{
+		Provider:    ProviderCodex,
+		PaneID:      p.PaneID,
+		Status:      StatusUserTurn,
+		Project:     project,
+		ProjectCode: projectCodes[project],
+		CWD:         p.CurrentPath,
+		GitBranch:   getGitBranchCached(p.CurrentPath),
+		TmuxSession: p.SessionName,
+		TmuxWindow:  p.WindowIndex,
+		TmuxPane:    p.PaneIndex,
+		PID:         pid,
+		CreatedAt:   p.PaneCreated,
+		LastChanged: p.PaneCreated,
+	}
+}
+
 // parseWorktreeCWD detects if cwd is inside a Claude Code worktree
 // (i.e. contains /.claude/worktrees/<name>). Returns the root repo path,
 // worktree name, and whether it matched.
@@ -244,26 +279,33 @@ func parseWorktreeCWD(cwd string) (rootPath, name string, ok bool) {
 
 func buildSession(p tmux.PaneInfo, pid int, status Status, laterByPane map[string]LaterRecord, projectCodes map[string]string) ClaudeSession {
 	sessionID := ReadSessionID(p.PaneID)
+	meta := ReadSessionMeta(sessionID)
 	s := ClaudeSession{
-		PaneID:      p.PaneID,
-		Status:      status,
-		Project:     filepath.Base(p.CurrentPath),
-		CWD:         p.CurrentPath,
-		GitBranch:   getGitBranchCached(p.CurrentPath),
-		TmuxSession: p.SessionName,
-		TmuxWindow:  p.WindowIndex,
-		TmuxPane:    p.PaneIndex,
-		PID:         pid,
-		CreatedAt:   p.PaneCreated,
-		SessionID:   sessionID,
+		Provider:       meta.Provider,
+		Model:          meta.Model,
+		TurnID:         meta.TurnID,
+		TranscriptPath: meta.TranscriptPath,
+		PaneID:         p.PaneID,
+		Status:         status,
+		Project:        filepath.Base(p.CurrentPath),
+		CWD:            p.CurrentPath,
+		GitBranch:      getGitBranchCached(p.CurrentPath),
+		TmuxSession:    p.SessionName,
+		TmuxWindow:     p.WindowIndex,
+		TmuxPane:       p.PaneIndex,
+		PID:            pid,
+		CreatedAt:      p.PaneCreated,
+		SessionID:      sessionID,
 	}
 
 	// Detect worktree sessions and fix project grouping
-	if rootPath, wtName, ok := parseWorktreeCWD(p.CurrentPath); ok {
-		s.IsWorktree = true
-		s.WorktreeName = wtName
-		s.WorktreeRootProjectPath = rootPath
-		s.Project = filepath.Base(rootPath)
+	if meta.Provider == ProviderClaude {
+		if rootPath, wtName, ok := parseWorktreeCWD(p.CurrentPath); ok {
+			s.IsWorktree = true
+			s.WorktreeName = wtName
+			s.WorktreeRootProjectPath = rootPath
+			s.Project = filepath.Base(rootPath)
+		}
 	}
 
 	// Stamp the project code after Project is finalized (incl. worktree

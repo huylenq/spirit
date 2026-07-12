@@ -14,7 +14,10 @@ func (m Model) execPromptRelay() (Model, tea.Cmd) {
 }
 
 func (m Model) execRenamePrompt() (Model, tea.Cmd) {
-	if _, ok := m.sidebar.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
+		if isCodexSession(s) {
+			return m, codexUnsupported("rename")
+		}
 		m.state = StateRenamePrompt
 		m.renamePrompt.Activate()
 	}
@@ -53,7 +56,10 @@ func (m Model) execProjectCodeEdit() (Model, tea.Cmd) {
 }
 
 func (m Model) execQueue() (Model, tea.Cmd) {
-	if _, ok := m.sidebar.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
+		if isCodexSession(s) {
+			return m, codexUnsupported("queue")
+		}
 		m.state = StateQueueRelay
 		m.queueCursor = -1 // start with text input focused
 		m.queueRelay.Activate()
@@ -63,6 +69,9 @@ func (m Model) execQueue() (Model, tea.Cmd) {
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok {
+		if isCodexSession(s) {
+			return m, codexUnsupported("Later")
+		}
 		if s.LaterID != "" {
 			// Toggle: unlater to restore real status
 			paneID, laterID := s.PaneID, s.LaterID
@@ -89,7 +98,10 @@ func (m Model) execLater() (Model, tea.Cmd) {
 }
 
 func (m Model) execLaterKill() (Model, tea.Cmd) {
-	if _, ok := m.sidebar.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
+		if isCodexSession(s) {
+			return m, codexUnsupported("Later + kill")
+		}
 		m.state = StateLaterWait
 		m.laterKillMode = true
 		m.laterRelay.Activate()

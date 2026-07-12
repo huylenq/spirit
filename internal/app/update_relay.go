@@ -89,6 +89,9 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Bang mode: ! as first character sends ! keystroke to pane (bash mode) and stays in relay
 		if msg.String() == "!" && m.relay.Value() == "" {
+			if s, ok := m.sidebar.SelectedItem(); ok && isCodexSession(s) {
+				return m, codexUnsupported("bang mode")
+			}
 			m.relay.EnterBangMode()
 			if s, ok := m.sidebar.SelectedItem(); ok {
 				return m, sendBangKey(s.PaneID)
@@ -297,7 +300,7 @@ func (m Model) handleKeyTagRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		lastTag := s.Tags[len(s.Tags)-1]
-		tags := s.Tags[:len(s.Tags)-1:len(s.Tags)-1] // cap to prevent backing-array reuse
+		tags := s.Tags[: len(s.Tags)-1 : len(s.Tags)-1] // cap to prevent backing-array reuse
 		return m, m.applyTagsCmd(s.SessionID, tags, "-#"+lastTag)
 	default:
 		ti := m.tagRelay.TextInput()

@@ -46,9 +46,17 @@ func hasSessionID(m *Model) bool {
 	return ok && s.SessionID != ""
 }
 
+func isCodexSession(s claude.ClaudeSession) bool {
+	return s.Provider == claude.ProviderCodex
+}
+
+func codexUnsupported(action string) tea.Cmd {
+	return func() tea.Msg { return flashErrorMsg(action + " is not available for Codex sessions in v1") }
+}
+
 func canCommit(m *Model) bool {
 	s, ok := m.sidebar.SelectedItem()
-	return ok && s.Status == claude.StatusUserTurn && !s.CommitDonePending
+	return ok && !isCodexSession(s) && s.Status == claude.StatusUserTurn && !s.CommitDonePending
 }
 
 func (m Model) execSearch() (Model, tea.Cmd) {
