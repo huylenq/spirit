@@ -1,15 +1,13 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/copilot"
 )
 
@@ -46,8 +44,7 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 		if err != nil {
 			return // error + done already sent by runCopilotPromptStreaming
 		}
-		// Keep in-memory history for live TUI display during this session.
-		// On TUI reopen, handleCopilotHistory reads from OpenClaw's JSONL instead.
+		// Persist the exchange for TUI display across reopens and daemon restarts.
 		now := time.Now()
 		d.appendCopilotHistory(
 			CopilotHistoryMsg{Role: "user", Content: req.Message, Time: now},
@@ -60,14 +57,10 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 }
 
 // handleCopilotHistory returns the copilot conversation for TUI restore on open.
-// Reads from OpenClaw's JSONL session transcript (source of truth); falls back to
-// in-memory history if the ACP session file is unavailable.
+// Served from the daemon's in-memory history, which is loaded from chat_history.json
+// at startup so it survives both TUI reopen and daemon restart. Kept cheap (no
+// subprocess) because the TUI fetches this eagerly on every launch.
 func (d *Daemon) handleCopilotHistory() *Response {
-	if msgs := readACPHistory(); len(msgs) > 0 {
-		r := resultResponse(CopilotHistoryData{Messages: msgs})
-		return &r
-	}
-	// Fallback: in-memory (e.g. ACP session not yet written to disk)
 	d.copilotHistoryMu.RLock()
 	msgs := make([]CopilotHistoryMsg, len(d.copilotHistory))
 	copy(msgs, d.copilotHistory)
@@ -76,26 +69,23 @@ func (d *Daemon) handleCopilotHistory() *Response {
 	return &r
 }
 
-// handleCopilotClearHistory wipes the in-memory history and resets the ACP session
-// so OpenClaw starts a fresh conversation (triggered by /new in the TUI).
+// handleCopilotClearHistory wipes display history and resets the Hermes session so
+// the next prompt starts a fresh conversation (triggered by /new in the TUI).
 func (d *Daemon) handleCopilotClearHistory() *Response {
 	d.copilotHistoryMu.Lock()
 	d.copilotHistory = nil
 	d.copilotHistoryMu.Unlock()
+	os.Remove(copilotHistoryFile()) //nolint:errcheck
 
-	// Kill the ACP subprocess so the next prompt starts a fresh OpenClaw session
-	d.acpClient.Stop()
-
-	// Remove the session mapping from OpenClaw's sessions.json so that
-	// readACPHistory() won't load stale history if the TUI is reopened
-	// before a new prompt creates a fresh session.
-	clearACPSessionMapping()
+	// Kill the ACP subprocess and forget the Hermes session UUID so the next
+	// prompt starts a brand-new conversation instead of resuming the old one.
+	d.acpClient.ResetSession()
 
 	r := resultResponse(map[string]string{"status": "cleared"})
 	return &r
 }
 
-// runCopilotPromptStreaming sends a prompt via the ACP client (openclaw acp subprocess),
+// runCopilotPromptStreaming sends a prompt via the ACP client (hermes acp subprocess),
 // streaming events to subscribers in real-time. Returns the full accumulated text
 // response for history persistence. Always sends a "done" event as the final stream event.
 func (d *Daemon) runCopilotPromptStreaming(ctx context.Context, prompt string) (string, error) {
@@ -162,167 +152,49 @@ func (d *Daemon) clearCopilotCancel() {
 	d.copilotMu.Unlock()
 }
 
-// appendCopilotHistory appends messages and trims to max (in-memory only).
-// Used for live TUI display during this daemon session; OpenClaw's JSONL is authoritative.
+// appendCopilotHistory appends messages, trims to max, and persists to disk so the
+// conversation survives TUI reopen and daemon restart.
 func (d *Daemon) appendCopilotHistory(msgs ...CopilotHistoryMsg) {
 	d.copilotHistoryMu.Lock()
 	d.copilotHistory = append(d.copilotHistory, msgs...)
 	if len(d.copilotHistory) > maxCopilotHistory {
 		d.copilotHistory = d.copilotHistory[len(d.copilotHistory)-maxCopilotHistory:]
 	}
+	snapshot := make([]CopilotHistoryMsg, len(d.copilotHistory))
+	copy(snapshot, d.copilotHistory)
 	d.copilotHistoryMu.Unlock()
+
+	saveCopilotHistory(snapshot)
 }
 
-// clearACPSessionMapping removes the copilot entry from OpenClaw's sessions.json.
-// This prevents readACPHistory from loading stale history after /new clears the session.
-func clearACPSessionMapping() {
-	parts := strings.SplitN(acpSessionKey, ":", 3)
-	if len(parts) != 3 {
-		return
-	}
-	agentID := parts[1]
-
-	home, _ := os.UserHomeDir()
-	sessionsFile := filepath.Join(home, ".openclaw", "agents", agentID, "sessions", "sessions.json")
-
-	data, err := os.ReadFile(sessionsFile)
-	if err != nil {
-		return
-	}
-	var sessionMap map[string]json.RawMessage
-	if err := json.Unmarshal(data, &sessionMap); err != nil {
-		return
-	}
-	if _, ok := sessionMap[acpSessionKey]; !ok {
-		return
-	}
-	delete(sessionMap, acpSessionKey)
-	updated, err := json.Marshal(sessionMap)
-	if err != nil {
-		return
-	}
-	os.WriteFile(sessionsFile, updated, 0644) //nolint:errcheck
+// copilotHistoryFile is the on-disk store for copilot display history
+// (~/.spirit/copilot/chat_history.json).
+func copilotHistoryFile() string {
+	return filepath.Join(claude.StatusDir(), "copilot", "chat_history.json")
 }
 
-// readACPHistory reads the current copilot conversation from OpenClaw's JSONL session
-// transcript. This is the source of truth: the actual messages sent between spirit and
-// the OpenClaw agent, persisted by OpenClaw automatically.
-func readACPHistory() []CopilotHistoryMsg {
-	// Parse agent ID from "agent:development:copilot"
-	parts := strings.SplitN(acpSessionKey, ":", 3)
-	if len(parts) != 3 {
-		return nil
-	}
-	agentID := parts[1]
-
-	home, _ := os.UserHomeDir()
-	sessionsDir := filepath.Join(home, ".openclaw", "agents", agentID, "sessions")
-
-	// sessions.json maps session key → current session UUID
-	sessionsData, err := os.ReadFile(filepath.Join(sessionsDir, "sessions.json"))
+// loadCopilotHistory reads persisted display history at daemon startup.
+func loadCopilotHistory() []CopilotHistoryMsg {
+	data, err := os.ReadFile(copilotHistoryFile())
 	if err != nil {
 		return nil
 	}
-	var sessionMap map[string]struct {
-		SessionID string `json:"sessionId"`
-	}
-	if err := json.Unmarshal(sessionsData, &sessionMap); err != nil {
-		log.Printf("readACPHistory: parse sessions.json: %v", err)
-		return nil
-	}
-	entry, ok := sessionMap[acpSessionKey]
-	if !ok || entry.SessionID == "" {
-		return nil
-	}
-
-	jsonlData, err := os.ReadFile(filepath.Join(sessionsDir, entry.SessionID+".jsonl"))
-	if err != nil {
-		return nil
-	}
-	return parseACPSessionHistory(jsonlData)
-}
-
-// parseACPSessionHistory parses OpenClaw's JSONL session transcript into display messages.
-// Only user and assistant turns are kept; tool results, metadata events, and heartbeats
-// are discarded.
-func parseACPSessionHistory(data []byte) []CopilotHistoryMsg {
 	var msgs []CopilotHistoryMsg
-	for _, line := range bytes.Split(data, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		var record struct {
-			Type      string `json:"type"`
-			Timestamp string `json:"timestamp"`
-			Message   struct {
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal(line, &record); err != nil || record.Type != "message" {
-			continue
-		}
-		role := record.Message.Role
-		if role != "user" && role != "assistant" {
-			continue
-		}
-		text := extractACPMessageText(role, record.Message.Content)
-		if text == "" {
-			continue
-		}
-		displayRole := role
-		if role == "assistant" {
-			displayRole = "copilot"
-		}
-		ts, _ := time.Parse(time.RFC3339Nano, record.Timestamp)
-		msgs = append(msgs, CopilotHistoryMsg{Role: displayRole, Content: text, Time: ts})
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		return nil
 	}
 	return msgs
 }
 
-// extractACPMessageText extracts displayable text from an ACP message content array.
-//
-// User messages are double-wrapped:
-//  1. ACP sender envelope: "Sender (untrusted metadata):\n```json\n...\n```\n[timestamp]\n\n<body>"
-//  2. spirit preamble: "<live-sessions ...>...</live-sessions>\n\n<actual user text>"
-//
-// Assistant messages: concatenate text blocks; skip thinking blocks.
-func extractACPMessageText(role string, contentRaw json.RawMessage) string {
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+// saveCopilotHistory writes display history to disk (best-effort).
+func saveCopilotHistory(msgs []CopilotHistoryMsg) {
+	path := copilotHistoryFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
 	}
-	if err := json.Unmarshal(contentRaw, &blocks); err != nil {
-		return ""
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		return
 	}
-	var parts []string
-	for _, block := range blocks {
-		if block.Type != "text" {
-			continue // skip thinking blocks for assistant; only text blocks matter
-		}
-		text := block.Text
-		if role == "user" {
-			// Strip ACP sender envelope: everything up to and including the closing ``` + newline
-			if idx := strings.Index(text, "\n```\n"); idx != -1 {
-				text = strings.TrimSpace(text[idx+5:])
-				// Skip the [Day timestamp] line that follows the envelope
-				if nl := strings.Index(text, "\n"); nl != -1 {
-					text = strings.TrimSpace(text[nl+1:])
-				}
-			}
-			// Strip spirit preamble: "<live-sessions ...>...</live-sessions>\n\n<user text>"
-			if idx := strings.Index(text, "</live-sessions>"); idx != -1 {
-				text = strings.TrimSpace(text[idx+len("</live-sessions>"):])
-			}
-			// Discard heartbeat-only messages (sent by copilot heartbeat system)
-			if text == "#" {
-				continue
-			}
-		}
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n")
+	os.WriteFile(path, data, 0o644) //nolint:errcheck
 }

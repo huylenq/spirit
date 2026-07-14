@@ -9,15 +9,43 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/huylenq/spirit/internal/claude"
 )
 
-const acpSessionKey = "agent:development:copilot"
+// hermesSessionFile stores the Hermes ACP session UUID so the copilot conversation
+// resumes across daemon restarts. Hermes has no stable --session key (unlike OpenClaw),
+// so we persist the UUID returned by session/new and replay it via session/load.
+func hermesSessionFile() string {
+	return filepath.Join(claude.StatusDir(), "copilot", "hermes_session")
+}
 
-// acpClient manages a long-lived ACP subprocess (openclaw acp) for copilot communication.
+func readHermesSessionID() string {
+	data, err := os.ReadFile(hermesSessionFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeHermesSessionID(id string) {
+	path := hermesSessionFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	os.WriteFile(path, []byte(id), 0o644) //nolint:errcheck
+}
+
+func clearHermesSessionID() {
+	os.Remove(hermesSessionFile()) //nolint:errcheck
+}
+
+// acpClient manages a long-lived ACP subprocess (hermes acp) for copilot communication.
 // It speaks JSON-RPC 2.0 over newline-delimited stdio.
 //
 // The client is lazy: the subprocess starts on the first Prompt() call.
@@ -104,7 +132,7 @@ func (c *acpClient) ensureReady() error {
 	// Kill any stale process
 	c.stopLocked()
 
-	cmd := exec.Command("openclaw", "acp", "--session", acpSessionKey)
+	cmd := exec.Command("hermes", "acp")
 	cmd.Stderr = log.Writer() // route ACP bridge errors to daemon log
 
 	stdin, err := cmd.StdinPipe()
@@ -122,7 +150,7 @@ func (c *acpClient) ensureReady() error {
 	if err := cmd.Start(); err != nil {
 		stdin.Close()
 		c.mu.Unlock()
-		return fmt.Errorf("start openclaw acp: %w", err)
+		return fmt.Errorf("start hermes acp: %w", err)
 	}
 
 	c.cmd = cmd
@@ -192,7 +220,63 @@ func (c *acpClient) handshake() error {
 		return fmt.Errorf("initialize: %w", err)
 	}
 
-	// 2. session/new
+	// 2. Resume the previous conversation if we have a persisted session UUID,
+	// otherwise start a fresh one. Hermes advertises loadSession, so session/load
+	// replays the prior transcript as session/update notifications (consumed
+	// silently here) and leaves the agent with the full conversation context.
+	if sid := readHermesSessionID(); sid != "" {
+		if err := c.loadSession(sid); err != nil {
+			log.Printf("acp: session/load %s failed (%v); starting fresh session", sid, err)
+			clearHermesSessionID()
+		} else {
+			return nil
+		}
+	}
+	return c.newSession()
+}
+
+// loadSession resumes an existing Hermes session by UUID. Hermes replays the prior
+// transcript as session/update notifications, which are discarded here — display
+// history is served from the daemon's persisted chat_history.json, not this replay.
+func (c *acpClient) loadSession(sid string) error {
+	loadID := c.nextID.Add(1)
+	if err := c.send(acpRequest{
+		JSONRPC: "2.0",
+		ID:      loadID,
+		Method:  "session/load",
+		Params: map[string]any{
+			"sessionId":  sid,
+			"cwd":        os.Getenv("HOME"),
+			"mcpServers": []any{},
+		},
+	}); err != nil {
+		return fmt.Errorf("send session/load: %w", err)
+	}
+
+	for c.scanner.Scan() {
+		var msg acpMessage
+		if err := json.Unmarshal(c.scanner.Bytes(), &msg); err != nil {
+			log.Printf("acp handshake: parse error: %v", err)
+			continue
+		}
+		if msg.ID != nil && *msg.ID == loadID {
+			if msg.Error != nil {
+				return fmt.Errorf("session/load: %s", msg.Error.Message)
+			}
+			c.mu.Lock()
+			c.sessionID = sid
+			c.mu.Unlock()
+			log.Printf("acp: resumed session=%s", sid)
+			return nil
+		}
+		// Skip replayed transcript notifications during load
+	}
+	return fmt.Errorf("connection closed during session/load")
+}
+
+// newSession creates a fresh Hermes session and persists its UUID so the next
+// daemon start can resume it via session/load.
+func (c *acpClient) newSession() error {
 	newID := c.nextID.Add(1)
 	if err := c.send(acpRequest{
 		JSONRPC: "2.0",
@@ -225,6 +309,7 @@ func (c *acpClient) handshake() error {
 			c.mu.Lock()
 			c.sessionID = result.SessionID
 			c.mu.Unlock()
+			writeHermesSessionID(result.SessionID)
 			return nil
 		}
 		// Skip notifications during handshake
@@ -361,10 +446,20 @@ func (c *acpClient) Prompt(ctx context.Context, text string, onUpdate func(Copil
 func (c *acpClient) handleAgentRequest(msg acpMessage) {
 	switch msg.Method {
 	case "session/request_permission":
+		// ACP spec: reply with the selected option's id. Hermes offers
+		// allow_once / allow_session / allow_always / deny options; pick the
+		// broadest allow-kind option to auto-approve the tool call.
+		optionID := selectAllowOption(msg.Params)
+		var outcome map[string]any
+		if optionID != "" {
+			outcome = map[string]any{"outcome": "selected", "optionId": optionID}
+		} else {
+			outcome = map[string]any{"outcome": "cancelled"}
+		}
 		c.send(acpResponse{ //nolint:errcheck
 			JSONRPC: "2.0",
 			ID:      *msg.ID,
-			Result:  map[string]bool{"approved": true},
+			Result:  map[string]any{"outcome": outcome},
 		})
 	default:
 		log.Printf("acp: unknown agent request: %s", msg.Method)
@@ -374,6 +469,29 @@ func (c *acpClient) handleAgentRequest(msg acpMessage) {
 			Error:   &acpError{Code: -32601, Message: "not supported: " + msg.Method},
 		})
 	}
+}
+
+// selectAllowOption parses a session/request_permission params blob and returns the
+// id of the option with the broadest allow-kind (allow_always > allow_session >
+// allow_once). Returns "" if no allow option is offered.
+func selectAllowOption(params json.RawMessage) string {
+	var p struct {
+		Options []struct {
+			OptionID string `json:"optionId"`
+			Kind     string `json:"kind"`
+		} `json:"options"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return ""
+	}
+	rank := map[string]int{"allow_always": 3, "allow_session": 2, "allow_once": 1}
+	best, bestRank := "", 0
+	for _, opt := range p.Options {
+		if r := rank[opt.Kind]; r > bestRank {
+			best, bestRank = opt.OptionID, r
+		}
+	}
+	return best
 }
 
 // stopLocked kills the ACP subprocess. Caller must hold c.mu.
@@ -400,6 +518,13 @@ func (c *acpClient) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stopLocked()
+}
+
+// ResetSession kills the subprocess and forgets the persisted Hermes session UUID
+// so the next Prompt starts a fresh conversation (triggered by /new in the TUI).
+func (c *acpClient) ResetSession() {
+	c.Stop()
+	clearHermesSessionID()
 }
 
 // --- ACP update → CopilotStreamData conversion ---

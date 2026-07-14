@@ -10,7 +10,7 @@ import (
 
 // BuildSessionsPreamble constructs a lightweight preamble with just live session state.
 // This is the only daemon-only data worth injecting — everything else the agent can
-// fetch via spirit agent commands or already knows from OpenClaw's context.
+// fetch via spirit agent commands or already knows from Hermes' context.
 func BuildSessionsPreamble(sessions []claude.ClaudeSession) string {
 	var b strings.Builder
 	b.WriteString("<live-sessions time=\"")

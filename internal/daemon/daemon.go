@@ -13,12 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/copilot"
 )
 
 type subscriber struct {
-	ch      chan []claude.ClaudeSession
+	ch      chan []agent.Session
 	copilot chan CopilotStreamData // buffered; streaming events from copilot subprocess
 	done    chan struct{}
 }
@@ -44,8 +45,10 @@ type pendingPromptEntry struct {
 
 // Daemon is the long-lived background process that polls sessions and serves clients.
 type Daemon struct {
+	providers *agent.Registry
+
 	mu       sync.RWMutex
-	sessions []claude.ClaudeSession
+	sessions []agent.Session
 	version  uint64
 
 	subMu       sync.Mutex
@@ -103,6 +106,7 @@ type Daemon struct {
 // Run starts the daemon: acquires lock, cleans up stale socket, writes PID, listens, polls.
 func Run(info DaemonInfo) error {
 	d := &Daemon{
+		providers:          agent.NewDefaultRegistry(),
 		subscribers:        make(map[*subscriber]struct{}),
 		commitDonePanes:    make(map[string]commitDoneEntry),
 		queuePanes:         make(map[string][]string),
@@ -160,7 +164,8 @@ func Run(info DaemonInfo) error {
 	// Initialize copilot subsystem
 	d.copilotJournal = copilot.NewJournal(copilot.EventsDir())
 	d.copilotPreamble.Store(true)
-	d.acpClient = &acpClient{} // lazy-started on first copilot prompt
+	d.acpClient = &acpClient{}                 // lazy-started on first copilot prompt
+	d.copilotHistory = loadCopilotHistory()    // restore display history from disk
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})
@@ -207,7 +212,7 @@ func (d *Daemon) nudge() {
 
 // notifySubscribers pushes the latest sidebar to all subscribers.
 // Non-blocking per subscriber: drops stale update, sends latest.
-func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
+func (d *Daemon) notifySubscribers(sessions []agent.Session) {
 	d.subMu.Lock()
 	for sub := range d.subscribers {
 		select {
@@ -225,7 +230,7 @@ func (d *Daemon) notifySubscribers(sessions []claude.ClaudeSession) {
 
 func (d *Daemon) addSubscriber() *subscriber {
 	sub := &subscriber{
-		ch:      make(chan []claude.ClaudeSession, 1),
+		ch:      make(chan []agent.Session, 1),
 		copilot: make(chan CopilotStreamData, 256),
 		done:    make(chan struct{}),
 	}
@@ -255,7 +260,7 @@ func (d *Daemon) removeSubscriber(sub *subscriber) {
 	d.subMu.Unlock()
 }
 
-func (d *Daemon) currentSessions() []claude.ClaudeSession {
+func (d *Daemon) currentSessions() []agent.Session {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.sessions
