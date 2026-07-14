@@ -1,7 +1,9 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -68,15 +70,15 @@ func CapturePaneContent(paneID string) (string, error) {
 }
 
 type PaneGeometry struct {
-	PaneID                            string
-	SessionName                       string
-	WindowIndex                       int
-	WindowName                        string
-	PaneTitle                         string
-	PaneIndex                         int
-	Left, Top                         int
-	Width, Height                     int
-	WindowWidth, WindowHeight         int
+	PaneID                    string
+	SessionName               string
+	WindowIndex               int
+	WindowName                string
+	PaneTitle                 string
+	PaneIndex                 int
+	Left, Top                 int
+	Width, Height             int
+	WindowWidth, WindowHeight int
 }
 
 func ListPaneGeometry(sessionName string) ([]PaneGeometry, error) {
@@ -179,13 +181,78 @@ func SendKeys(paneID string, keys ...string) error {
 	return exec.Command("tmux", args...).Run()
 }
 
-// SendKeysLiteral sends text literally to a tmux pane (using -l flag to prevent
-// tmux from interpreting special sequences), then sends Enter separately.
-func SendKeysLiteral(paneID string, text string) error {
+// SendLiteral writes text without submitting it. Callers decide which key, if
+// any, completes the input.
+func SendLiteral(paneID, text string) error {
 	if err := exec.Command("tmux", "send-keys", "-t", paneID, "-l", text).Run(); err != nil {
 		return fmt.Errorf("send-keys -l: %w", err)
 	}
-	if err := exec.Command("tmux", "send-keys", "-t", paneID, "Enter").Run(); err != nil {
+	return nil
+}
+
+// SendNamedKeys sends tmux key names such as Enter, C-m, or Escape.
+func SendNamedKeys(paneID string, keys ...string) error { return SendKeys(paneID, keys...) }
+
+// PasteText loads text through a tmux buffer and pastes it into the pane. This
+// preserves multiline and Unicode input and lets terminal applications observe
+// bracketed-paste semantics when they have enabled it.
+func PasteText(ctx context.Context, paneID, text string) error {
+	bufferName := fmt.Sprintf("spirit-%d", time.Now().UnixNano())
+	load := exec.CommandContext(ctx, "tmux", "load-buffer", "-b", bufferName, "-")
+	stdin, err := load.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("tmux load-buffer stdin: %w", err)
+	}
+	if err := load.Start(); err != nil {
+		return fmt.Errorf("tmux load-buffer: %w", err)
+	}
+	if _, err := io.WriteString(stdin, text); err != nil {
+		stdin.Close()
+		return fmt.Errorf("write tmux buffer: %w", err)
+	}
+	if err := stdin.Close(); err != nil {
+		return fmt.Errorf("close tmux buffer: %w", err)
+	}
+	if err := load.Wait(); err != nil {
+		return fmt.Errorf("tmux load-buffer: %w", err)
+	}
+	if err := exec.CommandContext(ctx, "tmux", "paste-buffer", "-d", "-b", bufferName, "-t", paneID).Run(); err != nil {
+		exec.Command("tmux", "delete-buffer", "-b", bufferName).Run() //nolint:errcheck
+		return fmt.Errorf("tmux paste-buffer: %w", err)
+	}
+	return nil
+}
+
+// WaitForPane polls captured pane content until predicate succeeds or ctx ends.
+func WaitForPane(ctx context.Context, paneID string, interval time.Duration, predicate func(string) bool) error {
+	if interval <= 0 {
+		interval = 25 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		content, err := CapturePaneContent(paneID)
+		if err != nil {
+			return err
+		}
+		if predicate(content) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// SendKeysLiteral sends text literally to a tmux pane (using -l flag to prevent
+// tmux from interpreting special sequences), then sends Enter separately.
+func SendKeysLiteral(paneID string, text string) error {
+	if err := SendLiteral(paneID, text); err != nil {
+		return err
+	}
+	if err := SendNamedKeys(paneID, "Enter"); err != nil {
 		return fmt.Errorf("send-keys Enter: %w", err)
 	}
 	return nil
