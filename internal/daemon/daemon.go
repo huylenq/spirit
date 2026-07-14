@@ -158,14 +158,21 @@ func Run(info DaemonInfo) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
+	// Persistent daemon: survive a controlling-terminal close (e.g. the tmux
+	// pane/popup that launched it via `make`). Without this, SIGHUP's default
+	// disposition would kill the daemon and take the hermes ACP child with it.
+	// Intended shutdown stays on SIGTERM (`daemon --stop`) and the idle timeout.
+	signal.Ignore(syscall.SIGHUP)
+
 	// Recover queued messages from disk
 	d.recoverQueue()
 
 	// Initialize copilot subsystem
 	d.copilotJournal = copilot.NewJournal(copilot.EventsDir())
 	d.copilotPreamble.Store(true)
-	d.acpClient = &acpClient{}                 // lazy-started on first copilot prompt
-	d.copilotHistory = loadCopilotHistory()    // restore display history from disk
+	secureHermesSessionFile()               // migrate legacy state permissions
+	d.acpClient = &acpClient{}              // lazy-started on first copilot prompt
+	d.copilotHistory = loadCopilotHistory() // restore display history from disk
 
 	// Start polling goroutine
 	pollStop := make(chan struct{})
