@@ -754,50 +754,39 @@ func wrapToCappedLines(text string, width, maxLines int) []string {
 	return out
 }
 
-// assembleAside stacks the aside sections vertically with recap + note bottom-
-// docked: outline (top, padded), then recap, then note. In docked-left mode an
-// h-separator is drawn between adjacent sections. Returns the aside string and
-// the row at which the note panel begins (-1 when no note is shown), used for
-// the v-separator color transition in docked-left.
+// assembleAside stacks the aside sections vertically: outline (top), then recap
+// directly beneath it (the recap panel draws its own top separator), then note
+// bottom-docked to the panel floor. In docked-left mode an h-separator is drawn
+// between adjacent sections. Returns the aside string and the row at which the
+// note panel begins (-1 when no note is shown), used for the v-separator color
+// transition in docked-left.
 func (m *DetailModel) assembleAside(width int, outline, recap, note string, targetHeight int) (string, int) {
 	isDockedLeft := m.chatOutlineMode == chatOutlineDockedLeft
 
-	// Heights of each section. Recap and note panels include their own top
-	// separator now (pulse-style), so no inter-panel separator slot is needed.
-	outlineH := 0
-	if outline != "" {
-		outlineH = lipgloss.Height(outline)
-	}
-	recapH := 0
-	if recap != "" {
-		recapH = lipgloss.Height(recap)
-	}
 	noteH := 0
 	if note != "" {
 		noteH = lipgloss.Height(note)
-	}
-
-	// Only pad when something is being bottom-docked — otherwise let the outline
-	// stay compact (the contentBox's own border will close at its natural height).
-	hasBottom := recap != "" || note != ""
-	filler := 0
-	if hasBottom {
-		filler = max(0, targetHeight-outlineH-recapH-noteH)
 	}
 
 	var sections []string
 	if outline != "" {
 		sections = append(sections, outline)
 	}
-	if filler > 0 {
-		sections = append(sections, lipgloss.NewStyle().Height(filler).Render(""))
-	}
+	// Recap sits directly under the outline (it draws its own top separator).
 	if recap != "" {
 		sections = append(sections, recap)
 	}
 
+	// Note stays bottom-docked: pad down to the panel floor with filler.
 	noteVertStart := -1
 	if note != "" {
+		usedH := 0
+		for _, s := range sections {
+			usedH += lipgloss.Height(s)
+		}
+		if filler := max(0, targetHeight-usedH-noteH); filler > 0 {
+			sections = append(sections, lipgloss.NewStyle().Height(filler).Render(""))
+		}
 		if isDockedLeft && m.noteEditing {
 			noteVertStart = 0
 			for _, s := range sections {
