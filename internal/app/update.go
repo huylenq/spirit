@@ -323,7 +323,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.copilot.LoadHistory(uiMsgs)
 		return m, nil
 
+	case CopilotStatusReadyMsg:
+		if msg.Status != nil {
+			if !m.copilotSessionKnown {
+				m.copilot.SetSessionID(msg.Status.SessionID)
+				m.copilotSessionKnown = true
+			}
+			m.applyCopilotModelState(msg.Status.Models)
+		}
+		return m, nil
+
+	case CopilotResetReadyMsg:
+		m.copilot.LoadHistory(nil)
+		m.copilot.SetSessionID("")
+		m.copilot.SetModelState("", nil)
+		m.copilotSessionKnown = true
+		return m, m.fetchCopilotStatus()
+
+	case CopilotModelReadyMsg:
+		if msg.Err != nil {
+			m.copilot.HandleStreamMsg(ui.CopilotStreamMsg{Type: "error", Content: "model: " + msg.Err.Error()})
+			return m, nil
+		}
+		m.applyCopilotModelState(msg.Models)
+		m.copilot.AddInfoMessage("model: " + msg.Models.CurrentModelID)
+		return m, nil
+
 	case CopilotStreamChunkMsg:
+		if msg.Msg.Type == "session" {
+			m.copilotSessionKnown = true
+		}
 		m.copilot.HandleStreamMsg(msg.Msg)
 		// Auto-pop copilot on stream completion if hidden
 		if (msg.Msg.Type == "done" || msg.Msg.Type == "error") && !m.copilotVisible {
@@ -729,6 +758,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle panel drags in progress (motion/release) before anything else.
+		if m.copilotDragMode != copilotDragNone {
+			switch msg.Action {
+			case tea.MouseActionMotion:
+				return m.handleCopilotDragMotion(msg)
+			case tea.MouseActionRelease:
+				return m.handleCopilotDragRelease()
+			}
+			return m, nil
+		}
 		if m.outlineDragging {
 			switch msg.Action {
 			case tea.MouseActionMotion:
@@ -753,8 +791,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelDown:
 			return m.handleMouseWheel(msg, 1)
 		case tea.MouseButtonLeft:
-			if msg.Action == tea.MouseActionPress && m.state == StateNormal {
-				return m.handleMouseClick(msg)
+			if msg.Action == tea.MouseActionPress {
+				if next, handled := m.beginCopilotMouseDrag(msg); handled {
+					return next, nil
+				}
+				if m.state == StateNormal {
+					return m.handleMouseClick(msg)
+				}
 			}
 		}
 		return m, nil
@@ -773,34 +816,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lastKeys = m.lastKeys[len(m.lastKeys)-lastKeysCap:]
 	}
 
-	// alt+' toggles copilot visibility from any state.
-	if msg.String() == "alt+'" {
-		return execToggleCopilot(&m)
+	// alt+' switches copilot mode (float ↔ docked) from any state.
+	if key.Matches(msg, Keys.CopilotSwitchMode) {
+		return execSwitchCopilotMode(&m)
 	}
 
-	// Shift+tab: switch copilot mode (float ↔ docked) from relevant states.
-	if key.Matches(msg, Keys.CopilotMode) {
+	// Shift+tab: toggle copilot visibility (off/on) from relevant states.
+	if key.Matches(msg, Keys.CopilotToggle) {
 		switch m.state {
 		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
-			return execSwitchCopilotMode(&m)
-		}
-	}
-
-	// Double-tab detection: hide copilot if two tabs within threshold.
-	// Only track lastTabTime within copilot-relevant states to avoid false
-	// double-taps when tab is pressed in unrelated states (search, palette, etc.).
-	if key.Matches(msg, Keys.Copilot) {
-		switch m.state {
-		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
-			now := time.Now()
-			if now.Sub(m.lastTabTime) < doubleTabThreshold {
-				m.lastTabTime = time.Time{} // reset to avoid triple-tap
-				if m.copilotVisible {
-					return execHideCopilot(&m)
-				}
-				return execOpenCopilot(&m)
-			}
-			m.lastTabTime = now
+			return execToggleCopilot(&m)
 		}
 	}
 

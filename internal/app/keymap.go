@@ -31,24 +31,24 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 }
 
 type KeyMap struct {
-	Up             key.Binding
-	Down           key.Binding
-	Enter          key.Binding
-	CtrlEnter      key.Binding
-	Search            key.Binding
-	SearchProject     key.Binding
-	ProjectCycleNext  key.Binding
-	ProjectCyclePrev  key.Binding
-	Later          key.Binding
-	LaterKill      key.Binding
-	LaterToggle    key.Binding
-	BacklogToggle  key.Binding
-	ClaudingToggle key.Binding
-	ApplyTitle     key.Binding
-	RenamePrompt   key.Binding
-	ChatOutline    key.Binding
-	Quit           key.Binding
-	Escape         key.Binding
+	Up               key.Binding
+	Down             key.Binding
+	Enter            key.Binding
+	CtrlEnter        key.Binding
+	Search           key.Binding
+	SearchProject    key.Binding
+	ProjectCycleNext key.Binding
+	ProjectCyclePrev key.Binding
+	Later            key.Binding
+	LaterKill        key.Binding
+	LaterToggle      key.Binding
+	BacklogToggle    key.Binding
+	ClaudingToggle   key.Binding
+	ApplyTitle       key.Binding
+	RenamePrompt     key.Binding
+	ChatOutline      key.Binding
+	Quit             key.Binding
+	Escape           key.Binding
 
 	Minimap       key.Binding
 	MinimapMode   key.Binding
@@ -166,8 +166,9 @@ type KeyMap struct {
 	SlotBind key.Binding
 
 	// Copilot overlay
-	Copilot     key.Binding
-	CopilotMode key.Binding
+	Copilot           key.Binding // tab: open/focus
+	CopilotToggle     key.Binding // shift+tab: toggle visibility
+	CopilotSwitchMode key.Binding // alt+': float ↔ docked
 }
 
 // chordBindings returns one key.Binding per unique chord starter key for the help bar.
@@ -218,7 +219,7 @@ var Chords = []Chord{
 	{Keys: "gd", Help: "diffs"},
 	{Keys: "gh", Help: "hooks"},
 	{Keys: "gt", Help: "transcript json"},
-	{Keys: "gc", Help: "copilot"},
+	{Keys: "gc", Help: "lulu"},
 	{Keys: "gg", Help: "top"},
 	{Keys: "gi", Help: "interleaved messages"},
 	// gx* — fun / easter-egg namespace
@@ -229,12 +230,12 @@ var Chords = []Chord{
 
 func init() {
 	executors := map[string]func(m *Model) (Model, tea.Cmd){
-		"ys": func(m *Model) (Model, tea.Cmd) { return m.execCopySessionID() },
-		"yc": func(m *Model) (Model, tea.Cmd) { return m.execCaptureView() },
-		"gc": func(m *Model) (Model, tea.Cmd) { return execToggleCopilot(m) },
-		"gd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
-		"gh": func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
-		"gt": func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
+		"ys":  func(m *Model) (Model, tea.Cmd) { return m.execCopySessionID() },
+		"yc":  func(m *Model) (Model, tea.Cmd) { return m.execCaptureView() },
+		"gc":  func(m *Model) (Model, tea.Cmd) { return execToggleCopilot(m) },
+		"gd":  func(m *Model) (Model, tea.Cmd) { return m.execToggleDiffs() },
+		"gh":  func(m *Model) (Model, tea.Cmd) { return m.execToggleHooks() },
+		"gt":  func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
 		"gg":  func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
 		"gi":  func(m *Model) (Model, tea.Cmd) { return m.execToggleInterleavedMessages() },
 		"gxd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDinoGame() },
@@ -560,10 +561,14 @@ var Keys = KeyMap{
 	),
 	Copilot: key.NewBinding(
 		key.WithKeys("tab"),
-		key.WithHelp("tab", "copilot"),
+		key.WithHelp("tab", "lulu"),
 	),
-	CopilotMode: key.NewBinding(
+	CopilotToggle: key.NewBinding(
 		key.WithKeys("shift+tab"),
-		key.WithHelp("⇧tab", "copilot mode"),
+		key.WithHelp("⇧tab", "toggle lulu"),
+	),
+	CopilotSwitchMode: key.NewBinding(
+		key.WithKeys("alt+'"),
+		key.WithHelp("alt+'", "lulu float/docked"),
 	),
 }

@@ -95,13 +95,19 @@ func buildCommands() []Command {
 
 		// --- Copilot ---
 		{
-			Name: "Copilot", Binding: &Keys.Copilot,
+			Name: "Lulu", Binding: &Keys.Copilot,
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				return execOpenCopilot(m)
 			},
 		},
 		{
-			Name: "Copilot mode (float/docked)", Binding: &Keys.CopilotMode,
+			Name: "Lulu toggle", Binding: &Keys.CopilotToggle,
+			Execute: func(m *Model) (Model, tea.Cmd) {
+				return execToggleCopilot(m)
+			},
+		},
+		{
+			Name: "Lulu mode (float/docked)", Binding: &Keys.CopilotSwitchMode,
 			Execute: func(m *Model) (Model, tea.Cmd) {
 				return execSwitchCopilotMode(m)
 			},
