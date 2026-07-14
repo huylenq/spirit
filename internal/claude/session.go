@@ -1,156 +1,27 @@
 package claude
 
-import (
-	"encoding/json"
-	"time"
-)
+import "github.com/huylenq/spirit/internal/agent"
 
-type Provider string
-
-const (
-	ProviderClaude Provider = "claude"
-	ProviderCodex  Provider = "codex"
-)
-
-func ParseProvider(s string) Provider {
-	switch s {
-	case string(ProviderCodex):
-		return ProviderCodex
-	default:
-		return ProviderClaude
-	}
-}
-
-type Status int
+// Compatibility aliases keep the current daemon protocol and Lua API stable
+// while provider-neutral code migrates to internal/agent.
+type Provider = agent.ProviderID
 
 const (
-	StatusAgentTurn Status = iota
-	StatusUserTurn
+	ProviderClaude = agent.ProviderClaude
+	ProviderCodex  = agent.ProviderCodex
 )
 
-func (s Status) String() string {
-	switch s {
-	case StatusAgentTurn:
-		return "agent-turn"
-	case StatusUserTurn:
-		return "user-turn"
-	default:
-		return "unknown"
-	}
-}
+func ParseProvider(s string) Provider { return agent.ParseProviderID(s) }
 
-func (s Status) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.String())
-}
+type Status = agent.Status
 
-func (s *Status) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-	*s = ParseStatus(str)
-	return nil
-}
+const (
+	StatusAgentTurn = agent.StatusAgentTurn
+	StatusUserTurn  = agent.StatusUserTurn
+)
 
-func ParseStatus(str string) Status {
-	switch str {
-	case "agent-turn", "working":
-		return StatusAgentTurn
-	case "user-turn", "idle", "stopped", "done", "later", "deferred":
-		return StatusUserTurn
-	default:
-		return StatusUserTurn
-	}
-}
+func ParseStatus(s string) Status { return agent.ParseStatus(s) }
 
-type Location struct {
-	IsSSH bool
-	Host  string
-}
-
-type ClaudeSession struct {
-	Provider             Provider
-	Model                string
-	TurnID               string
-	TranscriptPath       string
-	PaneID               string
-	Status               Status
-	Project              string // basename of cwd
-	ProjectCode          string // optional 3-char project code (daemon-stamped from prefs)
-	CWD                  string
-	GitBranch            string
-	TmuxSession          string
-	TmuxWindow           int
-	TmuxPane             int
-	PID                  int
-	Location             Location
-	LastChanged          time.Time
-	CreatedAt            time.Time // pane creation time (from tmux pane_created)
-	IsPhantom            bool      // true when session has no live tmux pane (created from Later record)
-	LaterID              string    // links to the Later record file (empty if not a Later session)
-	SessionID            string
-	FirstMessage         string // first user message in transcript (display name heuristic)
-	LastUserMessage      string
-	LastAssistantMessage string   // last assistant text response
-	LastRecap            string   // most recent away_summary recap (preferred over LastAssistantMessage in footer)
-	Insights             []string // all ★ Insight blocks (oldest first)
-	// Display name priority: CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
-	// CustomTitle: set by Claude Code's /rename (written to transcript as custom-title entry).
-	//   The daemon sends /rename via tmux.SendKeys after synthesis, but this only works
-	//   when the Claude Code session is idle at the prompt.
-	// SynthesizedTitle: AI-generated one-liner (always available after synthesis).
-	//   Used as fallback when /rename hasn't been processed yet.
-	SynthesizedTitle        string     // AI-generated title from cached summary
-	TitleDrift              bool       // SynthesizedTitle differs from last applied /rename
-	ProblemType             string     // bug, feature, refactoring, etc. from cached summary
-	CustomTitle             string     // user-set name via /rename in Claude Code
-	PermissionMode          string     // "plan", "bypassPermissions", etc. (empty = unknown)
-	LastActionCommit        bool       // last tool call was git commit
-	StopReason              string     // from Stop hook reason field (cleared on next agent-turn)
-	SkillName               string     // slash-command skill invoked (e.g. "simplify"); cleared on next non-skill prompt
-	IsWaiting               bool       // true when Notification(permission_prompt|elicitation_dialog)
-	CompactCount            int        // number of PreCompact events fired
-	CommitDonePending       bool       // daemon is waiting for commit-and-done to resolve
-	SynthesizePending       bool       // daemon has in-flight synthesis for this pane
-	HasOverlap              bool       // 2+ sessions editing the same file
-	QueuePending            []string   // daemon-annotated: messages queued for delivery when Done (FIFO)
-	AvatarAnimalIdx         int        // index into avatarAnimals slice
-	AvatarColorIdx          int        // index into avatarColors slice
-	IsWorktree              bool       // session runs in a Claude Code worktree
-	WorktreeName            string     // e.g. "ember-cat"
-	WorktreeRootProjectPath string     // parent repo path (the real project root)
-	Tags                    []string   // user-defined labels (persisted to ~/.spirit/{sessionID}.tags)
-	Note                    string     // freeform note (persisted to ~/.spirit/{sessionID}.note)
-	LaterWakeAt             *time.Time // when this Later record auto-expires (nil = indefinite)
-}
-
-// DisplayName returns the session's display name using the standard priority:
-// CustomTitle → SynthesizedTitle → FirstMessage. Returns "" if none are set.
-func (s ClaudeSession) DisplayName() string {
-	switch {
-	case s.CustomTitle != "":
-		return s.CustomTitle
-	case s.SynthesizedTitle != "":
-		return s.SynthesizedTitle
-	case s.FirstMessage != "":
-		return s.FirstMessage
-	default:
-		return ""
-	}
-}
-
-// LaterRecord is the persistent on-disk record for a Later session.
-type LaterRecord struct {
-	ID               string     `json:"id"`
-	PaneID           string     `json:"paneID"` // original pane (may be dead)
-	Project          string     `json:"project"`
-	CWD              string     `json:"cwd"`
-	GitBranch        string     `json:"gitBranch"`
-	SynthesizedTitle string     `json:"synthesizedTitle"`
-	ProblemType      string     `json:"problemType"`
-	CustomTitle      string     `json:"customTitle"`
-	FirstMessage     string     `json:"firstMessage"`
-	SessionID        string     `json:"sessionID"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	WakeAt           *time.Time `json:"wakeAt,omitempty"` // nil = indefinite; non-nil = auto-unlater at this time
-}
+type Location = agent.Location
+type ClaudeSession = agent.Session
+type LaterRecord = agent.LaterRecord

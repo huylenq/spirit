@@ -216,6 +216,7 @@ func DiscoverSessions() ([]ClaudeSession, error) {
 		}
 		seenPaneIDs[bm.PaneID] = true
 		sessions = append(sessions, ClaudeSession{
+			Provider:         bm.Provider,
 			PaneID:           bm.PaneID,
 			Status:           StatusUserTurn,
 			Project:          bm.Project,

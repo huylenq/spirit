@@ -1,10 +1,7 @@
 package claude
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/huylenq/spirit/internal/agent"
 )
 
 func statusDir() string {
@@ -70,63 +69,18 @@ func sessionFilePath(paneID string) string {
 	return filepath.Join(statusDir(), paneID+".session")
 }
 
-type SessionMeta struct {
-	Provider       Provider `json:"provider"`
-	SessionID      string   `json:"sessionID"`
-	TurnID         string   `json:"turnID,omitempty"`
-	TranscriptPath string   `json:"transcriptPath,omitempty"`
-	CWD            string   `json:"cwd,omitempty"`
-	Model          string   `json:"model,omitempty"`
-}
+type SessionMeta = agent.SessionMeta
 
 func metaFilePath(sessionID string) string {
 	return filepath.Join(statusDir(), sessionID+".meta.json")
 }
 
 func ReadSessionMeta(sessionID string) SessionMeta {
-	data, err := os.ReadFile(metaFilePath(sessionID))
-	if err != nil {
-		return SessionMeta{Provider: ProviderClaude, SessionID: sessionID}
-	}
-	var meta SessionMeta
-	if json.Unmarshal(data, &meta) != nil {
-		return SessionMeta{Provider: ProviderClaude, SessionID: sessionID}
-	}
-	meta.Provider = ParseProvider(string(meta.Provider))
-	if meta.SessionID == "" {
-		meta.SessionID = sessionID
-	}
-	return meta
+	return (agent.Store{Dir: statusDir()}).ReadSessionMeta(sessionID)
 }
 
 func WriteSessionMeta(meta SessionMeta) error {
-	if meta.SessionID == "" {
-		return fmt.Errorf("session ID is required")
-	}
-	previous := ReadSessionMeta(meta.SessionID)
-	if meta.Provider == "" {
-		meta.Provider = previous.Provider
-	}
-	if meta.TurnID == "" {
-		meta.TurnID = previous.TurnID
-	}
-	if meta.TranscriptPath == "" {
-		meta.TranscriptPath = previous.TranscriptPath
-	}
-	if meta.CWD == "" {
-		meta.CWD = previous.CWD
-	}
-	if meta.Model == "" {
-		meta.Model = previous.Model
-	}
-	data, err := json.Marshal(meta)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(statusDir(), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(metaFilePath(meta.SessionID), data, 0o644)
+	return (agent.Store{Dir: statusDir()}).WriteSessionMeta(meta)
 }
 
 func ReadSessionID(paneID string) string {
@@ -289,40 +243,15 @@ func queueFilePath(sessionID string) string {
 }
 
 func ReadQueueMessages(sessionID string) []string {
-	data, err := os.ReadFile(queueFilePath(sessionID))
-	if err != nil {
-		return nil
-	}
-	text := strings.TrimSpace(string(data))
-	if text == "" {
-		return nil
-	}
-	// JSON array format
-	if strings.HasPrefix(text, "[") {
-		var msgs []string
-		if err := json.Unmarshal([]byte(text), &msgs); err != nil {
-			return nil
-		}
-		return msgs
-	}
-	// Legacy: plain text single message
-	return []string{text}
+	return (agent.Store{Dir: statusDir()}).ReadQueue(sessionID)
 }
 
 func WriteQueueMessages(sessionID string, messages []string) error {
-	if len(messages) == 0 {
-		RemoveQueueMessage(sessionID)
-		return nil
-	}
-	data, err := json.Marshal(messages)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(queueFilePath(sessionID), data, 0o644)
+	return (agent.Store{Dir: statusDir()}).WriteQueue(sessionID, messages)
 }
 
 func RemoveQueueMessage(sessionID string) {
-	os.Remove(queueFilePath(sessionID))
+	_ = (agent.Store{Dir: statusDir()}).RemoveQueue(sessionID)
 }
 
 func tagsFilePath(sessionID string) string {
@@ -330,25 +259,11 @@ func tagsFilePath(sessionID string) string {
 }
 
 func ReadTags(sessionID string) []string {
-	data, err := os.ReadFile(tagsFilePath(sessionID))
-	if err != nil {
-		return nil
-	}
-	var tags []string
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			tags = append(tags, line)
-		}
-	}
-	return tags
+	return (agent.Store{Dir: statusDir()}).ReadTags(sessionID)
 }
 
 func WriteTags(sessionID string, tags []string) error {
-	if len(tags) == 0 {
-		os.Remove(tagsFilePath(sessionID))
-		return nil
-	}
-	return os.WriteFile(tagsFilePath(sessionID), []byte(strings.Join(tags, "\n")+"\n"), 0o644)
+	return (agent.Store{Dir: statusDir()}).WriteTags(sessionID, tags)
 }
 
 func noteFilePath(sessionID string) string {
@@ -356,24 +271,15 @@ func noteFilePath(sessionID string) string {
 }
 
 func ReadNote(sessionID string) string {
-	data, err := os.ReadFile(noteFilePath(sessionID))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	return (agent.Store{Dir: statusDir()}).ReadNote(sessionID)
 }
 
 func WriteNote(sessionID, text string) error {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		RemoveNote(sessionID)
-		return nil
-	}
-	return os.WriteFile(noteFilePath(sessionID), []byte(text), 0o644)
+	return (agent.Store{Dir: statusDir()}).WriteNote(sessionID, text)
 }
 
 func RemoveNote(sessionID string) {
-	os.Remove(noteFilePath(sessionID))
+	_ = (agent.Store{Dir: statusDir()}).RemoveNote(sessionID)
 }
 
 func stopReasonFilePath(sessionID string) string {
@@ -539,64 +445,23 @@ func laterDir() string {
 }
 
 func GenerateLaterID() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	return agent.GenerateLaterID()
 }
 
 func WriteLaterRecord(bm LaterRecord) error {
-	dir := laterDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(bm)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, bm.ID+".json"), data, 0o644)
+	return (agent.Store{Dir: statusDir()}).WriteLater(bm)
 }
 
 func ReadLaterRecord(id string) (*LaterRecord, error) {
-	data, err := os.ReadFile(filepath.Join(laterDir(), id+".json"))
-	if err != nil {
-		return nil, err
-	}
-	var bm LaterRecord
-	if err := json.Unmarshal(data, &bm); err != nil {
-		return nil, err
-	}
-	return &bm, nil
+	return (agent.Store{Dir: statusDir()}).ReadLater(id)
 }
 
 func ReadAllLaterRecords() ([]LaterRecord, error) {
-	dir := laterDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var records []LaterRecord
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
-		var bm LaterRecord
-		if err := json.Unmarshal(data, &bm); err != nil {
-			continue
-		}
-		records = append(records, bm)
-	}
-	return records, nil
+	return (agent.Store{Dir: statusDir()}).ReadAllLaters()
 }
 
 func RemoveLaterRecord(id string) {
-	os.Remove(filepath.Join(laterDir(), id+".json"))
+	_ = (agent.Store{Dir: statusDir()}).RemoveLater(id)
 }
 
 // FindLaterIDByPane scans Later records to find one matching the given pane ID.
