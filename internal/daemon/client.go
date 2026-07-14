@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
+
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
@@ -162,7 +164,7 @@ func (c *Client) rpcInto(req Request, v any) error {
 
 // Subscribe sends the subscribe request and returns the initial sessions + usage.
 // Call ReadNext() afterwards to get subsequent pushes.
-func (c *Client) Subscribe() ([]claude.ClaudeSession, *claude.UsageStats, error) {
+func (c *Client) Subscribe() ([]agent.Session, *claude.UsageStats, error) {
 	if err := c.subEnc.Encode(Request{Type: ReqSubscribe}); err != nil {
 		return nil, nil, err
 	}
@@ -186,7 +188,7 @@ func (c *Client) ReadNextResponse() (Response, error) {
 
 // ReadNext blocks until the daemon pushes the next session update.
 // Kept for backward compat; internally calls ReadNextResponse and assumes RespSessions.
-func (c *Client) ReadNext() ([]claude.ClaudeSession, *claude.UsageStats, error) {
+func (c *Client) ReadNext() ([]agent.Session, *claude.UsageStats, error) {
 	resp, err := c.ReadNextResponse()
 	if err != nil {
 		return nil, nil, err
@@ -338,7 +340,7 @@ func (c *Client) CancelQueueItem(sessionID string, index int) error {
 }
 
 // Sessions fetches all sessions filtered by orchestrator exclusion and optional status.
-func (c *Client) Sessions(statusFilter string) ([]claude.ClaudeSession, error) {
+func (c *Client) Sessions(statusFilter string) ([]agent.Session, error) {
 	var data SessionsData
 	err := c.rpcInto(Request{Type: ReqSessions, Data: marshalData(SessionsFilterData{Status: statusFilter})}, &data)
 	return data.Sessions, err
@@ -349,15 +351,26 @@ func (c *Client) Send(sessionID, message string) error {
 	return c.rpcInto(Request{Type: ReqSend, Data: marshalData(SendData{SessionID: sessionID, Message: message})}, nil)
 }
 
+// Relay delivers provider-controlled input to a pane under the named capability.
+func (c *Client) Relay(paneID, message string, capability agent.Capability) error {
+	return c.rpcInto(Request{Type: ReqRelay, Data: marshalData(RelayData{PaneID: paneID, Message: message, Capability: capability})}, nil)
+}
+
 // Spawn launches a new claude session and waits for it to register.
 // If splitFromPane is non-empty (e.g. "%145"), the new pane is split next to
 // that pane in the same tmux window. Otherwise a new window is created in
 // tmuxSession (or the first available session if tmuxSession is empty).
 func (c *Client) Spawn(cwd, tmuxSession, message, splitFromPane string) (SpawnResultData, error) {
+	return c.SpawnProvider(agent.ProviderClaude, cwd, tmuxSession, message, splitFromPane)
+}
+
+// SpawnProvider launches a session using the selected provider lifecycle.
+func (c *Client) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (SpawnResultData, error) {
 	var data SpawnResultData
 	err := c.rpcInto(Request{
 		Type: ReqSpawn,
 		Data: marshalData(SpawnData{
+			Provider:      provider,
 			CWD:           cwd,
 			TmuxSession:   tmuxSession,
 			Message:       message,

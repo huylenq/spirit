@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
@@ -11,6 +12,15 @@ func (d *Daemon) handleQueue(data json.RawMessage) *Response {
 	var req QueueData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityQueue); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	d.queueMu.Lock()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
@@ -25,36 +26,37 @@ type Response struct {
 
 // Request type constants.
 const (
-	ReqPing               = "ping"
-	ReqNudge              = "nudge"
-	ReqSubscribe          = "subscribe"
-	ReqTranscript         = "transcript"
-	ReqDiffStats          = "diffstats"
-	ReqSummary            = "summary"
-	ReqSynthesize         = "synthesize"
-	ReqSynthesizeAll      = "synthesize_all"
-	ReqHookEvents         = "hookevents"
-	ReqPaneGeometry       = "panegeometry"
-	ReqLater              = "later"
-	ReqLaterKill          = "later_kill"
-	ReqUnlater            = "unlater"
-	ReqOpenLater          = "open_later"
-	ReqRenameAllWindows   = "rename_all_windows"
+	ReqPing             = "ping"
+	ReqNudge            = "nudge"
+	ReqSubscribe        = "subscribe"
+	ReqTranscript       = "transcript"
+	ReqDiffStats        = "diffstats"
+	ReqSummary          = "summary"
+	ReqSynthesize       = "synthesize"
+	ReqSynthesizeAll    = "synthesize_all"
+	ReqHookEvents       = "hookevents"
+	ReqPaneGeometry     = "panegeometry"
+	ReqLater            = "later"
+	ReqLaterKill        = "later_kill"
+	ReqUnlater          = "unlater"
+	ReqOpenLater        = "open_later"
+	ReqRenameAllWindows = "rename_all_windows"
 	ReqCommitOnly       = "commit_only"
 	ReqCommitDone       = "commit_done"
 	ReqQueueCommitDone  = "queue_commit_done"
 	ReqCancelCommitDone = "cancel_commit_done"
-	ReqQueue              = "queue"
-	ReqCancelQueueItem    = "cancel_queue_item"
-	ReqRawTranscript      = "raw_transcript"
-	ReqDiffHunks          = "diffhunks"
-	ReqAllHookEffects     = "allhookeffects"
+	ReqQueue            = "queue"
+	ReqCancelQueueItem  = "cancel_queue_item"
+	ReqRawTranscript    = "raw_transcript"
+	ReqDiffHunks        = "diffhunks"
+	ReqAllHookEffects   = "allhookeffects"
 
 	ReqPendingPrompt          = "pending_prompt"
 	ReqRegisterOrchestrator   = "register_orchestrator"
 	ReqUnregisterOrchestrator = "unregister_orchestrator"
 	ReqSessions               = "sessions"
 	ReqSend                   = "send"
+	ReqRelay                  = "relay"
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
 	ReqPulse                  = "pulse"
@@ -175,16 +177,22 @@ type PendingPromptData struct {
 	PlanMode bool   `json:"planMode,omitempty"`
 }
 
+type RelayData struct {
+	PaneID     string           `json:"paneID"`
+	Message    string           `json:"message"`
+	Capability agent.Capability `json:"capability,omitempty"`
+}
+
 // --- Response data payloads ---
 
 type SessionsData struct {
-	Sessions []claude.ClaudeSession `json:"sessions"`
-	Usage    *claude.UsageStats     `json:"usage,omitempty"`
+	Sessions []agent.Session    `json:"sessions"`
+	Usage    *claude.UsageStats `json:"usage,omitempty"`
 }
 
 type TranscriptData struct {
-	Messages []string            `json:"messages"`
-	Turn     claude.CurrentTurn  `json:"turn"`
+	Messages []string           `json:"messages"`
+	Turn     claude.CurrentTurn `json:"turn"`
 }
 
 type DiffStatsData struct {
@@ -238,9 +246,10 @@ type SendData struct {
 }
 
 type SpawnData struct {
-	CWD         string `json:"cwd"`
-	TmuxSession string `json:"tmuxSession"`
-	Message     string `json:"message,omitempty"`
+	Provider    agent.ProviderID `json:"provider,omitempty"`
+	CWD         string           `json:"cwd"`
+	TmuxSession string           `json:"tmuxSession"`
+	Message     string           `json:"message,omitempty"`
 	// SplitFromPane, if set, makes spawn split a new pane in the same window
 	// as the given pane (e.g. "%145") instead of opening a new tmux window.
 	// Takes precedence over TmuxSession when both are set.

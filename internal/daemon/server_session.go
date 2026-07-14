@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
@@ -82,7 +83,7 @@ func (d *Daemon) handleSessions(data json.RawMessage) *Response {
 
 	// Filter out orchestrator sessions
 	d.orchestratorMu.RLock()
-	filtered := make([]claude.ClaudeSession, 0, len(sessions))
+	filtered := make([]agent.Session, 0, len(sessions))
 	for _, s := range sessions {
 		if s.SessionID != "" && d.orchestratorIDs[s.SessionID] {
 			continue

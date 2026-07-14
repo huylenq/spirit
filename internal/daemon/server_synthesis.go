@@ -6,8 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
+
 	"github.com/huylenq/spirit/internal/claude"
-	"github.com/huylenq/spirit/internal/tmux"
 )
 
 func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
@@ -138,12 +139,24 @@ func (d *Daemon) handleApplyTitle(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityRenameNative); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
 	cached := claude.ReadCachedSummary(req.SessionID)
 	if cached == nil || cached.SynthesizedTitle == "" {
 		r := errResponse("no synthesized title to apply")
 		return &r
 	}
-	tmux.SendKeysLiteral(req.PaneID, "/rename "+cached.SynthesizedTitle)
+	if err := d.sendCommand(session, "/rename "+cached.SynthesizedTitle); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
 	claude.ApplySynthesizedTitle(req.SessionID)
 	d.nudge()
 	r := resultResponse(nil)

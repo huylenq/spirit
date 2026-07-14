@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/copilot"
 )
@@ -270,7 +271,7 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 }
 
 // sessionsEqual checks if two session slices are equivalent (same pane IDs, statuses, timestamps).
-func sessionsEqual(a, b []claude.ClaudeSession) bool {
+func sessionsEqual(a, b []agent.Session) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -305,7 +306,7 @@ func sessionsEqual(a, b []claude.ClaudeSession) bool {
 
 // refreshOverlaps detects file-level overlaps between sessions.
 // Pure in-memory computation using cached DiffStats.
-func (d *Daemon) refreshOverlaps(sessions []claude.ClaudeSession) {
+func (d *Daemon) refreshOverlaps(sessions []agent.Session) {
 	overlaps := claude.DetectOverlaps(sessions)
 	panes := make(map[string]bool)
 	for _, o := range overlaps {

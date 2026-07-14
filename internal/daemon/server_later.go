@@ -6,6 +6,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
@@ -14,6 +15,15 @@ func (d *Daemon) handleLater(data json.RawMessage) *Response {
 	var req LaterData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityLater); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	d.removeExistingLater(req.PaneID)
@@ -33,6 +43,15 @@ func (d *Daemon) handleLaterKill(data json.RawMessage) *Response {
 	var req LaterKillData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityLater); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	d.removeExistingLater(req.PaneID)
@@ -102,16 +121,43 @@ func (d *Daemon) handleOpenLater(data json.RawMessage) *Response {
 	}
 	// Read the record before removing it so we can resume by session ID.
 	record, _ := claude.ReadLaterRecord(req.LaterID)
+	seed := agent.Session{Provider: agent.ProviderClaude, CWD: req.CWD}
+	if record != nil {
+		seed.Provider = record.Provider
+		seed.SessionID = record.SessionID
+	}
+	provider, providerErr := d.providers.Resolve(seed.Provider)
+	if providerErr != nil {
+		r := errResponse(providerErr.Error())
+		return &r
+	}
+	var cmd string
+	var err error
+	var capability agent.Capability
+	if seed.SessionID != "" {
+		capability = agent.CapabilityResume
+		cmd, err = provider.Lifecycle(seed).ResumeCommand(seed)
+	} else {
+		capability = agent.CapabilitySpawn
+		cmd, err = provider.Lifecycle(seed).LaunchCommand(seed, agent.LaunchOptions{})
+	}
+	if requireErr := d.require(seed, capability); requireErr != nil {
+		r := errResponse("open later: " + requireErr.Error())
+		return &r
+	}
+	if err != nil {
+		r := errResponse("open later: " + err.Error())
+		return &r
+	}
 	paneID, err := tmux.NewWindow(req.TmuxSession, req.CWD)
 	if err != nil {
 		r := errResponse("new window: " + err.Error())
 		return &r
 	}
-	cmd := "claude --dangerously-skip-permissions"
-	if record != nil && record.SessionID != "" {
-		cmd = "claude --dangerously-skip-permissions --resume " + shellQuote(record.SessionID)
+	if err := tmux.SendKeysLiteral(paneID, cmd); err != nil {
+		r := errResponse("open later: " + err.Error())
+		return &r
 	}
-	tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 	claude.RemoveLaterRecord(req.LaterID)
 	d.nudge()
 	log.Printf("open-later: created window in %s at %s, pane %s", req.TmuxSession, req.CWD, paneID)
@@ -129,6 +175,7 @@ func (d *Daemon) buildLaterRecordFromSession(paneID string) claude.LaterRecord {
 	}
 	for _, s := range sessions {
 		if s.PaneID == paneID {
+			bm.Provider = s.Provider
 			bm.Project = s.Project
 			bm.CWD = s.CWD
 			bm.GitBranch = s.GitBranch

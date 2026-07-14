@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
@@ -10,6 +11,10 @@ func (d *Daemon) handleTranscript(data json.RawMessage) *Response {
 	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if err := d.requireSessionID(req.SessionID, agent.CapabilityTranscriptMessage); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	msgs, _ := claude.ReadUserMessages(req.SessionID)
@@ -22,6 +27,10 @@ func (d *Daemon) handleRawTranscript(data json.RawMessage) *Response {
 	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if err := d.requireSessionID(req.SessionID, agent.CapabilityTranscriptTools); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	entries, err := claude.ReadTranscriptEntries(req.SessionID)
@@ -39,6 +48,10 @@ func (d *Daemon) handleDiffStats(data json.RawMessage) *Response {
 		r := errResponse("bad data: " + err.Error())
 		return &r
 	}
+	if err := d.requireSessionID(req.SessionID, agent.CapabilityDiffAttribution); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
 	stats := claude.ReadDiffStats(req.SessionID)
 	r := resultResponse(DiffStatsData{Stats: stats})
 	return &r
@@ -48,6 +61,10 @@ func (d *Daemon) handleDiffHunks(data json.RawMessage) *Response {
 	var req SessionIDData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if err := d.requireSessionID(req.SessionID, agent.CapabilityDiffAttribution); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	hunks := claude.ReadDiffHunks(req.SessionID)

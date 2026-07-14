@@ -3,10 +3,10 @@ package daemon
 import (
 	"encoding/json"
 	"log"
-	"strings"
 	"syscall"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
@@ -24,7 +24,16 @@ func (d *Daemon) handleCommit(data json.RawMessage, killOnDone bool) *Response {
 	if killOnDone {
 		tag = "commit-done"
 	}
-	if err := tmux.SendKeysLiteral(req.PaneID, commitCmd); err != nil {
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityCommit); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	if err := d.sendCommand(session, commitCmd); err != nil {
 		r := errResponse("send failed: " + err.Error())
 		return &r
 	}
@@ -53,6 +62,15 @@ func (d *Daemon) handleQueueCommitDone(data json.RawMessage) *Response {
 	var req CommitDoneData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	if err := d.require(session, agent.CapabilityCommit); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	d.queueMu.Lock()
@@ -100,7 +118,7 @@ func (d *Daemon) handleKill(data json.RawMessage) *Response {
 		return &r
 	}
 	sessions := d.currentSessions()
-	var found *claude.ClaudeSession
+	var found *agent.Session
 	for i := range sessions {
 		if sessions[i].SessionID == req.SessionID {
 			found = &sessions[i]
@@ -109,6 +127,10 @@ func (d *Daemon) handleKill(data json.RawMessage) *Response {
 	}
 	if found == nil {
 		r := errResponse("session not found: " + req.SessionID)
+		return &r
+	}
+	if err := d.require(*found, agent.CapabilityKill); err != nil {
+		r := errResponse(err.Error())
 		return &r
 	}
 	if found.PID > 0 {
@@ -131,6 +153,25 @@ func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 	}
 	if req.CWD == "" {
 		r := errResponse("cwd is required")
+		return &r
+	}
+	providerID := req.Provider
+	if providerID == "" {
+		providerID = agent.ProviderClaude
+	}
+	provider, err := d.providers.Resolve(providerID)
+	if err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	seed := agent.Session{Provider: providerID, CWD: req.CWD}
+	if err := d.require(seed, agent.CapabilitySpawn); err != nil {
+		r := errResponse(err.Error())
+		return &r
+	}
+	launchCmd, err := provider.Lifecycle(seed).LaunchCommand(seed, agent.LaunchOptions{Message: req.Message})
+	if err != nil {
+		r := errResponse("launch command: " + err.Error())
 		return &r
 	}
 	var paneID string
@@ -162,13 +203,8 @@ func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 		paneID = p
 	}
 
-	// Launch claude in the new pane
-	launchCmd := "claude --dangerously-skip-permissions"
-	if req.Message != "" {
-		launchCmd = "claude --dangerously-skip-permissions " + shellQuote(req.Message)
-	}
 	if err := tmux.SendKeysLiteral(paneID, launchCmd); err != nil {
-		r := errResponse("send claude: " + err.Error())
+		r := errResponse("send agent command: " + err.Error())
 		return &r
 	}
 
@@ -202,19 +238,53 @@ func (d *Daemon) handleSend(data json.RawMessage) *Response {
 	}
 	// Resolve sessionID → paneID
 	sessions := d.currentSessions()
-	var paneID string
-	for _, s := range sessions {
+	var session *agent.Session
+	for i := range sessions {
+		s := &sessions[i]
 		if s.SessionID == req.SessionID {
-			paneID = s.PaneID
+			session = s
 			break
 		}
 	}
-	if paneID == "" {
+	if session == nil {
 		r := errResponse("session not found: " + req.SessionID)
 		return &r
 	}
-	if err := tmux.SendKeysLiteral(paneID, req.Message); err != nil {
+	if err := d.sendPrompt(*session, req.Message); err != nil {
 		r := errResponse("send failed: " + err.Error())
+		return &r
+	}
+	r := resultResponse("ok")
+	return &r
+}
+
+func (d *Daemon) handleRelay(data json.RawMessage) *Response {
+	var req RelayData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	session, ok := d.sessionByPaneID(req.PaneID)
+	if !ok {
+		r := errResponse("session not found for pane: " + req.PaneID)
+		return &r
+	}
+	capability := req.Capability
+	if capability == "" {
+		capability = agent.CapabilityRelayPrompt
+	}
+	if err := d.require(session, capability); err != nil {
+		r := errResponse("relay failed: " + err.Error())
+		return &r
+	}
+	var err error
+	if capability == agent.CapabilityRelayCommand || capability == agent.CapabilityRelayBang {
+		err = d.sendCommand(session, req.Message)
+	} else {
+		err = d.sendPrompt(session, req.Message)
+	}
+	if err != nil {
+		r := errResponse("relay failed: " + err.Error())
 		return &r
 	}
 	r := resultResponse("ok")
@@ -234,9 +304,4 @@ func (d *Daemon) handlePendingPrompt(data json.RawMessage) *Response {
 	log.Printf("pending-prompt: registered pane %s", req.PaneID)
 	r := resultResponse("ok")
 	return &r
-}
-
-// shellQuote wraps a string in single quotes for shell safety.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

@@ -1,20 +1,20 @@
 package daemon
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 )
 
 // resolveCommitDone checks pending commit-done operations against current sessions.
 // If a session is back to Done: if committed → kill pane, else → drop the pending entry.
-func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
+func (d *Daemon) resolveCommitDone(sessions []agent.Session) {
 	d.commitDoneMu.Lock()
 	defer d.commitDoneMu.Unlock()
 
@@ -22,7 +22,7 @@ func (d *Daemon) resolveCommitDone(sessions []claude.ClaudeSession) {
 		return
 	}
 
-	sessionByID := make(map[string]*claude.ClaudeSession, len(sessions))
+	sessionByID := make(map[string]*agent.Session, len(sessions))
 	for i := range sessions {
 		if sessions[i].SessionID != "" {
 			sessionByID[sessions[i].SessionID] = &sessions[i]
@@ -116,7 +116,7 @@ func (d *Daemon) recoverQueue() {
 // resolveQueue delivers the first queued message to sessions that have become Done.
 // Only one message per session per poll cycle — the next waits for the session to
 // become Done again after processing.
-func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
+func (d *Daemon) resolveQueue(sessions []agent.Session) {
 	d.queueMu.Lock()
 	defer d.queueMu.Unlock()
 
@@ -124,7 +124,7 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 		return
 	}
 
-	sessionByID := make(map[string]*claude.ClaudeSession, len(sessions))
+	sessionByID := make(map[string]*agent.Session, len(sessions))
 	for i := range sessions {
 		if sessions[i].SessionID != "" {
 			sessionByID[sessions[i].SessionID] = &sessions[i]
@@ -143,7 +143,7 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 			continue
 		}
 		// Session is Done — deliver the first message only
-		if err := sendMessage(s.PaneID, msgs[0]); err != nil {
+		if err := d.sendPrompt(*s, msgs[0]); err != nil {
 			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
 			continue
 		}
@@ -159,27 +159,10 @@ func (d *Daemon) resolveQueue(sessions []claude.ClaudeSession) {
 	}
 }
 
-// sendMessage sends a message to a pane. If the message starts with "!",
-// it sends "!" as an interactive keystroke first (to trigger Claude's bash mode),
-// then sends the rest as literal text + Enter.
-func sendMessage(paneID, msg string) error {
-	if strings.HasPrefix(msg, "!") {
-		if err := tmux.SendKeys(paneID, "!"); err != nil {
-			return fmt.Errorf("send bang key: %w", err)
-		}
-		rest := msg[1:]
-		if rest == "" {
-			return nil
-		}
-		return tmux.SendKeysLiteral(paneID, rest)
-	}
-	return tmux.SendKeysLiteral(paneID, msg)
-}
-
 // resolvePendingPrompts delivers initial prompts to newly spawned sessions
 // once they reach user-turn (ready to receive input). Keyed by paneID since
 // the sessionID doesn't exist yet when the prompt is registered.
-func (d *Daemon) resolvePendingPrompts(sessions []claude.ClaudeSession) {
+func (d *Daemon) resolvePendingPrompts(sessions []agent.Session) {
 	d.pendingPromptMu.Lock()
 	defer d.pendingPromptMu.Unlock()
 
@@ -187,7 +170,7 @@ func (d *Daemon) resolvePendingPrompts(sessions []claude.ClaudeSession) {
 		return
 	}
 
-	sessionByPane := make(map[string]*claude.ClaudeSession, len(sessions))
+	sessionByPane := make(map[string]*agent.Session, len(sessions))
 	for i := range sessions {
 		sessionByPane[sessions[i].PaneID] = &sessions[i]
 	}
@@ -214,7 +197,7 @@ func (d *Daemon) resolvePendingPrompts(sessions []claude.ClaudeSession) {
 				text = "/plan"
 			}
 		}
-		if err := tmux.SendKeysLiteral(paneID, text); err != nil {
+		if err := d.sendPrompt(*s, text); err != nil {
 			log.Printf("pending-prompt: send to pane %s failed: %v (will retry)", paneID, err)
 			continue
 		}
