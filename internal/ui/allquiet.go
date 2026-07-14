@@ -19,6 +19,15 @@ import (
 // recap doesn't blow out the centered dashboard width.
 const claudingDetailWidth = 72
 
+// claudingDetailMaxLines caps how many wrapped lines the recap and latest-message
+// subtitles may each occupy under a session in the quiet dashboard.
+const claudingDetailMaxLines = 6
+
+// claudingNameWidth caps the per-session header line (glyph + code prefix +
+// title). A long title soft-wraps within this width instead of stretching the
+// centered dashboard.
+const claudingNameWidth = 120
+
 const (
 	allQuietFPS      = 12
 	allQuietInterval = time.Second / allQuietFPS
@@ -534,36 +543,60 @@ func renderQuietDashboard(counts AllQuietCounts, phase int) string {
 	// latest assistant message (chevron-marked, single line) — both dim and
 	// indented under the name.
 	for i, e := range counts.ClaudingSessions {
-		lines = append(lines, "  "+e.Glyph+"  "+e.CodePrefix+shimmer(e.Name, phase+i*3))
-		for j, wl := range e.RecapLines {
+		if i > 0 {
+			lines = append(lines, "") // blank row separates adjacent sessions
+		}
+		prefix := "  " + e.Glyph + "  " + e.CodePrefix
+		indent := strings.Repeat(" ", lipgloss.Width(prefix))
+		for j, nl := range e.NameLines {
 			if j == 0 {
-				lines = append(lines, "     "+recapMarkerStyle.Render("★ ")+ItemDetailStyle.Render(wl))
+				lines = append(lines, prefix+shimmer(nl, phase+i*3))
 			} else {
-				lines = append(lines, "       "+ItemDetailStyle.Render(wl)) // align under recap text past "★ "
+				lines = append(lines, indent+shimmer(nl, phase+i*3)) // continuation aligns under the title
 			}
 		}
-		if e.Assistant != "" {
-			lines = append(lines, "     "+ItemDetailStyle.Render(IconText+" "+e.Assistant))
+		for j, wl := range e.RecapLines {
+			if j == 0 {
+				lines = append(lines, "     "+quietDetailStyle.Render("★ "+wl))
+			} else {
+				lines = append(lines, "       "+quietDetailStyle.Render(wl)) // align under recap text past "★ "
+			}
 		}
-	}
-	// Blank line separates the running sessions from the section counts below.
-	if len(counts.ClaudingSessions) > 0 {
-		lines = append(lines, "")
+		for j, al := range e.AssistantLines {
+			if j == 0 {
+				lines = append(lines, "     "+quietDetailStyle.Render(IconText+" "+al))
+			} else {
+				lines = append(lines, "       "+quietDetailStyle.Render(al)) // align under message text past the chevron
+			}
+		}
 	}
 
-	sections := []struct {
-		icon, label string
-		count       int
-	}{
-		{IconLater, "marked later", counts.Later},
-	}
-	for _, s := range sections {
-		if s.count > 0 {
-			lines = append(lines, ItemDetailStyle.Render(
-				fmt.Sprintf("  %s  %d %s", s.icon, s.count, s.label)))
-		}
+	// Marked-later section: set apart from the running sessions with generous
+	// vertical space and a short, centered muted rule above it.
+	if counts.Later > 0 {
+		lines = append(lines, "", "", centeredRule(lines), "")
+		lines = append(lines, ItemDetailStyle.Render(
+			fmt.Sprintf("  %s  %d %s", IconLater, counts.Later, "marked later")))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// centeredRule builds a short horizontal divider, muted and horizontally centered
+// within the widest line rendered so far, so it sits centered under the session
+// list once the dashboard block is placed.
+func centeredRule(lines []string) string {
+	block := 0
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w > block {
+			block = w
+		}
+	}
+	const rule = "────────"
+	pad := (block - lipgloss.Width(rule)) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	return strings.Repeat(" ", pad) + quietDetailStyle.Render(rule)
 }
 
 // shimmer renders text with a bright band sweeping left→right across it, on a

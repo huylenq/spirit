@@ -93,6 +93,12 @@ func (m *RelayModel) Activate() {
 	m.input.SetValue("")
 }
 
+// ActivateWithPrompt opens the relay using a provider-specific prompt glyph.
+func (m *RelayModel) ActivateWithPrompt(prompt string) {
+	m.origPrompt = prompt
+	m.Activate()
+}
+
 func (m *RelayModel) ActivateWithValue(value string) {
 	m.active = true
 	m.bangMode = false

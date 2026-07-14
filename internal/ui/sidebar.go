@@ -224,23 +224,46 @@ func claudingEntry(s claude.ClaudeSession) ClaudingEntry {
 	if name == "" {
 		name = "(New session)"
 	}
-	// Wrap/truncate the secondary lines here (once per poll) rather than in the
-	// 12 FPS dashboard render — they're static between polls.
+	// Wrap the secondary lines here (once per poll) rather than in the 12 FPS
+	// dashboard render — they're static between polls. Both are word-wrapped to
+	// claudingDetailWidth and capped at claudingDetailMaxLines.
 	var recapLines []string
 	if recap := oneLine(s.LastRecap); recap != "" {
-		recapLines = strings.Split(ansi.Wordwrap(recap, claudingDetailWidth, " "), "\n")
+		recapLines = wrapCapLines(recap, claudingDetailWidth, claudingDetailMaxLines)
 	}
-	var assistant string
+	var assistantLines []string
 	if a := oneLine(s.LastAssistantMessage); a != "" {
-		assistant = ansi.Truncate(a, claudingDetailWidth, "…")
+		assistantLines = wrapCapLines(a, claudingDetailWidth, claudingDetailMaxLines)
 	}
+	// Soft-wrap the title so a long name (plus its glyph/code prefix) doesn't
+	// stretch the centered dashboard — the continuation width subtracts the
+	// header prefix so the first line still fits within claudingNameWidth.
+	glyph := AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx))
+	codePrefix := renderProjectCode(s)
+	nameWrapW := claudingNameWidth - lipgloss.Width("  "+glyph+"  "+codePrefix)
+	if nameWrapW < 24 {
+		nameWrapW = 24
+	}
+	nameLines := strings.Split(ansi.Wordwrap(name, nameWrapW, " "), "\n")
 	return ClaudingEntry{
-		Glyph:      AvatarStyle(s.AvatarColorIdx).Render(AvatarGlyph(s.AvatarAnimalIdx)),
-		CodePrefix: renderProjectCode(s),
-		Name:       name,
-		RecapLines: recapLines,
-		Assistant:  assistant,
+		Glyph:          glyph,
+		CodePrefix:     codePrefix,
+		NameLines:      nameLines,
+		RecapLines:     recapLines,
+		AssistantLines: assistantLines,
 	}
+}
+
+// wrapCapLines word-wraps text to width, then caps the result at maxLines,
+// marking the final kept line with an ellipsis when content was dropped.
+func wrapCapLines(text string, width, maxLines int) []string {
+	lines := strings.Split(ansi.Wordwrap(text, width, " "), "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		last := len(lines) - 1
+		lines[last] = ansi.Truncate(lines[last], width-1, "") + "…"
+	}
+	return lines
 }
 
 // IsAllQuiet returns true when sessions exist but none are cursor-navigable

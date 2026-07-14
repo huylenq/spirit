@@ -96,7 +96,7 @@ func (m *DetailModel) View() string {
 	contentWidth := m.width - 4
 	vpRaw := m.viewport.View()
 	if m.relayView != "" {
-		vpRaw = injectAfterPrompt(vpRaw, m.relayView, s.Provider)
+		vpRaw = injectAfterPrompt(vpRaw, m.relayView, m.promptMarkers)
 	}
 	vpRaw = m.highlightCursorAnchorRow(vpRaw)
 	vpRaw = m.paintCursorGutter(vpRaw)
@@ -611,7 +611,7 @@ func (m *DetailModel) cursorAnchorLine() int {
 
 // cursorAnchorSpan returns the [startLine, endLine] captured-content range
 // occupied by the focused outline item. End is the line before the next entry
-// boundary (`⏺`, `❯`, or claude's prompt-box border) — past user messages
+// boundary (a tool marker, provider prompt marker, or prompt-box border) — past user messages
 // have no eventSubOffsets to bound them, so a stored-anchor scan alone would
 // extend the span through the following assistant turn.
 func (m *DetailModel) cursorAnchorSpan() (start, end int, ok bool) {
@@ -624,7 +624,7 @@ func (m *DetailModel) cursorAnchorSpan() (start, end int, ok bool) {
 	if limit > len(lines) {
 		limit = len(lines)
 	}
-	end = nextEntryBoundary(lines, start, limit)
+	end = nextEntryBoundary(lines, start, limit, m.promptMarkers)
 	if end < 0 {
 		end = len(lines) - 1
 	} else {
@@ -638,13 +638,13 @@ func (m *DetailModel) cursorAnchorSpan() (start, end int, ok bool) {
 
 // nextEntryBoundary scans `lines[after+1:limit]` for the next outline-entry
 // boundary line. Returns -1 when none is found in range.
-func nextEntryBoundary(lines []string, after, limit int) int {
+func nextEntryBoundary(lines []string, after, limit int, promptMarkers []string) int {
 	for i := after + 1; i < limit; i++ {
 		stripped := strings.TrimSpace(ansi.Strip(lines[i]))
 		if stripped == "" {
 			continue
 		}
-		if strings.HasPrefix(stripped, "⏺") || strings.HasPrefix(stripped, "❯") {
+		if strings.HasPrefix(stripped, "⏺") || matchesPromptLine(stripped, promptMarkers) {
 			return i
 		}
 		switch classifyLine(stripped) {
@@ -657,7 +657,7 @@ func nextEntryBoundary(lines []string, after, limit int) int {
 
 // paintCursorGutter paints a 1-cell vertical bar at column 0 across the
 // continuation rows of the focused outline item's span. Anchor row is skipped
-// (so claude's `⏺`/`❯` glyph stays visible); rows whose column 0 is non-
+// (so the provider's entry glyph stays visible); rows whose column 0 is non-
 // blank are skipped for the same reason. Gutter color is sniffed from the
 // anchor line's leading SGR so the bar inherits Claude's own marker color.
 func (m *DetailModel) paintCursorGutter(vpView string) string {
@@ -1222,16 +1222,12 @@ func HighlightJSON(line string) string {
 }
 
 // injectAfterPrompt finds the provider's last prompt line in the viewport and
-// replaces it with the relay input view. Claude uses ❯; Codex uses ›.
-func injectAfterPrompt(vpView, relayView string, provider claude.Provider) string {
-	promptGlyph := "❯"
-	if provider == claude.ProviderCodex {
-		promptGlyph = "›"
-	}
+// replaces it with the relay input view.
+func injectAfterPrompt(vpView, relayView string, promptMarkers []string) string {
 	lines := strings.Split(vpView, "\n")
 	promptIdx := -1
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(ansi.Strip(lines[i]), promptGlyph) {
+		if matchesPromptLine(ansi.Strip(lines[i]), promptMarkers) {
 			promptIdx = i
 			break
 		}
@@ -1241,6 +1237,16 @@ func injectAfterPrompt(vpView, relayView string, provider claude.Provider) strin
 	}
 	lines[promptIdx] = relayView
 	return strings.Join(lines, "\n")
+}
+
+func matchesPromptLine(line string, promptMarkers []string) bool {
+	line = strings.TrimSpace(line)
+	for _, marker := range promptMarkers {
+		if marker != "" && strings.HasPrefix(line, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func hookTypeStyled(hookType string) string {

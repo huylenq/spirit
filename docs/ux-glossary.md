@@ -217,7 +217,7 @@ Three typed-input modes, each with a distinct prompt character and color:
 
 | Mode | Prompt | Color | Description |
 |------|--------|-------|-------------|
-| Prompt relay (`>`) | `❯` | Green | Send text directly to Claude session via tmux keys |
+| Prompt relay (`>`) | `❯` (Claude) / `›` (Codex) | Green | Send text directly to the selected agent session |
 | Queue relay (`<`) | `❮` | Amber | Queue text for delivery when session becomes idle |
 | Tag relay (`#`) | `#` | Muted gray | Set/toggle tags; renders inline in sidebar |
 

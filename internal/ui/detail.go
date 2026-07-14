@@ -31,16 +31,16 @@ type diffFileStat struct {
 }
 
 type DetailModel struct {
-	viewport                 viewport.Model
-	session                  *claude.ClaudeSession
-	content                  string
-	userMessages             []string
-	msgOffsets               []int // line index in content for each userMessage; -1 if not found
+	viewport     viewport.Model
+	session      *claude.ClaudeSession
+	content      string
+	userMessages []string
+	msgOffsets   []int // line index in content for each userMessage; -1 if not found
 	// msgCursor indexes a unified [past user msgs..., current user msg, current-turn events...]
 	// list. Indices [0, len(userMessages)) → user messages. Indices
 	// [len(userMessages), len(userMessages)+len(currentTurn.Events)) → events,
 	// where the event index is `msgCursor - len(userMessages)`.
-	msgCursor                int
+	msgCursor int
 	// eventSubOffsets[i] is the slice of `⏺` line offsets in the captured pane
 	// for the sub-blocks of currentTurn.Events[i]. For non-merged events the
 	// slice is length 1. -1 entries mean "not found" (scrolled past scrollback).
@@ -55,23 +55,24 @@ type DetailModel struct {
 	wrappedContentLines []string
 	wrappedContentSrc   string
 	wrappedContentWidth int
-	outlineScrollTop         int   // index of first visible past message in chat outline
-	pendingMsgReset          bool  // set on session switch; reset msgCursor when messages arrive
-	currentTurn              claude.CurrentTurn // chronological event stream for the current turn
+	outlineScrollTop    int                // index of first visible past message in chat outline
+	pendingMsgReset     bool               // set on session switch; reset msgCursor when messages arrive
+	currentTurn         claude.CurrentTurn // chronological event stream for the current turn
 	// visibleEvents is the presentation slice for the outline — currentTurn.Events
 	// with interleaved-text hiding + post-hide same-file merging applied. Equal
 	// to currentTurn.Events when hideInterleavedMessages is false.
-	visibleEvents      []claude.TurnEvent
-	visibleSources     [][]int // visibleSources[v] = raw event indices composing visibleEvents[v]
-	hiddenMessageCount int     // number of raw text events dropped by the filter
-	hideInterleavedMessages bool
+	visibleEvents            []claude.TurnEvent
+	visibleSources           [][]int // visibleSources[v] = raw event indices composing visibleEvents[v]
+	hiddenMessageCount       int     // number of raw text events dropped by the filter
+	hideInterleavedMessages  bool
 	diffStats                map[string]claude.FileDiffStat
 	diffFiles                []diffFileStat // cached sorted file entries
 	summary                  *claude.SessionSummary
 	note                     string          // freeform note for this session (empty = no panel)
 	noteEditor               NoteEditorModel // inline textarea for editing the note
 	noteEditing              bool            // true while the note is being edited
-	relayView                string          // when set, rendered inline after the ❯ prompt line
+	relayView                string          // when set, replaces the selected provider's prompt line
+	promptMarkers            []string        // provider-owned markers for captured prompt lines
 	hookEvents               []claude.HookEvent
 	showHooks                bool
 	chatOutlineMode          string // chatOutlineOverlay, chatOutlineDocked, chatOutlineDockedLeft, chatOutlineHidden
@@ -477,6 +478,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 	}
 	isNew := m.session == nil || m.session.PaneID != paneID
 	m.session = &claude.ClaudeSession{PaneID: paneID, Project: title}
+	m.promptMarkers = nil
 	if isNew {
 		m.userMessages = nil
 		m.currentTurn = claude.CurrentTurn{}
@@ -501,7 +503,7 @@ func (m *DetailModel) SetNonClaudePane(paneID string, paneTitle string, content 
 	}
 }
 
-func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
+func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string, promptMarkers []string) {
 	isNewSession := m.session == nil || m.session.PaneID != s.PaneID
 	if isNewSession {
 		m.hookScroll = 0
@@ -513,6 +515,7 @@ func (m *DetailModel) SetSession(s *claude.ClaudeSession, content string) {
 	}
 	m.session = s
 	m.content = content
+	m.promptMarkers = promptMarkers
 
 	// Pre-render insight markdown through glamour for the footer bubble
 	m.updateRenderedInsight(s)

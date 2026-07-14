@@ -78,9 +78,9 @@ var (
 	OverlapStyle      = lipgloss.NewStyle().Foreground(ColorOverlap)
 	DriftStyle        = lipgloss.NewStyle().Foreground(ColorWorking) // amber — title needs /rename
 
-	// recapMarkerStyle tints the ★ that prefixes a clauding session's recap line
-	// in the quiet view, matching the detail panel's "★ Recap" accent.
-	recapMarkerStyle = lipgloss.NewStyle().Foreground(ColorLater)
+	// quietDetailStyle mutes the recap + latest-message lines under a clauding
+	// session in the quiet dashboard, so the shimmering title stays the focus.
+	quietDetailStyle = lipgloss.NewStyle().Foreground(ColorFaint)
 
 	// All-quiet shimmer ramp: a grayscale band sweeps over the normal muted text
 	// color to signal a listed session is actively working. Base = ColorMuted

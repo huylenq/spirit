@@ -7,6 +7,46 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
+func TestInjectAfterPromptUsesPromptMarkers(t *testing.T) {
+	tests := []struct {
+		name   string
+		prompt string
+	}{
+		{name: "first marker", prompt: "❯"},
+		{name: "second marker", prompt: "›"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			viewport := "assistant output\n\x1b[1m" + test.prompt + "\x1b[0m placeholder\nstatus"
+			want := "assistant output\nRELAY INPUT\nstatus"
+			if got := injectAfterPrompt(viewport, "RELAY INPUT", []string{test.prompt}); got != want {
+				t.Fatalf("injectAfterPrompt() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestNextEntryBoundaryUsesPromptMarkers(t *testing.T) {
+	lines := []string{"anchor", "continuation", "  › prompt", "after"}
+	if got := nextEntryBoundary(lines, 0, len(lines), []string{"›"}); got != 2 {
+		t.Fatalf("nextEntryBoundary() = %d, want 2", got)
+	}
+}
+
+func TestInjectAfterPromptDoesNotUseOtherProviderGlyph(t *testing.T) {
+	viewport := "❯ claude prompt\nstatus"
+	if got := injectAfterPrompt(viewport, "RELAY INPUT", []string{"›"}); got != viewport {
+		t.Fatalf("injectAfterPrompt() = %q, want unchanged viewport", got)
+	}
+}
+
+func TestInjectAfterPromptRequiresMarkerAtLineStart(t *testing.T) {
+	viewport := "assistant mentioned › in output\nstatus"
+	if got := injectAfterPrompt(viewport, "RELAY INPUT", []string{"›"}); got != viewport {
+		t.Fatalf("injectAfterPrompt() = %q, want unchanged viewport", got)
+	}
+}
+
 func TestParseMarkerToolName(t *testing.T) {
 	cases := []struct {
 		line string
