@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
 )
 
 func (m Model) execMinimap() (Model, tea.Cmd) {
@@ -23,8 +24,8 @@ func (m Model) execFullscreen() (Model, tea.Cmd) {
 
 func (m Model) execApplyTitle() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok && s.TitleDrift {
-		if isCodexSession(s) {
-			return m, codexUnsupported("apply title")
+		if cmd := m.requireCapability(agent.CapabilityRenameNative); cmd != nil {
+			return m, cmd
 		}
 		return m, m.fetchApplyTitle(s.PaneID, s.SessionID)
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
@@ -27,8 +28,8 @@ func (m Model) execCommit() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if isCodexSession(s) {
-		return m, codexUnsupported("commit")
+	if cmd := m.requireCapability(agent.CapabilityCommit); cmd != nil {
+		return m, cmd
 	}
 	if s.Status != claude.StatusUserTurn {
 		return m, func() tea.Msg { return flashErrorMsg("session is busy") }

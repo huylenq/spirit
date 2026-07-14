@@ -87,7 +87,8 @@ func RenderCapture(client *daemon.Client, cols, rows int) (string, error) {
 	// Populate preview for selected session
 	if s, ok := m.sidebar.SelectedItem(); ok {
 		content, _ := tmux.CapturePaneContent(s.PaneID)
-		m.detail.SetSession(&s, content)
+		terminal, _ := m.providers.Terminal(s)
+		m.detail.SetSession(&s, content, terminal.PromptMarkers)
 
 		if s.SessionID != "" {
 			msgs, turn, _ := client.Transcript(s.SessionID)

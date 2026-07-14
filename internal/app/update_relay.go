@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
@@ -81,7 +82,7 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if s, ok := m.sidebar.SelectedItem(); ok {
-			cmds := []tea.Cmd{sendPromptRelay(s.PaneID, val)}
+			cmds := []tea.Cmd{m.sendPromptRelay(s.PaneID, val)}
 			cmds = append(cmds, m.autoJump(s.PaneID)...)
 			return m, tea.Batch(cmds...)
 		}
@@ -89,12 +90,12 @@ func (m Model) handleKeyPromptRelay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Bang mode: ! as first character sends ! keystroke to pane (bash mode) and stays in relay
 		if msg.String() == "!" && m.relay.Value() == "" {
-			if s, ok := m.sidebar.SelectedItem(); ok && isCodexSession(s) {
-				return m, codexUnsupported("bang mode")
+			if cmd := m.requireCapability(agent.CapabilityRelayBang); cmd != nil {
+				return m, cmd
 			}
 			m.relay.EnterBangMode()
 			if s, ok := m.sidebar.SelectedItem(); ok {
-				return m, sendBangKey(s.PaneID)
+				return m, m.sendBangKey(s.PaneID)
 			}
 			return m, nil
 		}
@@ -130,7 +131,7 @@ func (m Model) handleKeyRenamePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Intentionally no autoJump — rename should not steal focus.
-		return m, sendPromptRelay(s.PaneID, "/rename "+val)
+		return m, m.sendCommandRelay(s.PaneID, "/rename "+val)
 	default:
 		ti := m.renamePrompt.TextInput()
 		newTI, cmd := ti.Update(msg)

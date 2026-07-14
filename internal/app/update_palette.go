@@ -33,7 +33,7 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		command := m.commands[idx]
-		if command.Enabled != nil && !command.Enabled(&m) {
+		if !command.IsEnabled(&m) {
 			return m, nil
 		}
 		m, c := command.Execute(&m)
@@ -62,7 +62,7 @@ func (m Model) handleKeyPalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.state = StateNormal
 					m.palette.Deactivate()
 					command := m.commands[idx]
-					if command.Enabled != nil && !command.Enabled(&m) {
+					if !command.IsEnabled(&m) {
 						return m, nil
 					}
 					m, c := command.Execute(&m)

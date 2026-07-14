@@ -466,7 +466,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == msg.PaneID {
-			m.detail.SetSession(&s, msg.Content)
+			terminal, _ := m.providers.Terminal(s)
+			m.detail.SetSession(&s, msg.Content, terminal.PromptMarkers)
 		} else if m.nonClaudePane != nil && m.nonClaudePane.PaneID == msg.PaneID {
 			m.detail.SetNonClaudePane(msg.PaneID, m.nonClaudePane.PaneTitle, msg.Content)
 		}

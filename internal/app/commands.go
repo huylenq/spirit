@@ -1,6 +1,9 @@
 package app
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
+)
 
 // buildCommands returns all palette-worthy commands grouped by category.
 func buildCommands() []Command {
@@ -13,8 +16,9 @@ func buildCommands() []Command {
 		},
 		{
 			Name: "Send to session", Binding: &Keys.PromptRelay,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execPromptRelay() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityRelayPrompt,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execPromptRelay() },
 		},
 		{
 			Name: "Tag session", Binding: &Keys.PromptTag,
@@ -23,23 +27,27 @@ func buildCommands() []Command {
 		},
 		{
 			Name: "Queue message", Binding: &Keys.Queue,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execQueue() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityQueue,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execQueue() },
 		},
 		{
 			Name: "Later", Binding: &Keys.Later,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execLater() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityLater,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execLater() },
 		},
 		{
 			Name: "Later + kill", Binding: &Keys.LaterKill,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execLaterKill() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityLater,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execLaterKill() },
 		},
 		{
 			Name: "Kill + close", Binding: &Keys.Kill,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execKill() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityKill,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execKill() },
 		},
 		{
 			Name: "Synthesize", Binding: &Keys.Synthesize,
@@ -52,11 +60,13 @@ func buildCommands() []Command {
 		},
 		{
 			Name: "Rename", Binding: &Keys.RenamePrompt,
-			Enabled: hasSelection,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execRenamePrompt() },
+			Enabled:    hasSelection,
+			Capability: agent.CapabilityRenameNative,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execRenamePrompt() },
 		},
 		{
 			Name: "Apply title", Binding: &Keys.ApplyTitle,
+			Capability: agent.CapabilityRenameNative,
 			Enabled: func(m *Model) bool {
 				s, ok := m.sidebar.SelectedItem()
 				return ok && s.TitleDrift
@@ -65,8 +75,9 @@ func buildCommands() []Command {
 		},
 		{
 			Name: "Commit", Binding: &Keys.Commit,
-			Enabled: canCommit,
-			Execute: func(m *Model) (Model, tea.Cmd) { return m.execCommit() },
+			Enabled:    canCommit,
+			Capability: agent.CapabilityCommit,
+			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execCommit() },
 		},
 
 		{

@@ -2,21 +2,29 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
 func (m Model) execPromptRelay() (Model, tea.Cmd) {
-	if _, ok := m.sidebar.SelectedItem(); ok {
+	if s, ok := m.sidebar.SelectedItem(); ok {
+		if cmd := m.requireCapability(agent.CapabilityRelayPrompt); cmd != nil {
+			return m, cmd
+		}
+		terminal, err := m.providers.Terminal(s)
+		if err != nil {
+			return m, func() tea.Msg { return flashErrorMsg(err.Error()) }
+		}
 		m.state = StatePromptRelay
-		m.relay.Activate()
+		m.relay.ActivateWithPrompt(terminal.RelayPrompt)
 	}
 	return m, nil
 }
 
 func (m Model) execRenamePrompt() (Model, tea.Cmd) {
-	if s, ok := m.sidebar.SelectedItem(); ok {
-		if isCodexSession(s) {
-			return m, codexUnsupported("rename")
+	if _, ok := m.sidebar.SelectedItem(); ok {
+		if cmd := m.requireCapability(agent.CapabilityRenameNative); cmd != nil {
+			return m, cmd
 		}
 		m.state = StateRenamePrompt
 		m.renamePrompt.Activate()
@@ -56,9 +64,9 @@ func (m Model) execProjectCodeEdit() (Model, tea.Cmd) {
 }
 
 func (m Model) execQueue() (Model, tea.Cmd) {
-	if s, ok := m.sidebar.SelectedItem(); ok {
-		if isCodexSession(s) {
-			return m, codexUnsupported("queue")
+	if _, ok := m.sidebar.SelectedItem(); ok {
+		if cmd := m.requireCapability(agent.CapabilityQueue); cmd != nil {
+			return m, cmd
 		}
 		m.state = StateQueueRelay
 		m.queueCursor = -1 // start with text input focused
@@ -69,8 +77,8 @@ func (m Model) execQueue() (Model, tea.Cmd) {
 
 func (m Model) execLater() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok {
-		if isCodexSession(s) {
-			return m, codexUnsupported("Later")
+		if cmd := m.requireCapability(agent.CapabilityLater); cmd != nil {
+			return m, cmd
 		}
 		if s.LaterID != "" {
 			// Toggle: unlater to restore real status
@@ -98,9 +106,9 @@ func (m Model) execLater() (Model, tea.Cmd) {
 }
 
 func (m Model) execLaterKill() (Model, tea.Cmd) {
-	if s, ok := m.sidebar.SelectedItem(); ok {
-		if isCodexSession(s) {
-			return m, codexUnsupported("Later + kill")
+	if _, ok := m.sidebar.SelectedItem(); ok {
+		if cmd := m.requireCapability(agent.CapabilityLater); cmd != nil {
+			return m, cmd
 		}
 		m.state = StateLaterWait
 		m.laterKillMode = true

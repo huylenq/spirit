@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
 	"github.com/huylenq/spirit/internal/tmux"
@@ -174,6 +175,7 @@ type originalPane struct {
 }
 
 type Model struct {
+	providers            *agent.Registry
 	client               *daemon.Client
 	sidebar              ui.SidebarModel
 	detail               ui.DetailModel
@@ -277,7 +279,7 @@ type Model struct {
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
 	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
 	workQueue            ui.WorkQueueModel
-	dinoTicking          bool             // empty work-queue dino game tick scheduled
+	dinoTicking          bool // empty work-queue dino game tick scheduled
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -298,6 +300,7 @@ func NewModel(client *daemon.Client) Model {
 	s.Spinner = claudeSpinner
 	bin, _ := os.Executable()
 	m := Model{
+		providers:         agent.NewDefaultRegistry(),
 		client:            client,
 		sidebar:           sidebar,
 		detail:            ui.NewDetailModel(),
@@ -857,9 +860,17 @@ func (m Model) fetchMinimapData(sessionName string) tea.Cmd {
 	}
 }
 
-func sendPromptRelay(paneID, text string) tea.Cmd {
+func (m Model) sendPromptRelay(paneID, text string) tea.Cmd {
+	return m.sendRelay(paneID, text, agent.CapabilityRelayPrompt)
+}
+
+func (m Model) sendCommandRelay(paneID, text string) tea.Cmd {
+	return m.sendRelay(paneID, text, agent.CapabilityRelayCommand)
+}
+
+func (m Model) sendRelay(paneID, text string, capability agent.Capability) tea.Cmd {
 	return func() tea.Msg {
-		if err := tmux.SendKeysLiteral(paneID, text); err != nil {
+		if err := m.client.Relay(paneID, text, capability); err != nil {
 			return flashErrorMsg("send failed: " + err.Error())
 		}
 		return flashInfoMsg("sent")
@@ -868,9 +879,9 @@ func sendPromptRelay(paneID, text string) tea.Cmd {
 
 // sendBangKey sends "!" as an interactive keystroke (no -l, no Enter)
 // to trigger Claude's bash mode switch.
-func sendBangKey(paneID string) tea.Cmd {
+func (m Model) sendBangKey(paneID string) tea.Cmd {
 	return func() tea.Msg {
-		if err := tmux.SendKeys(paneID, "!"); err != nil {
+		if err := m.client.Relay(paneID, "!", agent.CapabilityRelayBang); err != nil {
 			return flashErrorMsg("send failed: " + err.Error())
 		}
 		return nil

@@ -3,6 +3,7 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/tmux"
 	"github.com/huylenq/spirit/internal/ui"
@@ -32,6 +33,9 @@ func (m Model) execSwitchPane() (Model, tea.Cmd) {
 
 func (m Model) execKill() (Model, tea.Cmd) {
 	if s, ok := m.sidebar.SelectedItem(); ok {
+		if cmd := m.requireCapability(agent.CapabilityKill); cmd != nil {
+			return m, cmd
+		}
 		if s.IsPhantom && s.LaterID != "" {
 			laterID := s.LaterID
 			return m, func() tea.Msg {
@@ -125,12 +129,17 @@ func (m Model) spawnNewSession(prompt, model string, planning bool, worktree str
 		if err != nil {
 			return flashErrorMsg("new window: " + err.Error())
 		}
-		cmd := "claude --dangerously-skip-permissions"
-		if model != "" {
-			cmd += " --model " + model
+		provider, err := m.providers.Resolve(agent.ProviderClaude)
+		if err != nil {
+			return flashErrorMsg("provider: " + err.Error())
 		}
-		if worktree != "" {
-			cmd += " --worktree " + worktree
+		seed := agent.Session{Provider: agent.ProviderClaude, PaneID: paneID, CWD: cwd}
+		if err := m.providers.Require(seed, agent.CapabilitySpawn); err != nil {
+			return flashErrorMsg("launch: " + err.Error())
+		}
+		cmd, err := provider.Lifecycle(seed).LaunchCommand(seed, agent.LaunchOptions{Model: model, Worktree: worktree})
+		if err != nil {
+			return flashErrorMsg("launch: " + err.Error())
 		}
 		tmux.SendKeysLiteral(paneID, cmd) //nolint:errcheck
 		if prompt != "" || planning {

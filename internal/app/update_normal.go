@@ -154,10 +154,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Palette):
 		items := make([]ui.PaletteItem, len(m.commands))
 		for i, cmd := range m.commands {
-			enabled := true
-			if cmd.Enabled != nil {
-				enabled = cmd.Enabled(&m)
-			}
+			enabled := cmd.IsEnabled(&m)
 			items[i] = ui.PaletteItem{
 				Name:    cmd.Name,
 				Hotkey:  cmd.HotkeyDisplay(),
@@ -429,11 +426,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, Keys.PromptRelay):
-		if _, ok := m.sidebar.SelectedItem(); ok {
-			m.state = StatePromptRelay
-			m.relay.Activate()
-		}
-		return m, nil
+		return m.execPromptRelay()
 
 	case key.Matches(msg, Keys.PromptTag):
 		return m.execTagRelay()
