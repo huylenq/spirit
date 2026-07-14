@@ -12,7 +12,6 @@ import (
 	"github.com/huylenq/spirit/internal/claude"
 )
 
-
 // EmptyView renders the "no session selected" placeholder at the given size.
 func (m *DetailModel) EmptyView(w, h int) string {
 	return EmptyStyle.Width(w).Height(h).Render("Select a session to preview")
@@ -97,7 +96,7 @@ func (m *DetailModel) View() string {
 	contentWidth := m.width - 4
 	vpRaw := m.viewport.View()
 	if m.relayView != "" {
-		vpRaw = injectAfterPrompt(vpRaw, m.relayView)
+		vpRaw = injectAfterPrompt(vpRaw, m.relayView, s.Provider)
 	}
 	vpRaw = m.highlightCursorAnchorRow(vpRaw)
 	vpRaw = m.paintCursorGutter(vpRaw)
@@ -197,9 +196,9 @@ func (m *DetailModel) View() string {
 
 	// Bottom bar: session title (left) + footer metadata (right-aligned)
 	var metaParts []string
-	provider := "Claude"
+	provider := "claude"
 	if s.Provider == claude.ProviderCodex {
-		provider = "Codex"
+		provider = "codex"
 	}
 	if s.Model != "" {
 		provider += "/" + s.Model
@@ -267,11 +266,11 @@ func (m *DetailModel) renderFooter(s *claude.ClaudeSession, meta string) string 
 // secondary lines kept fresh on each poll — the recap (away_summary, when
 // present) and the latest assistant message (live).
 type ClaudingEntry struct {
-	Glyph      string   // styled colored avatar glyph
-	CodePrefix string   // colored "[CODE] " project-code prefix (empty when none)
-	Name       string   // plain display title
-	RecapLines []string // away_summary recap, word-wrapped to claudingDetailWidth (nil when none)
-	Assistant  string   // latest assistant message, truncated to claudingDetailWidth (empty when none)
+	Glyph          string   // styled colored avatar glyph
+	CodePrefix     string   // colored "[CODE] " project-code prefix (empty when none)
+	NameLines      []string // display title, shimmered per-render, soft-wrapped so glyph+code+name stays within claudingNameWidth
+	RecapLines     []string // away_summary recap, word-wrapped to claudingDetailWidth, capped at claudingDetailMaxLines (nil when none)
+	AssistantLines []string // latest assistant message, word-wrapped to claudingDetailWidth, capped at claudingDetailMaxLines (nil when none)
 }
 
 // AllQuietCounts holds per-section counts for the all-quiet dashboard. The
@@ -307,6 +306,10 @@ const outlineGap = 1
 // outlineLastUserMaxLines caps the wrap height of the current-turn user
 // message at the top of the timeline.
 const outlineLastUserMaxLines = 5
+
+// outlineTurnEventMaxLines caps the wrap height of a current-turn text event
+// in the timeline.
+const outlineTurnEventMaxLines = 3
 
 // recapPanelMaxLines caps the body of the bottom-docked recap panel.
 const recapPanelMaxLines = 8
@@ -445,9 +448,10 @@ func (m *DetailModel) renderChatOutline(width int) string {
 	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
-// renderTurnTextRow renders a single-line text event with the `›` bullet at
-// col 2 and the truncated text at col 5. Cursor focus brightens the bullet
-// and the text style.
+// renderTurnTextRow renders a text event with the `›` bullet at col 2 and the
+// text wrapped at col 5, capped at outlineTurnEventMaxLines rows. Continuation
+// lines align under line 1's text. Cursor focus brightens the bullet and the
+// text style.
 func renderTurnTextRow(text string, innerWidth, msgWidth int, focused bool) string {
 	flat := flattenMarkdownText(text)
 	glyphStyle := TranscriptBulletStyle
@@ -456,9 +460,17 @@ func renderTurnTextRow(text string, innerWidth, msgWidth int, focused bool) stri
 		glyphStyle = TranscriptCursorStyle
 		textStyle = TranscriptMsgStyle
 	}
-	glyph := glyphStyle.Render(IconText)
-	prefix := glyph + strings.Repeat(" ", outlineGap)
-	return prefix + textStyle.Render(ansi.Truncate(flat, msgWidth, "…"))
+	indent := strings.Repeat(" ", outlineIndicatorWidth())
+	wrapped := wrapToCappedLines(flat, msgWidth, outlineTurnEventMaxLines)
+	out := make([]string, len(wrapped))
+	for k, ln := range wrapped {
+		if k == 0 {
+			out[k] = glyphStyle.Render(IconText) + strings.Repeat(" ", outlineGap) + textStyle.Render(ln)
+		} else {
+			out[k] = indent + textStyle.Render(ln)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // renderTurnToolRow renders a single-line tool event (Edit/Write/MultiEdit)
@@ -887,21 +899,20 @@ func renderTurnSeparator(innerWidth int) string {
 		BorderCharStyle.Render(strings.Repeat("─", right))
 }
 
-// renderNotePanel renders the session note panel. Uses the same compact layout
-// as the sidebar pulse: top separator, single-line title, body indented by 1.
-// When noteEditing is true, it shows the textarea for inline editing and tints
-// the top separator with the note color.
+// renderNotePanel renders the session note panel. Docked: the compact sidebar
+// pulse layout (top separator, single-line title, body indented by 1 col).
+// Floating (overlay): a bordered box matching the messages outline and recap,
+// so the right-edge aside stack reads as the same kind of object. When
+// noteEditing is true, it shows the textarea for inline editing and (in pulse
+// layout) tints the top separator with the note color.
 func (m *DetailModel) renderNotePanel(width int) string {
-	innerWidth := max(5, width-1) // PaddingLeft(1)
-
-	sepStyle := BorderCharStyle
-	if m.noteEditing {
-		sepStyle = NoteCharStyle
+	floating := m.chatOutlineMode == chatOutlineOverlay
+	// Inner text width: the bordered box reserves border(2)+padding(2); the
+	// docked pulse layout reserves only its 1-col left pad.
+	innerWidth := max(5, width-1)
+	if floating {
+		innerWidth = max(5, width-4)
 	}
-	sep := sepStyle.Render(strings.Repeat("─", width))
-	titleLine := lipgloss.NewStyle().Width(width).Render(
-		" " + TranscriptTitleStyle.Foreground(ColorNote).Render(IconNote+" Notes"),
-	)
 
 	var body string
 	if m.noteEditing {
@@ -911,6 +922,22 @@ func (m *DetailModel) renderNotePanel(width int) string {
 		wrapped := WordWrapContent(m.note, innerWidth)
 		body = TranscriptMsgStyle.Render(wrapped)
 	}
+
+	if floating {
+		// Bordered box mirroring renderChatOutline / renderRecapPanel.
+		title := TranscriptTitleStyle.Foreground(ColorNote).Render(" " + IconNote + " Notes")
+		inner := lipgloss.JoinVertical(lipgloss.Left, title, "", body)
+		return TranscriptOverlayStyle.Width(width).Render(inner)
+	}
+
+	sepStyle := BorderCharStyle
+	if m.noteEditing {
+		sepStyle = NoteCharStyle
+	}
+	sep := sepStyle.Render(strings.Repeat("─", width))
+	titleLine := lipgloss.NewStyle().Width(width).Render(
+		" " + TranscriptTitleStyle.Foreground(ColorNote).Render(IconNote+" Notes"),
+	)
 	body = lipgloss.NewStyle().Width(width).PaddingLeft(1).Render(body)
 	return lipgloss.JoinVertical(lipgloss.Left, sep, titleLine, body)
 }
@@ -1205,13 +1232,17 @@ func HighlightJSON(line string) string {
 	return result.String()
 }
 
-// injectAfterPrompt finds the last line containing ❯ in the viewport output
-// and replaces the line immediately after it with the relay input view.
-func injectAfterPrompt(vpView, relayView string) string {
+// injectAfterPrompt finds the provider's last prompt line in the viewport and
+// replaces it with the relay input view. Claude uses ❯; Codex uses ›.
+func injectAfterPrompt(vpView, relayView string, provider claude.Provider) string {
+	promptGlyph := "❯"
+	if provider == claude.ProviderCodex {
+		promptGlyph = "›"
+	}
 	lines := strings.Split(vpView, "\n")
 	promptIdx := -1
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(ansi.Strip(lines[i]), "❯") {
+		if strings.Contains(ansi.Strip(lines[i]), promptGlyph) {
 			promptIdx = i
 			break
 		}
