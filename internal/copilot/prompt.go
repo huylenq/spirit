@@ -35,6 +35,15 @@ func formatSession(s claude.ClaudeSession) string {
 		status = "working"
 	}
 
+	// Mirror the sidebar's work-queue classification. Status alone is not
+	// enough: a Later record deliberately keeps its underlying session idle.
+	lane := "your-turn"
+	if s.LaterID != "" {
+		lane = "later"
+	} else if s.Status == claude.StatusAgentTurn {
+		lane = "working"
+	}
+
 	name := s.DisplayName()
 	if name == "" {
 		name = "(new)"
@@ -51,7 +60,7 @@ func formatSession(s claude.ClaudeSession) string {
 		flags = append(flags, fmt.Sprintf("compact:%d", s.CompactCount))
 	}
 
-	line := fmt.Sprintf("- [%s] %s %s/%s \"%s\"", status, s.SessionID, s.Project, s.GitBranch, name)
+	line := fmt.Sprintf("- [lane=%s, status=%s] %s %s/%s \"%s\"", lane, status, s.SessionID, s.Project, s.GitBranch, name)
 	if len(flags) > 0 {
 		line += " (" + strings.Join(flags, ", ") + ")"
 	}
