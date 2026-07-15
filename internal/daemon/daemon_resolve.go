@@ -91,6 +91,8 @@ func (d *Daemon) resolveCommitDone(sessions []agent.Session) {
 }
 
 // recoverQueue scans *.queue files on startup to rebuild the in-memory map.
+// Legacy string-array files are upgraded to the item format inside
+// ReadQueueItems (one-shot id mint + rewrite), so ids are stable afterwards.
 func (d *Daemon) recoverQueue() {
 	dir := claude.StatusDir()
 	entries, err := os.ReadDir(dir)
@@ -105,10 +107,10 @@ func (d *Daemon) recoverQueue() {
 			continue
 		}
 		sessionID := strings.TrimSuffix(name, ".queue")
-		msgs := claude.ReadQueueMessages(sessionID)
-		if len(msgs) > 0 {
-			d.queuePanes[sessionID] = msgs
-			log.Printf("queue: recovered session %s (%d messages)", sessionID, len(msgs))
+		items := claude.ReadQueueItems(sessionID)
+		if len(items) > 0 {
+			d.queuePanes[sessionID] = items
+			log.Printf("queue: recovered session %s (%d messages)", sessionID, len(items))
 		}
 	}
 }
@@ -131,35 +133,36 @@ func (d *Daemon) resolveQueue(sessions []agent.Session) {
 		}
 	}
 
-	for sessionID, msgs := range d.queuePanes {
+	for sessionID, items := range d.queuePanes {
 		s, exists := sessionByID[sessionID]
 		if !exists {
 			log.Printf("queue: session %s disappeared, removing", sessionID)
 			delete(d.queuePanes, sessionID)
 			claude.RemoveQueueMessage(sessionID)
-			for _, msg := range msgs {
-				d.signalQueueOutcome(false, sessionID, sessionID, "", msg, "session disappeared before delivery")
+			for _, item := range items {
+				d.signalQueueItemOutcome(false, sessionID, "", item, "session disappeared before delivery")
 			}
 			continue
 		}
-		if s.Status != claude.StatusUserTurn || len(msgs) == 0 {
+		if s.Status != claude.StatusUserTurn || len(items) == 0 {
 			continue
 		}
 		// Session is Done — deliver the first message only
-		if err := d.sendPrompt(*s, msgs[0]); err != nil {
+		if err := d.sendPrompt(*s, items[0].Message); err != nil {
 			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
-			d.signalQueueOutcome(false, sessionID, sessionID, s.Project, msgs[0], err.Error())
+			d.signalQueueItemOutcome(false, sessionID, s.Project, items[0], err.Error())
 			continue
 		}
-		log.Printf("queue: delivered 1/%d to pane %s (session %s)", len(msgs), s.PaneID, sessionID)
-		d.signalQueueOutcome(true, sessionID, sessionID, s.Project, msgs[0], "")
-		remaining := msgs[1:]
+		log.Printf("queue: delivered %s 1/%d to pane %s (session %s)", items[0].ID, len(items), s.PaneID, sessionID)
+		d.signalQueueItemOutcome(true, sessionID, s.Project, items[0], "")
+		d.recordTurnAttribution(sessionID, items[0])
+		remaining := items[1:]
 		if len(remaining) == 0 {
 			delete(d.queuePanes, sessionID)
 			claude.RemoveQueueMessage(sessionID)
 		} else {
 			d.queuePanes[sessionID] = remaining
-			claude.WriteQueueMessages(sessionID, remaining) //nolint:errcheck
+			claude.WriteQueueItems(sessionID, remaining) //nolint:errcheck
 		}
 	}
 }

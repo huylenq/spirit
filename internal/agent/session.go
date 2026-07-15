@@ -108,6 +108,7 @@ type Session struct {
 	SynthesizePending       bool
 	HasOverlap              bool
 	QueuePending            []string
+	QueueItems              []QueueItem
 	AvatarAnimalIdx         int
 	AvatarColorIdx          int
 	IsWorktree              bool

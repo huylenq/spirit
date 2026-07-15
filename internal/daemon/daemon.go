@@ -63,7 +63,13 @@ type Daemon struct {
 	commitDonePanes map[string]commitDoneEntry // sessionID → entry
 
 	queueMu    sync.Mutex
-	queuePanes map[string][]string // sessionID → FIFO message queue
+	queuePanes map[string][]agent.QueueItem // sessionID → FIFO message queue (durable item ids, W8)
+
+	// turnAttrib links a delivered queue item to the NEXT completed turn of its
+	// session (queued message → delivery → the turn it caused, W8). Written by
+	// the queue resolver on delivery, consumed once by signalTurnCompleted.
+	turnAttribMu sync.Mutex
+	turnAttrib   map[string]turnAttribution // sessionID → last delivered item
 
 	pendingPromptMu    sync.Mutex
 	pendingPromptPanes map[string]pendingPromptEntry // paneID → entry
@@ -141,7 +147,8 @@ func Run(info DaemonInfo) error {
 		providers:          agent.NewDefaultRegistry(),
 		subscribers:        make(map[*subscriber]struct{}),
 		commitDonePanes:    make(map[string]commitDoneEntry),
-		queuePanes:         make(map[string][]string),
+		queuePanes:         make(map[string][]agent.QueueItem),
+		turnAttrib:         make(map[string]turnAttribution),
 		synthesizingPanes:  make(map[string]bool),
 		pendingPromptPanes: make(map[string]pendingPromptEntry),
 		orchestratorIDs:    make(map[string]bool),

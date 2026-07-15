@@ -179,6 +179,14 @@ type QueueData struct {
 	PaneID    string `json:"paneID"`
 	SessionID string `json:"sessionID"`
 	Message   string `json:"message"`
+	// ActionID, when set, links the queue item to the batch/MCP action that
+	// enqueued it (W8): the delivery signal and the turn it causes carry it.
+	ActionID string `json:"actionID,omitempty"`
+}
+
+// QueueResultData returns the durable id of the freshly enqueued item (W8).
+type QueueResultData struct {
+	ItemID string `json:"itemID"`
 }
 
 type CancelQueueItemData struct {

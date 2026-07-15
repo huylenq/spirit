@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Store struct{ Dir string }
@@ -69,7 +70,35 @@ func (s Store) WriteSessionMeta(meta SessionMeta) error {
 	return os.WriteFile(s.path(meta.SessionID, ".meta.json"), data, 0o644)
 }
 
-func (s Store) ReadQueue(id string) []string {
+// QueueItem is one queued message with a durable identity (W8). The ID is
+// minted at enqueue and survives daemon restarts via the .queue file, so a
+// queued instruction → its delivery → the turn it caused is one traceable
+// chain. ActionID links the item back to the batch/MCP action that enqueued
+// it, when there was one.
+type QueueItem struct {
+	ID         string    `json:"id"`
+	Message    string    `json:"message"`
+	ActionID   string    `json:"action_id,omitempty"`
+	EnqueuedAt time.Time `json:"enqueued_at,omitempty"`
+}
+
+// NewQueueItemID mints a short, collision-resistant queue item id like
+// "qi_9f3c1a2b7d4e".
+func NewQueueItemID() string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Time-based fallback is still unique enough to correlate.
+		return "qi_" + time.Now().UTC().Format("20060102150405.000000")
+	}
+	return "qi_" + hex.EncodeToString(b[:])
+}
+
+// ReadQueueItems reads a session's queue file. Three historical formats are
+// accepted: the current object array, the legacy JSON string array, and the
+// oldest single-message plain text. Legacy entries are upgraded in place —
+// fresh ids are minted ONCE and the file is rewritten in the current format,
+// so ids are stable from then on (deliberate one-way migration, W8).
+func (s Store) ReadQueueItems(id string) []QueueItem {
 	data, err := os.ReadFile(s.path(id, ".queue"))
 	if err != nil {
 		return nil
@@ -79,24 +108,71 @@ func (s Store) ReadQueue(id string) []string {
 		return nil
 	}
 	if strings.HasPrefix(text, "[") {
+		var items []QueueItem
+		if err := json.Unmarshal(data, &items); err == nil {
+			ok := true
+			for _, it := range items {
+				if it.ID == "" {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				return items
+			}
+		}
 		var messages []string
 		if json.Unmarshal(data, &messages) != nil {
 			return nil
 		}
-		return messages
+		items = queueItemsFromMessages(messages)
+		s.WriteQueueItems(id, items) //nolint:errcheck // upgrade is best-effort; items are still valid in memory
+		return items
 	}
-	return []string{text}
+	items := queueItemsFromMessages([]string{text})
+	s.WriteQueueItems(id, items) //nolint:errcheck
+	return items
 }
 
-func (s Store) WriteQueue(id string, messages []string) error {
-	if len(messages) == 0 {
+func queueItemsFromMessages(messages []string) []QueueItem {
+	items := make([]QueueItem, 0, len(messages))
+	for _, m := range messages {
+		items = append(items, QueueItem{ID: NewQueueItemID(), Message: m})
+	}
+	return items
+}
+
+// WriteQueueItems persists a session's queue in the current object-array
+// format; an empty queue removes the file.
+func (s Store) WriteQueueItems(id string, items []QueueItem) error {
+	if len(items) == 0 {
 		return s.RemoveQueue(id)
 	}
-	data, err := json.Marshal(messages)
+	data, err := json.Marshal(items)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(s.path(id, ".queue"), data, 0o644)
+}
+
+// ReadQueue returns the queued message texts (derived from ReadQueueItems;
+// kept for surfaces that only display messages).
+func (s Store) ReadQueue(id string) []string {
+	items := s.ReadQueueItems(id)
+	if len(items) == 0 {
+		return nil
+	}
+	messages := make([]string, 0, len(items))
+	for _, it := range items {
+		messages = append(messages, it.Message)
+	}
+	return messages
+}
+
+// WriteQueue persists plain messages, minting fresh item ids (legacy-shaped
+// helper; prefer WriteQueueItems).
+func (s Store) WriteQueue(id string, messages []string) error {
+	return s.WriteQueueItems(id, queueItemsFromMessages(messages))
 }
 
 func (s Store) RemoveQueue(id string) error { return removeIfPresent(s.path(id, ".queue")) }

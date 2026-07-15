@@ -341,7 +341,17 @@ func (c *Client) CancelCommitDone(sessionID string) error {
 
 // Queue registers a message for delivery when the session becomes Done.
 func (c *Client) Queue(paneID, sessionID, message string) error {
-	return c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, SessionID: sessionID, Message: message})}, nil)
+	_, err := c.QueueMessage(paneID, sessionID, message, "")
+	return err
+}
+
+// QueueMessage registers a message for delivery when the session becomes Done
+// and returns the durable queue item id (W8). actionID, when non-empty, links
+// the item to the batch/MCP action that enqueued it.
+func (c *Client) QueueMessage(paneID, sessionID, message, actionID string) (string, error) {
+	var data QueueResultData
+	err := c.rpcInto(Request{Type: ReqQueue, Data: marshalData(QueueData{PaneID: paneID, SessionID: sessionID, Message: message, ActionID: actionID})}, &data)
+	return data.ItemID, err
 }
 
 // CancelQueueItem removes a single queued message by index for a session.

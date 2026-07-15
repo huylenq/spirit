@@ -58,8 +58,13 @@ func (d *Daemon) poll() {
 			if _, pending := d.commitDonePanes[sid]; pending {
 				sessions[i].CommitDonePending = true
 			}
-			if msgs, pending := d.queuePanes[sid]; pending && len(msgs) > 0 {
+			if items, pending := d.queuePanes[sid]; pending && len(items) > 0 {
+				msgs := make([]string, 0, len(items))
+				for _, item := range items {
+					msgs = append(msgs, item.Message)
+				}
 				sessions[i].QueuePending = msgs
+				sessions[i].QueueItems = append([]agent.QueueItem(nil), items...)
 			}
 		}
 		if d.synthesizingPanes[sessions[i].PaneID] {

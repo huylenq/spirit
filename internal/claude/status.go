@@ -256,6 +256,14 @@ func ReadQueueMessages(sessionID string) []string {
 	return (agent.Store{Dir: statusDir()}).ReadQueue(sessionID)
 }
 
+func ReadQueueItems(sessionID string) []agent.QueueItem {
+	return (agent.Store{Dir: statusDir()}).ReadQueueItems(sessionID)
+}
+
+func WriteQueueItems(sessionID string, items []agent.QueueItem) error {
+	return (agent.Store{Dir: statusDir()}).WriteQueueItems(sessionID, items)
+}
+
 func WriteQueueMessages(sessionID string, messages []string) error {
 	return (agent.Store{Dir: statusDir()}).WriteQueue(sessionID, messages)
 }

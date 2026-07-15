@@ -74,9 +74,13 @@ func (d *Daemon) handleQueueCommitDone(data json.RawMessage) *Response {
 		return &r
 	}
 	d.queueMu.Lock()
-	d.queuePanes[req.SessionID] = append(d.queuePanes[req.SessionID], commitCmd)
+	d.queuePanes[req.SessionID] = append(d.queuePanes[req.SessionID], agent.QueueItem{
+		ID:         agent.NewQueueItemID(),
+		Message:    commitCmd,
+		EnqueuedAt: time.Now().UTC(),
+	})
 	msgs := d.queuePanes[req.SessionID]
-	queueErr := claude.WriteQueueMessages(req.SessionID, msgs)
+	queueErr := claude.WriteQueueItems(req.SessionID, msgs)
 	d.queueMu.Unlock()
 	if queueErr != nil {
 		r := errResponse("write queue: " + queueErr.Error())

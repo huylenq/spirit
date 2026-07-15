@@ -148,6 +148,15 @@ func (d *Daemon) signalTurnCompleted(s agent.Session, turnStarted time.Time) {
 			ev["duration"] = dur.String()
 		}
 	}
+	// Queued-delivery → turn linkage (W8): if this turn was started by a
+	// delivered queue item, stamp the causing item/action so the chain
+	// queued message → delivery → turn → reconciliation is walkable.
+	if attrib, ok := d.takeTurnAttribution(s.SessionID); ok {
+		ev["caused_by_queue_item"] = attrib.QueueItemID
+		if attrib.ActionID != "" {
+			ev["caused_by_action"] = attrib.ActionID
+		}
+	}
 	d.perception.Ingest(ledger.SignalTurnCompleted, anchor, s.SessionID, s.Project, ev, "")
 }
 
@@ -201,6 +210,8 @@ func (d *Daemon) signalSessionEnded(s agent.Session) {
 	}
 	ev := map[string]any{"provider": string(s.Provider), "title": s.DisplayName()}
 	d.perception.Ingest(ledger.SignalSessionEnded, s.SessionID, s.SessionID, s.Project, ev, "")
+	// A dead session's turn can no longer be attributed; drop any pending link.
+	d.takeTurnAttribution(s.SessionID)
 	// A dead session can no longer be unblocked; close its waiting items.
 	d.perception.ResolveSessionItems(s.SessionID,
 		[]ledger.Category{ledger.CategoryNeedsDecision, ledger.CategoryBlocked},
@@ -251,13 +262,12 @@ func (d *Daemon) observeOverlaps(overlaps []claude.FileOverlap, sessions []agent
 	d.hadOverlaps = len(current) > 0
 }
 
-// signalQueueOutcome records the delivery outcome of one queued/pending
-// prompt. Queue items carry no ids (they are raw strings in a FIFO), so the
+// signalQueueOutcome records the delivery outcome of one PENDING prompt
+// (spawn-time prompts keyed by pane). Pending prompts carry no item id, so the
 // anchor is a content hash under an anchorScope (session id, or "pane:%s" for
-// a pending prompt whose session never materialized) — two identical messages
-// to the same target coalesce into one fact, and a retried failure does not
-// re-signal. A successful delivery supersedes a prior failure signal for the
-// same message.
+// a prompt whose session never materialized) — a retried failure does not
+// re-signal, and a successful delivery supersedes a prior failure signal for
+// the same message.
 func (d *Daemon) signalQueueOutcome(delivered bool, anchorScope, sessionID, project, message, errMsg string) {
 	if d.perception == nil {
 		return
@@ -273,6 +283,62 @@ func (d *Daemon) signalQueueOutcome(delivered bool, anchorScope, sessionID, proj
 		ev["error"] = errMsg
 	}
 	d.perception.Ingest(ledger.SignalQueueFailed, anchor, sessionID, project, ev, "")
+}
+
+// signalQueueItemOutcome records the delivery outcome of one queued item.
+// Anchor migration (W8, deliberate): queue items now carry durable ids minted
+// at enqueue, so the anchor is the item id — stable across delivery retries
+// (same item, same anchor) while two identical messages are two distinct
+// facts. Evidence carries queue_item_id and, when the item came from a
+// batch/MCP action, its action_id — the hook `action_reconciled` watches
+// anchor on.
+func (d *Daemon) signalQueueItemOutcome(delivered bool, sessionID, project string, item agent.QueueItem, errMsg string) {
+	if d.perception == nil {
+		return
+	}
+	anchor := sessionID + "/" + item.ID
+	ev := map[string]any{"prompt": item.Message, "queue_item_id": item.ID}
+	if item.ActionID != "" {
+		ev["action_id"] = item.ActionID
+	}
+	if delivered {
+		supersedes := d.perception.SignalID(ledger.SignalQueueFailed, anchor)
+		d.perception.Ingest(ledger.SignalQueueDelivered, anchor, sessionID, project, ev, supersedes)
+		return
+	}
+	if errMsg != "" {
+		ev["error"] = errMsg
+	}
+	d.perception.Ingest(ledger.SignalQueueFailed, anchor, sessionID, project, ev, "")
+}
+
+// turnAttribution links a delivered queue item to the next completed turn of
+// its session (queued message → delivery → the turn it caused, W8).
+type turnAttribution struct {
+	QueueItemID string
+	ActionID    string
+}
+
+// recordTurnAttribution notes that the session's next completed turn was
+// caused by the just-delivered queue item. Called under queueMu from the
+// resolver; uses its own lock so signalTurnCompleted (poll path) can consume
+// it without touching queue state.
+func (d *Daemon) recordTurnAttribution(sessionID string, item agent.QueueItem) {
+	d.turnAttribMu.Lock()
+	d.turnAttrib[sessionID] = turnAttribution{QueueItemID: item.ID, ActionID: item.ActionID}
+	d.turnAttribMu.Unlock()
+}
+
+// takeTurnAttribution consumes (at most once) the pending attribution for a
+// session's completed turn.
+func (d *Daemon) takeTurnAttribution(sessionID string) (turnAttribution, bool) {
+	d.turnAttribMu.Lock()
+	defer d.turnAttribMu.Unlock()
+	attrib, ok := d.turnAttrib[sessionID]
+	if ok {
+		delete(d.turnAttrib, sessionID)
+	}
+	return attrib, ok
 }
 
 // handleActionReport ingests a failed side-effect operation reported by an
