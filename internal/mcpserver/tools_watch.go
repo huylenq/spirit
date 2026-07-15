@@ -32,6 +32,17 @@ func handleListAttention(api daemonAPI, args json.RawMessage) (any, bool) {
 	}, false
 }
 
+// handleReactiveStatus reports the read-only durable-reactivity status (W9).
+// There is deliberately no enable/disable tool — the autonomy switch is human-
+// only (`spirit reactive enable`), off the reactive/agent path entirely.
+func handleReactiveStatus(api daemonAPI, args json.RawMessage) (any, bool) {
+	st, err := api.ReactiveStatus()
+	if err != nil {
+		return errPayload("reactive_status", err), true
+	}
+	return st, false
+}
+
 func handleCreateWatch(api daemonAPI, args json.RawMessage) (any, bool) {
 	var a struct {
 		SessionID        string `json:"session_id"`

@@ -20,6 +20,11 @@ var focusModeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
 // matching the attention inbox overlay's border.
 var attentionBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("135")).Bold(true)
 
+// reactiveIndicatorStyle tints the durable-reactivity glyph (steady ⚡ / ⏸)
+// teal — distinct from the purple ⚡N attention badge so "autonomy is enabled"
+// never reads as "N items are waiting".
+var reactiveIndicatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("44")).Bold(true)
+
 // autoJumpIndicator renders the autojump glyph for the header label line.
 // Solid flash when ON, hollow outline when OFF. Shows text briefly after toggling.
 func (m Model) autoJumpIndicator() string {
@@ -94,6 +99,9 @@ func (m Model) View() string {
 		}
 		if m.attentionUnseen > 0 {
 			left += " " + attentionBadgeStyle.Render(fmt.Sprintf("⚡%d", m.attentionUnseen))
+		}
+		if ind := m.reactiveIndicator(); ind != "" {
+			left += " " + ind
 		}
 		right := m.usageBar.LabelView()
 		leftW := lipgloss.Width(left)

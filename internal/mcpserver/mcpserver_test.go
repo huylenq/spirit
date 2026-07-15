@@ -32,6 +32,7 @@ type fakeDaemon struct {
 	watchErr       error
 	attentionItems []ledger.AttentionItem
 	resolved       []string // "itemID|resolution"
+	reactiveStatus daemon.ReactiveStatusData
 }
 
 func (f *fakeDaemon) Sessions(string) ([]agent.Session, error) { return f.sessions, nil }
@@ -137,6 +138,9 @@ func (f *fakeDaemon) AttentionList() (daemon.AttentionListData, error) {
 func (f *fakeDaemon) AttentionResolve(itemID, resolution string) error {
 	f.resolved = append(f.resolved, itemID+"|"+resolution)
 	return nil
+}
+func (f *fakeDaemon) ReactiveStatus() (daemon.ReactiveStatusData, error) {
+	return f.reactiveStatus, nil
 }
 
 // pipeClient drives a Server over io.Pipes and reads newline-delimited responses.

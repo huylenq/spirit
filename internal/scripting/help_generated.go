@@ -102,6 +102,25 @@ queue_commit_done(id) -> {ok, operation, target}
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
 
+reactive_pause() -> status
+  Pause durable reactive processing: the lease is kept (the daemon stays awake,
+  ingest continues, watches keep triggering and persisting) but nothing is
+  claimed or dispatched. Returns the updated status. A thin wrapper over the
+  control RPC — for Gate E automation and eval scripting.
+
+reactive_resume() -> status
+  Resume durable reactive processing after a pause: already-triggered watches
+  are processed on the next tick (deferred, not dropped). Returns the updated
+  status.
+
+reactive_status() -> {enabled, paused, leased, durable_reactive, subscribers, gate_reason, quiet_hours_active, quiet_hours, llm_budget_remaining, llm_budget_total}
+  Read the durable-reactivity status (W9): whether durable reactivity is
+  enabled/paused, whether a lease is held, why the reactive engine is currently
+  eligible (gate_reason = subscriber | durable | none), the live subscriber
+  count, quiet-hours state, and the remaining global daily provider budget.
+  Read-only — enabling durable reactivity is a human act (spirit reactive
+  enable), never a script/Lulu action.
+
 run_actions(steps, [{on_error, resume_of}]) -> result
   Execute a batch of actions as ONE unit (W8): validates exactly like
   plan_actions (an invalid batch is rejected whole, never half-executed),
@@ -211,7 +230,7 @@ toast(msg)
 
 ### Session Fields
 
-id, pane_id, project, project_code, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, synthesized_title, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, created_at, last_changed, display_name
+id, pane_id, project, project_code, cwd, git_branch, tmux_session, tmux_window, tmux_pane, pid, status, first_message, last_user_message, synthesized_title, custom_title, permission_mode, stop_reason, is_waiting, compact_count, commit_done_pending, queue_pending, tags, created_at, last_changed, display_name
 
 ### Backlog Fields
 

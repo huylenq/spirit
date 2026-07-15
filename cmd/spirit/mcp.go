@@ -167,6 +167,10 @@ After any side-effect tool call, confirm the target actually reacted: ` + "`wait
 
 When you infer or are told which plan a session serves, record it: ` + "`set_tags`" + ` with ` + "`plan:<slug>`" + ` (preserve the session's other tags — set_tags replaces the whole list). That tag is the durable session↔plan link Spirit surfaces back to you.
 
+## Durable reactivity (W9)
+
+Watches normally process only while a TUI is attached. Durable reactivity lets them fire with no TUI open, under an explicit, launchd-supervised lease with a bounded daily provider budget and quiet hours. Report its state with ` + "`reactive_status`" + ` (enabled / paused / lease held / gate reason / quiet-hours / remaining budget). **Enabling or disabling it is a human act** (` + "`spirit reactive enable`" + `) — there is deliberately no tool to turn autonomy on or off. Even durable, the reactive path may only inbox / notify / recommend: it never prompts a coding session, never mutates the fleet or a repo, and never runs a batch or runbook.
+
 ## Notes
 
 - ` + "`send_message`" + ` requires the target to be idle; use ` + "`queue_message`" + ` when it may be busy.

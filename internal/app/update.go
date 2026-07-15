@@ -470,6 +470,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case ReactiveStatusMsg:
+		m.reactiveStatus = msg.Status
+		return m, nil
+
+	case ReactiveActionMsg:
+		return m, m.reactiveActionFlash(msg)
+
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
 		return m, cmd

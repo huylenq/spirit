@@ -45,6 +45,19 @@ type AttentionModel struct {
 	cursor  int // 0..len(items)+len(watches)-1: items first, then watches
 	loaded  bool
 	err     string
+
+	// Durable-reactivity state (W9), shown in the inbox header so the user can
+	// see whether watches fire with no TUI open, and why.
+	reactiveEnabled bool
+	reactivePaused  bool
+	reactiveGate    string // subscriber | durable | none
+}
+
+// SetReactiveState records the durable-reactivity state for the header line.
+func (m *AttentionModel) SetReactiveState(enabled, paused bool, gate string) {
+	m.reactiveEnabled = enabled
+	m.reactivePaused = paused
+	m.reactiveGate = gate
 }
 
 // SetData replaces the inbox contents (fetched on open and after actions).
@@ -122,6 +135,21 @@ func severityGlyph(sev string) string {
 	}
 }
 
+// reactiveHeaderLine renders the durable-reactivity state for the inbox header:
+// whether watches fire headlessly (durable on/paused) or only with a TUI open.
+func reactiveHeaderLine(enabled, paused bool, gate string) string {
+	if !enabled {
+		return "durable reactivity: off — watches process only while a TUI is open (gR to enable)"
+	}
+	if paused {
+		return "durable reactivity: ⏸ paused — lease held, dispatching nothing (gR to resume)"
+	}
+	if gate == "durable" {
+		return "durable reactivity: ⚡ on (headless) — watches fire with no TUI open"
+	}
+	return "durable reactivity: ⚡ on — watches fire (currently via an attached TUI)"
+}
+
 // View renders the inbox overlay bounded by maxWidth/maxHeight.
 func (m *AttentionModel) View(maxWidth, maxHeight int) string {
 	w := min(90, maxWidth-6)
@@ -138,6 +166,7 @@ func (m *AttentionModel) View(maxWidth, maxHeight int) string {
 		gap = 1
 	}
 	lines = append(lines, title+strings.Repeat(" ", gap)+hint)
+	lines = append(lines, attentionDimStyle.Render(reactiveHeaderLine(m.reactiveEnabled, m.reactivePaused, m.reactiveGate)))
 	lines = append(lines, attentionDimStyle.Render(strings.Repeat("─", inner)))
 
 	if m.err != "" {

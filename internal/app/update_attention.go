@@ -43,7 +43,8 @@ type AttentionActionMsg struct {
 func execOpenAttentionInbox(m *Model) (Model, tea.Cmd) {
 	m.state = StateAttentionInbox
 	m.attentionUnseen = 0
-	return *m, m.fetchAttention()
+	m.attention.SetReactiveState(m.reactiveStatus.Enabled, m.reactiveStatus.Paused, m.reactiveStatus.GateReason)
+	return *m, tea.Batch(m.fetchAttention(), m.fetchReactiveStatus())
 }
 
 // execWatchSelected starts the two-keystroke watch picker for the selected

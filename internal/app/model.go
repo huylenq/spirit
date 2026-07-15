@@ -294,6 +294,7 @@ type Model struct {
 	copilotDragEdges     copilotResizeEdge
 	attention            ui.AttentionModel // attention inbox overlay (StateAttentionInbox)
 	attentionUnseen      int               // reactive notifications since the inbox was last opened
+	reactiveStatus       daemon.ReactiveStatusData // durable-reactivity state (W9): statusline glyph + gR cycle
 	watchPickerCondition string            // chosen condition while StateWatchPicker collects the response key
 	runbookConfirm       *runbookConfirmState // pending runbook plan preview (StateRunbookConfirm); nil when none
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
@@ -644,6 +645,7 @@ func (m Model) Init() tea.Cmd {
 		captureOriginalPane(),
 		m.fetchCopilotHistory(),
 		m.fetchCopilotStatus(),
+		m.fetchReactiveStatus(),
 	)
 }
 

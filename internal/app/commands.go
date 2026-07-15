@@ -128,6 +128,24 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execFullscreen() },
 		},
 
+		// --- Durable reactivity (W9) ---
+		{
+			Name:    "Durable reactivity: enable",
+			Execute: func(m *Model) (Model, tea.Cmd) { return execReactiveEnable(m) },
+		},
+		{
+			Name:    "Durable reactivity: pause",
+			Execute: func(m *Model) (Model, tea.Cmd) { return execReactivePause(m) },
+		},
+		{
+			Name:    "Durable reactivity: resume",
+			Execute: func(m *Model) (Model, tea.Cmd) { return execReactiveResume(m) },
+		},
+		{
+			Name:    "Durable reactivity: disable",
+			Execute: func(m *Model) (Model, tea.Cmd) { return execReactiveDisable(m) },
+		},
+
 		// --- Toggles ---
 		{
 			Name: "Group by project", Binding: &Keys.GroupMode,

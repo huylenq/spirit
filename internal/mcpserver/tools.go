@@ -39,6 +39,7 @@ type daemonAPI interface {
 	WatchCancel(watchID string) (ledger.Watch, error)
 	AttentionList() (daemon.AttentionListData, error)
 	AttentionResolve(itemID, resolution string) error
+	ReactiveStatus() (daemon.ReactiveStatusData, error)
 }
 
 // Compile-time check that the real client satisfies the interface.
@@ -148,6 +149,12 @@ func buildTools() []tool {
 			Description: "List unresolved attention items (open + delivered): category, severity, scope, one-line description, any attached recommendation, and the causal audit chain (signals → watch → policy → LLM run → delivery). Use resolve_attention to close items that no longer need the user.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 			Handler:     handleListAttention,
+		},
+		{
+			Name:        "reactive_status",
+			Description: "Report whether durable reactivity is enabled/paused, whether the daemon holds a durable lease, why the reactive engine is currently eligible (gate_reason: subscriber | durable | none), the live TUI subscriber count, quiet-hours state, and the remaining global daily provider budget. READ-ONLY: enabling or disabling durable reactivity is a human act (spirit reactive enable), never a tool call — there is deliberately no MCP enable/disable.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+			Handler:     handleReactiveStatus,
 		},
 		{
 			Name:        "plan_actions",

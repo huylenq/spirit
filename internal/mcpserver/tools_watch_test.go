@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/huylenq/spirit/internal/daemon"
 	"github.com/huylenq/spirit/internal/ledger"
 	"github.com/huylenq/spirit/internal/receipt"
 )
@@ -134,6 +135,39 @@ func TestWatchToolsListed(t *testing.T) {
 	for _, name := range []string{"create_watch", "list_watches", "cancel_watch", "list_attention", "resolve_attention"} {
 		if !strings.Contains(string(raw), `"`+name+`"`) {
 			t.Errorf("tools/list missing %s", name)
+		}
+	}
+}
+
+func TestReactiveStatusToolRoundTrip(t *testing.T) {
+	fd := &fakeDaemon{reactiveStatus: daemon.ReactiveStatusData{
+		Enabled: true, Leased: true, DurableReactive: true, GateReason: "durable",
+		LLMBudgetTotal: 20, LLMBudgetRemaining: 19,
+	}}
+	pc := newPipeClient(t, fd)
+	defer pc.close()
+
+	res, body := pc.callTool(t, "reactive_status", map[string]any{})
+	if res.IsError {
+		t.Fatalf("reactive_status errored: %s", body)
+	}
+	var st daemon.ReactiveStatusData
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, body)
+	}
+	if !st.Enabled || !st.Leased || st.GateReason != "durable" || st.LLMBudgetRemaining != 19 {
+		t.Fatalf("reactive_status payload = %+v", st)
+	}
+
+	// There is deliberately NO enable/disable tool — the autonomy switch is human-only.
+	resp := pc.call(t, "tools/list", map[string]any{})
+	raw, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(raw), `"reactive_status"`) {
+		t.Error("tools/list missing reactive_status")
+	}
+	for _, forbidden := range []string{"reactive_enable", "reactive_disable", "reactive_pause"} {
+		if strings.Contains(string(raw), `"`+forbidden+`"`) {
+			t.Errorf("tools/list exposes a durable-reactivity mutation tool: %s", forbidden)
 		}
 	}
 }
