@@ -175,18 +175,18 @@ func (m Model) View() string {
 		m.detail.SetRelayView("")
 	}
 
-	// Main content: either sidebar+detail (default) or workqueue+detail
+	// Main content: the exit morph (calm scene coalescing into the returning view)
+	// takes over the content area while it runs; otherwise sidebar+detail (default)
+	// or workqueue+detail. The morph's final frame equals the normal content, so
+	// handing back to the layouts below is seamless.
 	var content string
-	if m.viewMode == ViewWorkQueue {
+	switch {
+	case m.detail.QuietExitActive():
+		content = m.renderQuietExitPanel(innerWidth, contentHeight)
+	case m.viewMode == ViewWorkQueue:
 		content = m.viewWorkQueueLayout(innerWidth, contentHeight)
-	} else {
+	default:
 		content = m.viewSidebarLayout(innerWidth, contentHeight)
-	}
-
-	// Exit shatter: while the quiet scene is bursting away, composite its falling
-	// debris on top of the returning normal view so the transition doesn't cut.
-	if m.detail.QuietExitActive() {
-		content = m.detail.OverlayQuietExit(content)
 	}
 
 	// Minimap: docked at bottom in fullscreen (inserted into layout below),

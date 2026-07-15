@@ -538,15 +538,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// explosion only when the last your-turn session just completed (had
 		// navigable items, now all quiet) — not when the TUI merely polled while
 		// already quiet or opened straight into a quiet state.
-		// Exiting quiet: a session reappeared in YOUR TURN. Capture the calm scene
-		// as it looked (mobile still active) and shatter it outward — the burst is
-		// composited over the returning normal view in View(). Seed before the
-		// intro sync below, which stops the mobile animation.
+		// Exiting quiet: a session reappeared in YOUR TURN. Morph the calm scene
+		// into the returning normal view — capture the calm scene (mobile still
+		// active) as the source and the normal content frame as the target, both on
+		// the same canvas, so particles bloom out of the calm scene and coalesce
+		// into the workspace. Seed before the intro sync below, which stops the
+		// mobile animation. The morph replaces the content area in View() until it
+		// settles onto the target frame.
 		if prevAllQuiet && !m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
-			w := m.innerWidth() - m.copilotDockedWidth() - 2
-			h := m.contentHeight()
-			src := m.detail.ViewAllQuietSized(w, h, prevQuietCounts)
-			if cmd := m.detail.StartQuietExit(src, w, h); cmd != nil {
+			w := m.innerWidth() - m.copilotDockedWidth()
+			h := m.contentHeight() - 1 // matches the normal content height in View()
+			calm := m.detail.ViewAllQuietSized(w, h, prevQuietCounts)
+			target := m.viewInner()
+			if cmd := m.detail.StartQuietExit(calm, target, w, h); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}

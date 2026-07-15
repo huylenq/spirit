@@ -660,23 +660,24 @@ func (m *DetailModel) TickAllQuiet() tea.Cmd { return m.allQuiet.Tick() }
 // AllQuietAnimActive reports whether the animation is running.
 func (m *DetailModel) AllQuietAnimActive() bool { return m.allQuiet.Active() }
 
-// StartQuietExit begins the exit shatter — the quiet scene (src, laid out on the
-// w×h canvas) bursts apart, later composited over the returning normal frame.
-func (m *DetailModel) StartQuietExit(src string, w, h int) tea.Cmd {
-	return m.quietExit.Start(src, w, h)
+// StartQuietExit begins the exit morph — the calm scene (calmSrc) blooms outward
+// and coalesces into the returning normal frame (target), both laid out on the
+// w×h canvas.
+func (m *DetailModel) StartQuietExit(calmSrc, target string, w, h int) tea.Cmd {
+	return m.quietExit.Start(calmSrc, target, w, h)
 }
 
-// TickQuietExit advances the exit shatter by one frame.
+// TickQuietExit advances the exit morph by one frame.
 func (m *DetailModel) TickQuietExit() tea.Cmd { return m.quietExit.Tick() }
 
-// QuietExitActive reports whether the exit shatter is running.
+// QuietExitActive reports whether the exit morph is running.
 func (m *DetailModel) QuietExitActive() bool { return m.quietExit.Active() }
 
-// StopQuietExit halts the exit shatter.
+// StopQuietExit halts the exit morph.
 func (m *DetailModel) StopQuietExit() { m.quietExit.Stop() }
 
-// OverlayQuietExit composites the live exit debris onto a background frame.
-func (m *DetailModel) OverlayQuietExit(bg string) string { return m.quietExit.Overlay(bg) }
+// RenderQuietExit renders the live exit-morph swarm on a w×h canvas.
+func (m *DetailModel) RenderQuietExit(w, h int) string { return m.quietExit.Render(w, h) }
 
 // MoreAllQuietParticles / FewerAllQuietParticles adjust the quiet-scene starfield density.
 func (m *DetailModel) MoreAllQuietParticles()  { m.allQuiet.MoreParticles() }

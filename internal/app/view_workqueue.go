@@ -91,6 +91,19 @@ func (m Model) renderAllQuietPanel(detailWidth, contentHeight int) string {
 		Render(m.detail.ViewAllQuietSized(detailWidth-2, contentHeight, m.allQuietCounts()))
 }
 
+// renderQuietExitPanel renders the exit morph full-bleed in the content area —
+// the calm scene blooming out and coalescing into the returning normal view —
+// beside any docked copilot, mirroring the all-quiet panel's geometry.
+func (m Model) renderQuietExitPanel(innerWidth, contentHeight int) string {
+	copilotDockedW := m.copilotDockedWidth()
+	morph := m.detail.RenderQuietExit(innerWidth-copilotDockedW, contentHeight)
+	copilotDockedPanel := m.renderDockedCopilot(copilotDockedW, contentHeight)
+	if copilotDockedPanel != "" {
+		return lipgloss.JoinHorizontal(lipgloss.Top, morph, copilotDockedPanel)
+	}
+	return morph
+}
+
 // renderDockedCopilot renders the copilot docked panel if visible, or empty string.
 func (m Model) renderDockedCopilot(copilotDockedW, contentHeight int) string {
 	if copilotDockedW <= 0 {

@@ -3,84 +3,106 @@ package ui
 import (
 	"math"
 	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
-// exitFrames is how long the calm quiet scene shatters outward before the
-// returning normal view is left uncovered.
-const exitFrames = 14
+// exitMorphFrames is how long the calm scene takes to bloom outward and coalesce
+// into the returning normal view.
+const exitMorphFrames = 22
 
-// QuietExitAnim is the mirror of the intro explosion, played when a session
-// reappears in YOUR TURN and the quiet mobile scene gives way to the normal
-// sidebar+detail view. Unlike the intro it has no target and no implode: the
-// calm scene simply bursts from center and falls away, composited on top of the
-// live normal frame so the debris appears to lift off and reveal the work
-// underneath. When the burst clears, what remains is exactly the normal frame.
+const (
+	exitStiff = 0.20 // spring pull toward the landing cell
+	exitDamp  = 0.60 // velocity damping so particles settle rather than oscillate
+	exitKick  = 0.6  // initial outward bloom from center before the spring gathers
+)
+
+// QuietExitAnim is the mirror of the intro morph, played when a session
+// reappears in YOUR TURN and the calm mobile scene gives way to the normal
+// sidebar+detail view. It seeds one particle per cell of the returning frame,
+// starting each at the nearest glyph of the calm scene — so frame 0 reads as the
+// calm scene, which then blooms outward and coalesces into the full workspace,
+// every rune morphing into its landing glyph. Because there are far more target
+// cells than calm glyphs, particles fan out from the clustered center to fill the
+// frame; when they land, what remains is exactly the normal view.
 type QuietExitAnim struct {
 	active bool
 	debris []debrisParticle
 	fr     int
 }
 
-// Active reports whether the exit shatter is running.
+// Active reports whether the exit morph is running.
 func (a *QuietExitAnim) Active() bool { return a.active }
 
-// Start seeds the shatter from a rendered source frame (the quiet scene as it
-// looked) laid out on a w×h canvas, and returns the first tick command. The
-// debris coordinate space is the same w×h, so callers overlay it onto a frame of
-// matching dimensions.
-func (a *QuietExitAnim) Start(src string, w, h int) tea.Cmd {
-	frags := decomposeStyled(src, w, h)
-	if len(frags) == 0 {
+// Start seeds the morph from the calm scene (calmSrc) toward the returning normal
+// frame (target), both laid out on the same w×h canvas, and returns the first
+// tick command. Returns nil (and stays inactive) if the target has no glyphs to
+// assemble — the caller then simply shows the normal view.
+func (a *QuietExitAnim) Start(calmSrc, target string, w, h int) tea.Cmd {
+	targets := decomposeStyled(target, w, h)
+	if len(targets) == 0 {
 		a.active = false
 		a.debris = nil
 		return nil
 	}
-	a.active = true
-	a.fr = 0
-
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	// Per-burst flavor, matching the intro so the two transitions feel related.
-	speedMul := 0.8 + rng.Float64()*0.7
-	swirl := (rng.Float64()*2 - 1) * 0.7
+	calm := decomposeStyled(calmSrc, w, h)
 
 	cx, cy := float64(w)/2, float64(h)/2
-	a.debris = make([]debrisParticle, len(frags))
-	for i, f := range frags {
-		dx, dy := float64(f.x)-cx, float64(f.y)-cy
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	a.debris = make([]debrisParticle, len(targets))
+	for i, t := range targets {
+		// Start at the nearest calm glyph (or screen center if the calm scene was
+		// empty) so the swarm appears to erupt from where the calm scene sat.
+		sx, sy := cx, cy
+		startCell := t.styled
+		if len(calm) > 0 {
+			best, bestDist := 0, math.MaxFloat64
+			for j := range calm {
+				dx, dy := float64(calm[j].x-t.x), float64(calm[j].y-t.y)
+				if d := dx*dx + dy*dy; d < bestDist {
+					best, bestDist = j, d
+				}
+			}
+			sx, sy = float64(calm[best].x), float64(calm[best].y)
+			startCell = calm[best].styled // carry the calm glyph until it lands
+		}
+		// A small outward kick from center gives the swarm an initial bloom before
+		// the spring reels each particle onto its target cell.
+		dx, dy := sx-cx, sy-cy
 		dist := math.Hypot(dx, dy)
 		if dist < 0.001 {
 			dist = 0.001
 		}
 		ux, uy := dx/dist, dy/dist
-		tx, ty := -uy, ux // tangent for the swirl
-		speed := (explodeMinSpeed + rng.Float64()*explodeSpeedVar) * speedMul
 		a.debris[i] = debrisParticle{
-			x: float64(f.x), y: float64(f.y),
-			vx: (ux+tx*swirl)*speed + (rng.Float64()-0.5)*1.5,
-			// Halve vertical speed (cells are ~2× taller than wide) and add an
-			// upward kick so the debris arcs before gravity takes it.
-			vy:   (uy+ty*swirl)*speed*0.5 - explodeLift - rng.Float64()*0.6,
-			cell: f.styled,
-			ttl:  exitFrames + int(rng.Float64()*4),
+			x: sx, y: sy,
+			vx:        ux*exitKick + (rng.Float64()-0.5)*1.2,
+			vy:        uy*exitKick*0.5 + (rng.Float64()-0.5)*0.8,
+			cell:      startCell,
+			ttl:       exitMorphFrames + 5,
+			tx:        float64(t.x),
+			ty:        float64(t.y),
+			hasTarget: true,
+			landCell:  t.styled,
 		}
 	}
+	a.active = true
+	a.fr = 0
 	return tickAllQuiet()
 }
 
-// Stop halts the shatter and releases its debris.
+// Stop halts the morph and releases its particles.
 func (a *QuietExitAnim) Stop() {
 	a.active = false
 	a.debris = nil
 }
 
-// Tick advances the shatter by one frame and returns the next tick command, or
-// nil once the burst has run its course.
+// Tick springs every particle toward its landing cell (morphing the rune into
+// its target glyph on arrival) and returns the next tick command, or nil once the
+// swarm has settled into the normal frame.
 func (a *QuietExitAnim) Tick() tea.Cmd {
 	if !a.active {
 		return nil
@@ -88,15 +110,16 @@ func (a *QuietExitAnim) Tick() tea.Cmd {
 	a.fr++
 	for i := range a.debris {
 		d := &a.debris[i]
-		if d.ttl <= 0 {
-			continue
-		}
-		d.vy += explodeGravity
+		// Critically-damped spring: the initial bloom is reeled back onto the cell.
+		d.vx += (d.tx-d.x)*exitStiff - d.vx*exitDamp
+		d.vy += (d.ty-d.y)*exitStiff - d.vy*exitDamp
 		d.x += d.vx
 		d.y += d.vy
-		d.ttl--
+		if math.Hypot(d.tx-d.x, d.ty-d.y) <= implodeSnap {
+			d.cell = d.landCell // morph into the landing glyph as it arrives
+		}
 	}
-	if a.fr >= exitFrames {
+	if a.fr >= exitMorphFrames {
 		a.active = false
 		a.debris = nil
 		return nil
@@ -104,72 +127,34 @@ func (a *QuietExitAnim) Tick() tea.Cmd {
 	return tickAllQuiet()
 }
 
-// Overlay composites the live debris on top of a background frame (the returning
-// normal content), so the shatter appears to lift off the view underneath.
-// Debris cells replace only the background cell they land on; every other cell
-// shows through, and debris beyond a line's content is dropped rather than
-// padding the background out.
-func (a *QuietExitAnim) Overlay(bg string) string {
-	if !a.active || len(a.debris) == 0 {
-		return bg
+// Render stamps the live swarm onto a width×height cell grid (last writer wins),
+// padded to a full rectangle so it slots cleanly into the content area beside any
+// docked panel. The final frame equals the target frame, so handing off to the
+// normal layout is seamless.
+func (a *QuietExitAnim) Render(width, height int) string {
+	grid := make([][]string, height)
+	for y := range grid {
+		grid[y] = make([]string, width)
 	}
-	lines := strings.Split(bg, "\n")
-	// Group debris by row so each affected line is rebuilt in a single pass over
-	// its original (clean) text. Splicing cells one at a time via ansi.Truncate
-	// re-injects the SGR state on every call, which compounds exponentially —
-	// rebuilding once from the untouched line keeps it linear.
-	byRow := make(map[int][]placedCell)
 	for i := range a.debris {
 		d := &a.debris[i]
-		if d.ttl <= 0 {
-			continue
-		}
 		px, py := int(math.Round(d.x)), int(math.Round(d.y))
-		if py < 0 || py >= len(lines) {
-			continue
+		if px >= 0 && px < width && py >= 0 && py < height {
+			grid[py][px] = d.cell
 		}
-		byRow[py] = append(byRow[py], placedCell{col: px, cell: d.cell})
 	}
-	for row, cells := range byRow {
-		lines[row] = compositeRow(lines[row], cells)
-	}
-	return strings.Join(lines, "\n")
-}
-
-// placedCell is a styled cell to stamp at a visual column during compositing.
-type placedCell struct {
-	col  int
-	cell string
-}
-
-// compositeRow rebuilds a styled line with the given cells stamped over it,
-// preserving the untouched styled runs on either side. It walks the ORIGINAL
-// line once (via ansi.Cut for each gap), so redundant escape sequences never
-// compound. Cells landing past the line's content, or overlapping an earlier
-// cell, are dropped.
-func compositeRow(line string, cells []placedCell) string {
-	bWidth := ansi.StringWidth(line)
-	sort.Slice(cells, func(i, j int) bool { return cells[i].col < cells[j].col })
-
 	var sb strings.Builder
-	pos := 0 // next original column not yet emitted
-	for _, c := range cells {
-		if c.col < pos || c.col >= bWidth {
-			continue // overlaps a prior cell or lands past the content
+	for y := 0; y < height; y++ {
+		if y > 0 {
+			sb.WriteByte('\n')
 		}
-		w := ansi.StringWidth(c.cell)
-		if w < 1 {
-			w = 1
+		for x := 0; x < width; x++ {
+			if grid[y][x] == "" {
+				sb.WriteByte(' ')
+			} else {
+				sb.WriteString(grid[y][x])
+			}
 		}
-		if c.col+w > bWidth {
-			continue
-		}
-		sb.WriteString(ansi.Cut(line, pos, c.col)) // clean gap from the original
-		sb.WriteString(c.cell)
-		pos = c.col + w
-	}
-	if pos < bWidth {
-		sb.WriteString(ansi.Cut(line, pos, bWidth))
 	}
 	return sb.String()
 }
