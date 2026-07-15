@@ -76,6 +76,9 @@ func main() {
 		case "orchestrator":
 			runOrchestrator()
 			return
+		case "reactive":
+			runReactive()
+			return
 		case "popup":
 			runPopup()
 			return
