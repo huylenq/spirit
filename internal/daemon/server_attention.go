@@ -54,7 +54,7 @@ func (d *Daemon) handleWatchCreate(data json.RawMessage) *Response {
 	}
 
 	w, err := d.perception.CreateWatch(ledger.Watch{
-		Scope:              ledger.WatchScope{SessionID: req.SessionID, Project: req.Project},
+		Scope:              ledger.WatchScope{SessionID: req.SessionID, Project: req.Project, ActionID: req.ActionID},
 		Condition:          ledger.WatchCondition(req.Condition),
 		Response:           ledger.WatchResponse(req.Response),
 		ExpiresAt:          time.Now().Add(expiry),

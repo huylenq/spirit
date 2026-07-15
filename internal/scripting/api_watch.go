@@ -6,14 +6,17 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// watch(id, [{condition, response, project, expires_in_minutes, cooldown_seconds, max_firings, llm_budget}]) -> watch
+// watch(id, [{condition, response, project, action_id, expires_in_minutes, cooldown_seconds, max_firings, llm_budget}]) -> watch
 // Category: Features
 // Create a reactive watch on a session (W7). Defaults: condition
 // "completed_turn", response "inspect_and_recommend", 24h expiry, 60s
 // cooldown, 20 firings. Pass "" as id with opts.project for a project-wide
-// watch, or "" with no project for fleet-wide. While a TUI client is attached,
-// Spirit reacts: inbox records, notify raises one coalesced notification,
-// inspect_and_recommend attaches a bounded LLM proposal to the attention item.
+// watch, or "" with no project for fleet-wide. opts.action_id (with condition
+// "action_reconciled") anchors the watch to ONE action — e.g. a batch step's
+// action_id — firing exactly when that action's delivery/failure signal lands.
+// While a TUI client is attached, Spirit reacts: inbox records, notify raises
+// one coalesced notification, inspect_and_recommend attaches a bounded LLM
+// proposal to the attention item.
 func luaWatch(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
@@ -36,6 +39,9 @@ func luaWatch(deps Deps) lua.LGFunction {
 			}
 			if v := opts.RawGetString("project"); v != lua.LNil {
 				req.Project = v.String()
+			}
+			if v := opts.RawGetString("action_id"); v != lua.LNil {
+				req.ActionID = v.String()
 			}
 			if v, ok := opts.RawGetString("expires_in_minutes").(lua.LNumber); ok {
 				req.ExpiresInMinutes = int(v)
@@ -128,6 +134,7 @@ func watchToTable(L *lua.LState, w ledger.Watch) *lua.LTable {
 	t.RawSetString("watch_id", lua.LString(w.ID))
 	t.RawSetString("session_id", lua.LString(w.Scope.SessionID))
 	t.RawSetString("project", lua.LString(w.Scope.Project))
+	t.RawSetString("action_id", lua.LString(w.Scope.ActionID))
 	t.RawSetString("condition", lua.LString(string(w.Condition)))
 	t.RawSetString("response", lua.LString(string(w.Response)))
 	t.RawSetString("autonomy_level", lua.LString(w.AutonomyLevel))

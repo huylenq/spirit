@@ -70,9 +70,14 @@ func (s WatchState) terminal() bool {
 }
 
 // WatchScope bounds which signals a watch sees. Empty = fleet-wide.
+// ActionID (W8, condition action_reconciled only) anchors the watch to ONE
+// action: it matches exactly the signal whose anchor or action_id evidence
+// carries that id — a queued instruction's delivery/failure, or an
+// action_failed report from a batch receipt.
 type WatchScope struct {
 	SessionID string `json:"session_id,omitempty"`
 	Project   string `json:"project,omitempty"`
+	ActionID  string `json:"action_id,omitempty"`
 }
 
 // WatchPending is the trigger context carried from triggered into processing:
@@ -140,6 +145,9 @@ func (l *Ledger) CreateWatch(w Watch) (*Watch, error) {
 	case ResponseInbox, ResponseNotify, ResponseRecommend:
 	default:
 		return nil, fmt.Errorf("invalid watch response %q", w.Response)
+	}
+	if w.Scope.ActionID != "" && w.Condition != ConditionActionReconciled {
+		return nil, fmt.Errorf("an action_id scope requires condition %q (got %q)", ConditionActionReconciled, w.Condition)
 	}
 
 	l.mu.Lock()
@@ -301,12 +309,24 @@ func conditionMatches(c WatchCondition, k SignalKind) bool {
 
 // scopeMatches bounds a watch to a session or project. Fleet-scoped signals
 // (empty session id, e.g. overlaps) match session-scoped watches only via
-// project adjacency; an empty watch scope matches everything.
+// project adjacency; an empty watch scope matches everything. An action-scoped
+// watch (W8) matches only the signal that reports that exact action — its
+// anchor is the action id (action_failed) or its evidence carries it
+// (queue_delivered/queue_failed for a queued batch step).
 func scopeMatches(s WatchScope, sig *Signal) bool {
 	if s.SessionID != "" && sig.SessionID != s.SessionID {
 		return false
 	}
 	if s.Project != "" && sig.Project != s.Project {
+		return false
+	}
+	if s.ActionID != "" {
+		if sig.Anchor == s.ActionID {
+			return true
+		}
+		if aid, ok := sig.Evidence["action_id"].(string); ok && aid == s.ActionID {
+			return true
+		}
 		return false
 	}
 	return true

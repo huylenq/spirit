@@ -36,6 +36,7 @@ func handleCreateWatch(api daemonAPI, args json.RawMessage) (any, bool) {
 	var a struct {
 		SessionID        string `json:"session_id"`
 		Project          string `json:"project"`
+		ActionID         string `json:"action_id"`
 		Condition        string `json:"condition"`
 		Response         string `json:"response"`
 		ExpiresInMinutes int    `json:"expires_in_minutes"`
@@ -53,9 +54,13 @@ func handleCreateWatch(api daemonAPI, args json.RawMessage) (any, bool) {
 		"expires_in_minutes": a.ExpiresInMinutes, "cooldown_seconds": a.CooldownSeconds,
 		"max_firings": a.MaxFirings, "llm_budget": a.LLMBudget,
 	}
+	if a.ActionID != "" {
+		rcpt.Params["action_id"] = a.ActionID
+	}
 	w, err := api.WatchCreate(daemon.WatchCreateData{
 		SessionID:          a.SessionID,
 		Project:            a.Project,
+		ActionID:           a.ActionID,
 		Condition:          a.Condition,
 		Response:           a.Response,
 		ExpiresInMinutes:   a.ExpiresInMinutes,

@@ -317,8 +317,12 @@ type ActionReportData struct {
 // get daemon defaults (24h expiry, 60s cooldown, 20 firings); validity (expiry
 // + rate limit present) is enforced by the ledger.
 type WatchCreateData struct {
-	SessionID          string `json:"sessionID,omitempty"`
-	Project            string `json:"project,omitempty"`
+	SessionID string `json:"sessionID,omitempty"`
+	Project   string `json:"project,omitempty"`
+	// ActionID anchors an action_reconciled watch to one specific action
+	// (W8): it fires exactly when that action's delivery/failure signal
+	// ingests. Valid only with condition action_reconciled.
+	ActionID           string `json:"actionID,omitempty"`
 	Condition          string `json:"condition"`
 	Response           string `json:"response"`
 	ExpiresInMinutes   int    `json:"expiresInMinutes,omitempty"`
