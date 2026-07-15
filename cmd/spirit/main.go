@@ -85,6 +85,9 @@ func main() {
 		case "agent":
 			runAgent()
 			return
+		case "mcp":
+			runMcp()
+			return
 		case "usage-dump":
 			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
 			if refresh {
@@ -174,6 +177,7 @@ Usage:
   spirit orchestrator register <session-id>     Exclude session from eval sessions()
   spirit orchestrator unregister <session-id>   Re-include session
   spirit agent <verb>  Machine-friendly session management (for AI agents)
+  spirit mcp              MCP stdio server over the daemon (for Lulu/Hermes; typed tools)
   spirit capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   spirit setup            Install Claude Code and Codex hooks
   spirit _hook <type>     Handle a coding-agent hook event (internal, called by hooks)
@@ -293,6 +297,14 @@ func runSetup() {
 		}
 	}
 	fmt.Printf("Hook command: %s _hook <type>\n", exe)
+
+	// Install the Lulu operation-surface skill into the Hermes user skills dir so
+	// the MCP tool contract survives session resets and is versioned Hermes-side.
+	if changed, err := installHermesSkill(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not install Hermes skill: %v\n", err)
+	} else if changed {
+		fmt.Printf("Hermes skill installed in %s\n", hermesSkillDir())
+	}
 }
 
 func installHooks(settingsPath, exe string, provider claude.Provider, regs []hookRegistration) (bool, error) {
