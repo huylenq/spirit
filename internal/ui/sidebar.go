@@ -64,6 +64,7 @@ type SidebarModel struct {
 	projects            []projectEntry   // project headers in display order
 	selectedProjectRow  int              // line index of the selected project header (set during View)
 	selectedItemRow     int              // line index of the selected session item (set during View)
+	splitGap            int              // blank rows inserted before the bottom-anchored section block (set during View; 0 = classic top-anchored body)
 	backlogs            []claude.Backlog // all backlog items from visible projects
 	filteredBacklog     []claude.Backlog // backlog items matching narrow filter
 	backlogExpanded     bool             // true = BACKLOG section visible

@@ -228,6 +228,7 @@ func (m *SidebarModel) View() string {
 
 	m.selectedProjectRow = -1
 	m.selectedItemRow = -1
+	m.splitGap = 0
 
 	// currentOrder tracks the most recent section order emitted into lines.
 	// Carried out of the loop so the backlog separator can color itself with
@@ -361,6 +362,25 @@ func (m *SidebarModel) View() string {
 		addSeparator(currentOrder)
 	}
 
+	// Split the freshly-built body into the top-anchored YOUR TURN block and the
+	// bottom-anchored remainder (CLAUDING/LATER/BACKLOG), which sinks to the floor
+	// just above the pinned region — mirroring the docked-badge convention. The
+	// split point is YOUR TURN's unique closing separator (order YT, kindBottom);
+	// with no YOUR TURN sessions the whole body sinks (topCount stays 0). The
+	// split is confined to the default status-grouped body: search (flat,
+	// score-sorted), YOUR-TURN-only, and group-by-project modes keep the classic
+	// top-anchored layout (topCount spans everything → empty bottom block).
+	topCount := len(lines)
+	if query == "" && !m.userTurnOnly && !m.groupByProject {
+		topCount = 0
+		for i := range kinds {
+			if kinds[i].order == OrderUserTurn && kinds[i].kind == kindBottom {
+				topCount = i + 1
+				break
+			}
+		}
+	}
+
 	// Compose the bottom-pinned region: pulse (if cached) above the collapsed
 	// section badges (if any). Badges have higher priority than the pulse body
 	// — if the sidebar is too short to fit both, the pulse tail is sacrificed
@@ -369,8 +389,8 @@ func (m *SidebarModel) View() string {
 	// as multiple terminal lines via wrapped subtitles.
 	pulseRows := m.pulseBlock()
 	badgesRows := m.collapsedBadgesBlock()
-
-	if m.height > 0 && (len(pulseRows) > 0 || len(badgesRows) > 0) {
+	var pinned []string
+	if len(pulseRows) > 0 || len(badgesRows) > 0 {
 		badgesH := visualHeight(badgesRows)
 		pulseRoom := m.height - badgesH
 		if pulseRoom < 0 {
@@ -378,43 +398,71 @@ func (m *SidebarModel) View() string {
 		}
 		// Truncate pulse rows by visual height, not entry count.
 		pulseRows = truncateToVisualBudget(pulseRows, pulseRoom)
-
-		pinned := append([]string{}, pulseRows...)
+		pinned = append(pinned, pulseRows...)
 		pinned = append(pinned, badgesRows...)
+	}
 
-		pinnedH := visualHeight(pinned)
-		upperBudget := m.height - pinnedH
+	if m.height > 0 {
+		topLines, topKinds := lines[:topCount], kinds[:topCount]
+		botLines, botKinds := lines[topCount:], kinds[topCount:]
+
+		// Reserve the floor for the pinned region, then lay out the body above it.
+		// YOUR TURN wins overflow: it fills from the ceiling first; the bottom
+		// block takes whatever rows remain (truncated from its tail, so BACKLOG
+		// yields before CLAUDING). Blank rows fill the gap so the bottom block
+		// floats down onto the pinned region.
+		upperBudget := m.height - visualHeight(pinned)
 		if upperBudget < 0 {
 			upperBudget = 0
 		}
+		tKeep := entriesWithinBudget(topLines, upperBudget)
+		topLines, topKinds = topLines[:tKeep], topKinds[:tKeep]
+		topH := visualHeight(topLines)
 
-		// Walk session lines in entry order, keeping them while visual budget
-		// holds; drop the rest from the bottom so pinned content stays on screen.
-		visual := 0
-		cutAt := len(lines)
-		for i, l := range lines {
-			h := lipgloss.Height(l)
-			if visual+h > upperBudget {
-				cutAt = i
-				break
+		bKeep := entriesWithinBudget(botLines, upperBudget-topH)
+		botLines, botKinds = botLines[:bKeep], botKinds[:bKeep]
+		botH := visualHeight(botLines)
+
+		lines = append([]string{}, topLines...)
+		kinds = append([]gutterInfo{}, topKinds...)
+
+		// Float the bottom block + pinned region down to the floor, but only when
+		// there is something to anchor there. A classic body with no floor content
+		// (no bottom block, no pulse/badges) stays top-anchored with no trailing
+		// pad — matching the pre-split look.
+		if len(botLines) > 0 || len(pinned) > 0 {
+			gap := upperBudget - topH - botH
+			if gap < 0 {
+				gap = 0
 			}
-			visual += h
+			// Only report the gap to the row-mappers when a real bottom block was
+			// shifted down; a lone pinned region is trailing floor pad below all
+			// content, so sessions keep their raw (top-anchored) positions.
+			if len(botLines) > 0 {
+				m.splitGap = gap
+			}
+			for ; gap > 0; gap-- {
+				lines = append(lines, "")
+				kinds = append(kinds, gutterInfo{order: -1})
+			}
+			lines = append(lines, botLines...)
+			kinds = append(kinds, botKinds...)
+			// Pulse + badges are aggregates, not section content → dim gutter.
+			for _, row := range pinned {
+				lines = append(lines, row)
+				kinds = append(kinds, gutterInfo{order: -1})
+			}
 		}
-		lines = lines[:cutAt]
-		kinds = kinds[:cutAt]
+	}
 
-		// Pad blank lines until the pinned region floats to the floor.
-		for visual < upperBudget {
-			lines = append(lines, "")
-			kinds = append(kinds, gutterInfo{order: -1})
-			visual++
-		}
-
-		// Pulse + badges are aggregates, not section content → dim gutter.
-		for _, row := range pinned {
-			lines = append(lines, row)
-			kinds = append(kinds, gutterInfo{order: -1})
-		}
+	// The selected-row bookkeeping was recorded in pre-split entry order; shift
+	// any selection that landed in the bottom block down by the inserted gap so
+	// overlays anchored to it (macro palette, prompt editors) track the row.
+	if m.selectedItemRow >= topCount {
+		m.selectedItemRow += m.splitGap
+	}
+	if m.selectedProjectRow >= topCount {
+		m.selectedProjectRow += m.splitGap
 	}
 
 	// Truncate to fit available height
@@ -591,6 +639,26 @@ func truncateToVisualBudget(rows []string, budget int) []string {
 		visual += h
 	}
 	return rows
+}
+
+// entriesWithinBudget returns how many leading entries of rows fit within a
+// visual-row budget, dropping any trailing entry that would overflow whole
+// (partial-entry truncation would corrupt styling). It counts entries where
+// truncateToVisualBudget returns the fitting slice — used when the caller needs
+// the entry count to slice a parallel metadata array in step.
+func entriesWithinBudget(rows []string, budget int) int {
+	if budget <= 0 {
+		return 0
+	}
+	visual := 0
+	for i, r := range rows {
+		h := lipgloss.Height(r)
+		if visual+h > budget {
+			return i
+		}
+		visual += h
+	}
+	return len(rows)
 }
 
 // pulseBlock returns the pulse rows to pin near the bottom of the sidebar: a
@@ -889,6 +957,7 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 	currentProject := ""
 	currentOrder := -1
 	anyLinesEmitted := false
+	gapApplied := false
 
 	for _, s := range m.allSorted {
 		if !m.passesViewFilters(s, projectFilter) {
@@ -922,6 +991,13 @@ func (m SidebarModel) PaneIDAtLine(line int) string {
 					currentLine += transitionLines(currentOrder, order)
 				}
 				currentOrder = order
+				// Mirror View()'s top/bottom split: the first non-YOUR-TURN
+				// section is pushed down by the inserted gap (0 outside the
+				// split). Lines within the gap map to no session.
+				if !gapApplied && order != OrderUserTurn {
+					currentLine += m.splitGap
+					gapApplied = true
+				}
 				currentProject = ""
 				anyLinesEmitted = true
 				currentLine++ // status group header
@@ -960,6 +1036,7 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 	currentLine := 0
 
 	lastOrder := -1
+	gapApplied := false
 
 	// Count all session lines (mirrors PaneIDAtLine's counting, runs the full loop).
 	if query != "" {
@@ -1002,6 +1079,12 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 						currentLine += transitionLines(currentOrder, order)
 					}
 					currentOrder = order
+					// Mirror View()'s split: the first non-YOUR-TURN section
+					// carries the inserted gap (0 outside the split).
+					if !gapApplied && order != OrderUserTurn {
+						currentLine += m.splitGap
+						gapApplied = true
+					}
 					currentProject = ""
 					anyLinesEmitted = true
 					currentLine++ // status group header
@@ -1021,6 +1104,11 @@ func (m SidebarModel) BacklogIDAtLine(line int) string {
 
 	if currentLine > 0 {
 		currentLine += transitionLines(lastOrder, OrderBacklog)
+	}
+	// Backlog is bottom-block content: if no non-YT session already absorbed the
+	// split gap (e.g. only YOUR TURN sessions, or none), it lands before BACKLOG.
+	if !gapApplied {
+		currentLine += m.splitGap
 	}
 	currentLine++ // "BACKLOG" group header
 
