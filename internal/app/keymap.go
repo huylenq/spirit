@@ -222,6 +222,8 @@ var Chords = []Chord{
 	{Keys: "gc", Help: "lulu"},
 	{Keys: "gg", Help: "top"},
 	{Keys: "gi", Help: "interleaved messages"},
+	{Keys: "ga", Help: "attention inbox"},
+	{Keys: "gw", Help: "watch session"},
 	// gx* — fun / easter-egg namespace
 	{Keys: "gxd", Help: "dino game"},
 	{Keys: "gxs", Help: "spirit animal"},
@@ -238,6 +240,8 @@ func init() {
 		"gt":  func(m *Model) (Model, tea.Cmd) { return m.execToggleRawTranscript() },
 		"gg":  func(m *Model) (Model, tea.Cmd) { return m.execGoTop() },
 		"gi":  func(m *Model) (Model, tea.Cmd) { return m.execToggleInterleavedMessages() },
+		"ga":  func(m *Model) (Model, tea.Cmd) { return execOpenAttentionInbox(m) },
+		"gw":  func(m *Model) (Model, tea.Cmd) { return execWatchSelected(m) },
 		"gxd": func(m *Model) (Model, tea.Cmd) { return m.execToggleDinoGame() },
 		"gxs": func(m *Model) (Model, tea.Cmd) { return m.execShowSpiritAnimal() },
 		"gxx": func(m *Model) (Model, tea.Cmd) { return m.execDestroyer() },

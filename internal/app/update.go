@@ -409,6 +409,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForDaemonUpdate()
 
 	case CopilotStreamChunkMsg:
+		// Reactive attention broadcasts (W7): not part of any turn — flash the
+		// one-liner, count it toward the unseen badge, and drop a dimmed line
+		// into the Lulu panel. Never enters the streaming-turn machinery.
+		if msg.Msg.Type == "attention" {
+			m.attentionUnseen++
+			m.copilot.AddInfoMessage("⚡ " + msg.Msg.Content)
+			cmd := m.setFlash("⚡ "+msg.Msg.Content, false, 5*time.Second)
+			return m, tea.Batch(cmd, m.waitForDaemonUpdate())
+		}
 		// Drop late chunks from a cancelled or superseded turn: a correlated chunk
 		// whose request id no longer matches our in-flight turn must not land in the
 		// panel (belt to the daemon's turn-epoch suspenders). Chunks with no request
@@ -426,6 +435,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-invoke subscribe loop to receive the next event
 		return m, m.waitForDaemonUpdate()
+
+	case AttentionListMsg:
+		if msg.Err != nil {
+			m.attention.SetError(msg.Err.Error())
+			return m, nil
+		}
+		m.applyAttentionData(msg.Data)
+		return m, nil
+
+	case AttentionActionMsg:
+		if msg.ToCopilot {
+			if msg.Err != nil {
+				m.copilot.AddInfoMessage("watch: " + msg.Err.Error())
+			} else {
+				m.copilot.AddInfoMessage(msg.Info)
+			}
+			return m, nil
+		}
+		var cmds []tea.Cmd
+		if msg.Err != nil {
+			cmds = append(cmds, m.setFlash(msg.Err.Error(), true, 3*time.Second))
+		} else if msg.Info != "" {
+			cmds = append(cmds, m.setFlash(msg.Info, false, 2*time.Second))
+		}
+		if msg.Refresh && m.state == StateAttentionInbox {
+			cmds = append(cmds, m.fetchAttention())
+		}
+		return m, tea.Batch(cmds...)
 
 	case ui.UsageBarTickMsg:
 		cmd := m.usageBar.Tick()
@@ -931,6 +968,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyCopilotConfirm(msg)
 	case StateDestroyer:
 		return m.handleKeyDestroyer(msg)
+	case StateAttentionInbox:
+		return m.handleKeyAttentionInbox(msg)
+	case StateWatchPicker:
+		return m.handleKeyWatchPicker(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}

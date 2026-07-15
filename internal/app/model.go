@@ -61,6 +61,8 @@ const (
 	StateLaterWait            // waiting for optional duration input before marking as later
 	StateRenamePrompt         // text input for /rename to claude session
 	StateDestroyer            // session destroyer easter egg
+	StateAttentionInbox       // attention inbox overlay (items + watches)
+	StateWatchPicker          // two-keystroke watch creation (condition, then response)
 )
 
 const defaultMinimapMaxH = 14
@@ -289,6 +291,9 @@ type Model struct {
 	copilotDragStartW    int
 	copilotDragStartH    int
 	copilotDragEdges     copilotResizeEdge
+	attention            ui.AttentionModel // attention inbox overlay (StateAttentionInbox)
+	attentionUnseen      int               // reactive notifications since the inbox was last opened
+	watchPickerCondition string            // chosen condition while StateWatchPicker collects the response key
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
 	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
 	workQueue            ui.WorkQueueModel
