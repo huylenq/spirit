@@ -89,6 +89,17 @@ const (
 	ReqCopilotSetModel         = "copilot_set_model"
 	ReqCopilotSetMode          = "copilot_set_mode"
 	ReqCopilotPermissionAnswer = "copilot_permission_answer"
+
+	// W9 durable reactivity. ReqReactiveLease is held-open (mirrors subscribe):
+	// it sets d.durableReactive for the connection's lifetime and clears it on
+	// disconnect — the explicit, revocable defeat of the idle timeout. Control
+	// and status are one-shot RPCs.
+	ReqReactiveLease   = "reactive_lease"
+	ReqReactiveControl = "reactive_control"
+	ReqReactiveStatus  = "reactive_status"
+	// ReqReactiveDigest asks the daemon to compose+deliver a daily attention
+	// digest (the Spirit-owned scheduler nudges this at a configured time).
+	ReqReactiveDigest = "reactive_digest"
 )
 
 // Response type constants.
@@ -383,6 +394,38 @@ type BacklogListResultData struct {
 
 type BacklogItemResultData struct {
 	Backlog claude.Backlog `json:"backlog"`
+}
+
+// --- Durable reactivity data payloads (W9) ---
+
+// ReactiveControlData drives a one-shot pause/resume of durable reactive
+// processing (spec Decision 11 §4). Autonomy enablement itself is never an RPC
+// action — it is the launchd-supervised lease + pref, a human-only switch.
+type ReactiveControlData struct {
+	Action string `json:"action"` // pause | resume
+}
+
+// ReactiveStatusData is the read-only durable-reactivity report (spec Decision
+// 11 §1 status verb; the read-only MCP tool and Gate E consume it). GateReason
+// names why (if) the reactive engine is currently eligible to process:
+// "subscriber" (a real TUI), "durable" (the W9 lease), or "none".
+type ReactiveStatusData struct {
+	Enabled            bool   `json:"enabled"`          // pref reactive ∈ {on, paused}
+	Paused             bool   `json:"paused"`           // runtime pause (mirrors pref reactive=paused)
+	Leased             bool   `json:"leased"`           // a durable-reactivity lease is held
+	DurableReactive    bool   `json:"durable_reactive"` // runtime flag (== Leased)
+	Subscribers        int    `json:"subscribers"`      // real TUI push-stream subscribers
+	GateReason         string `json:"gate_reason"`      // subscriber | durable | none
+	QuietHoursActive   bool   `json:"quiet_hours_active"`
+	QuietHours         string `json:"quiet_hours,omitempty"` // configured window HH:MM-HH:MM, "" = none
+	LLMBudgetRemaining int    `json:"llm_budget_remaining"`
+	LLMBudgetTotal     int    `json:"llm_budget_total"`
+}
+
+// ReactiveDigestResultData reports how many unresolved items the composed daily
+// digest summarized (0 = nothing to deliver, a no-op).
+type ReactiveDigestResultData struct {
+	Items int `json:"items"`
 }
 
 // SubscribeData carries the originating client's stable identity so the daemon

@@ -268,8 +268,12 @@ func TestReactiveRecommendHappyPath(t *testing.T) {
 }
 
 func TestReactiveNoProcessingWithoutClients(t *testing.T) {
-	d, _ := newReactiveDaemon(t, nil)
-	d.clientCount = 0 // TUI-inactive
+	d, sub := newReactiveDaemon(t, nil)
+	// No TUI subscriber attached: the §0 gate keys on the subscriber set, not
+	// clientCount, so removing the subscriber closes the reactive gate even
+	// though an RPC connection (clientCount) may be open.
+	d.removeSubscriber(sub)
+	d.clientCount = 1 // an eval-shaped RPC connection is open — must NOT enable
 	created := mustWatch(t, d, ledger.Watch{
 		Scope: ledger.WatchScope{SessionID: "s1"}, Condition: ledger.ConditionCompletedTurn, Response: ledger.ResponseInbox,
 	})
@@ -278,14 +282,14 @@ func TestReactiveNoProcessingWithoutClients(t *testing.T) {
 	d.reactiveTick()
 	w, _ := d.perception.WatchByID(created.ID)
 	if w.State != ledger.WatchTriggered {
-		t.Fatalf("state = %s, want triggered (unprocessed while no client)", w.State)
+		t.Fatalf("state = %s, want triggered (unprocessed while no subscriber)", w.State)
 	}
 
-	// A client attaches: the pending trigger is processed.
-	d.clientCount = 1
+	// A TUI subscriber attaches: the pending trigger is processed.
+	d.addSubscriber("client-2")
 	d.reactiveTick()
 	if w, _ := d.perception.WatchByID(created.ID); w.State != ledger.WatchActive || w.Firings != 1 {
-		t.Fatalf("after client attach: %+v", w)
+		t.Fatalf("after subscriber attach: %+v", w)
 	}
 }
 

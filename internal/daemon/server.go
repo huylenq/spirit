@@ -209,6 +209,19 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqCopilotPermissionAnswer:
 		return d.handleCopilotPermissionAnswer(req.Data)
 
+	case ReqReactiveLease:
+		d.handleReactiveLease(conn, enc)
+		return nil // lease manages its own held-open lifecycle
+
+	case ReqReactiveControl:
+		return d.handleReactiveControl(req.Data)
+
+	case ReqReactiveStatus:
+		return d.handleReactiveStatus()
+
+	case ReqReactiveDigest:
+		return d.handleReactiveDigest()
+
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}
 		return &r

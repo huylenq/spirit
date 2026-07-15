@@ -45,14 +45,22 @@ func (d *Daemon) reactiveTick() {
 	if d.perception == nil {
 		return
 	}
-	d.mu.RLock()
-	active := d.clientCount > 0
-	d.mu.RUnlock()
-	if !active {
-		return // TUI-active only (Decision 11)
+	if !d.reactiveEligible() {
+		// Neither a subscribed TUI nor a durable lease — watches trigger and
+		// persist but are not processed (spec Decision 11, §0 gate correction).
+		return
 	}
 
 	d.perception.SweepWatches()
+
+	if d.reactivePausedNow() {
+		// Visible pause (§4): keep the lease and housekeeping, but claim and
+		// dispatch nothing. A single in-flight recommend (reactiveRunning)
+		// finishes on its own; no new firing is claimed while paused. Queue
+		// delivery / commit tracking / Later wakes / overlap live in poll(), not
+		// here, so pause provably cannot touch them.
+		return
+	}
 
 	// One recommend slot, and only when no user turn is streaming and no other
 	// reactive run is in flight — a reactive run serializes behind the user,
@@ -166,6 +174,15 @@ func (d *Daemon) deliverNotify(w ledger.Watch) string {
 			Kind: ledger.AuditDelivery, WatchID: w.ID, Detail: "immediate notification",
 		})
 		d.pushCopilotStream(CopilotStreamData{Type: "attention", Kind: "notify", Content: line})
+		// Headless OS notification (§4) for the class that merits interruption —
+		// suppressed during quiet hours (the durable item + in-app stream are not).
+		if d.inQuietHours(d.reactiveNow()) {
+			d.perception.AppendItemAudit(w.Pending.ItemID, ledger.AuditEvent{
+				Kind: ledger.AuditDelivery, WatchID: w.ID, Detail: "OS notification suppressed (quiet hours)",
+			})
+		} else {
+			d.deliverOSNotification("Spirit", line)
+		}
 		return "notified"
 	}
 
@@ -225,7 +242,38 @@ func (d *Daemon) runRecommend(w ledger.Watch) {
 		led.CompleteFiring(w.ID, outcome+" ("+reason+")")
 	}
 
-	// Budget spends on attempt (a flapping failure cannot overspend).
+	// degradeToInbox is the durable, silent degrade (no LLM, no interruption):
+	// the item + audit are recorded and the firing completes as inboxed. Used
+	// when the global daily provider budget is exhausted or during quiet hours
+	// (W9 §3/§6) — deferred reasoning, never a 3am fork.
+	degradeToInbox := func(reason string) {
+		led.AppendItemAudit(itemID, ledger.AuditEvent{
+			Kind: ledger.AuditPolicyDecision, WatchID: w.ID,
+			Detail: "recommend degraded to inbox: " + reason,
+		})
+		led.AppendItemAudit(itemID, ledger.AuditEvent{
+			Kind: ledger.AuditDelivery, WatchID: w.ID, Detail: "inbox row (no LLM)",
+		})
+		led.CompleteFiring(w.ID, "inboxed ("+reason+")")
+	}
+
+	// Quiet hours (§4/§6): defer reasoning to the next open window before any
+	// budget is spent — the interruption is withheld, the item is still durable.
+	if d.inQuietHours(d.reactiveNow()) {
+		degradeToInbox("quiet hours")
+		return
+	}
+
+	// Global daily provider budget (§3/§6): bounds worst-case reactive LLM spend
+	// across ALL watches per day, on top of each watch's own llm_budget. Checked
+	// (and spent, on attempt) before the per-watch budget so a globally-exhausted
+	// day cannot silently drain per-watch budgets. Exhaustion degrades to inbox.
+	if !d.reactiveSpendDailyBudget() {
+		degradeToInbox("daily provider budget exhausted")
+		return
+	}
+
+	// Per-watch budget spends on attempt (a flapping failure cannot overspend).
 	if !led.SpendLLM(w.ID) {
 		downgrade("llm budget exhausted")
 		return

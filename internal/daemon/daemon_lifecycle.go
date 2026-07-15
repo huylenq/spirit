@@ -28,9 +28,15 @@ func (d *Daemon) idleWatcher(sigCh chan<- os.Signal) {
 		d.mu.RLock()
 		count := d.clientCount
 		lastDisconnect := d.lastClientDisconnect
+		durable := d.durableReactive
 		d.mu.RUnlock()
 
-		if count == 0 && !lastDisconnect.IsZero() && time.Since(lastDisconnect) > IdleTimeout {
+		// A durable-reactivity lease is the one sanctioned, explicit, revocable
+		// defeat of the idle timeout (spec Decision 11 §1): a leased daemon never
+		// idle-exits, and reverts to normal idle behavior the instant the lease
+		// drops. Connection-liveness (clientCount) keeps the socket answerable;
+		// the lease keeps *reactivity* running.
+		if !durable && count == 0 && !lastDisconnect.IsZero() && time.Since(lastDisconnect) > IdleTimeout {
 			log.Printf("idle timeout (%v with no clients), shutting down", IdleTimeout)
 			sigCh <- syscall.SIGTERM
 			return

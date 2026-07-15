@@ -574,3 +574,57 @@ func (c *Client) CopilotStatus() (*CopilotStatusData, error) {
 	err := c.rpcInto(Request{Type: ReqCopilotStatus}, &data)
 	return &data, err
 }
+
+// ReactiveLease acquires the durable-reactivity lease over this client's RPC
+// connection (W9). The handler holds the connection open, so this returns the
+// initial status ack while the lease stays held; call WaitLeaseClosed to block
+// until it drops. Use a dedicated Client for the lease — its connection cannot
+// serve other RPCs while leased.
+func (c *Client) ReactiveLease() (ReactiveStatusData, error) {
+	c.rpcMu.Lock()
+	defer c.rpcMu.Unlock()
+	if err := c.rpcEnc.Encode(Request{Type: ReqReactiveLease}); err != nil {
+		return ReactiveStatusData{}, err
+	}
+	resp, err := readResponse(c.rpcScanner)
+	if err != nil {
+		return ReactiveStatusData{}, err
+	}
+	if resp.Error != "" {
+		return ReactiveStatusData{}, fmt.Errorf("%s", resp.Error)
+	}
+	var data ReactiveStatusData
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return ReactiveStatusData{}, fmt.Errorf("unmarshal reactive status: %w", err)
+	}
+	return data, nil
+}
+
+// WaitLeaseClosed blocks until the lease connection drops (daemon stop/crash).
+// Returns the read error that ended it.
+func (c *Client) WaitLeaseClosed() error {
+	buf := make([]byte, 1)
+	_, err := c.rpcConn.Read(buf)
+	return err
+}
+
+// ReactiveControl applies a one-shot pause/resume to durable reactive processing.
+func (c *Client) ReactiveControl(action string) (ReactiveStatusData, error) {
+	var data ReactiveStatusData
+	err := c.rpcInto(Request{Type: ReqReactiveControl, Data: marshalData(ReactiveControlData{Action: action})}, &data)
+	return data, err
+}
+
+// ReactiveStatus returns the read-only durable-reactivity report.
+func (c *Client) ReactiveStatus() (ReactiveStatusData, error) {
+	var data ReactiveStatusData
+	err := c.rpcInto(Request{Type: ReqReactiveStatus}, &data)
+	return data, err
+}
+
+// ReactiveDigest asks the daemon to compose+deliver a daily attention digest.
+func (c *Client) ReactiveDigest() (ReactiveDigestResultData, error) {
+	var data ReactiveDigestResultData
+	err := c.rpcInto(Request{Type: ReqReactiveDigest}, &data)
+	return data, err
+}

@@ -34,6 +34,28 @@ func ReadPref(key string) string {
 	return LoadPrefs()[key]
 }
 
+// WritePref sets a single pref key (load-modify-save), preserving all other
+// keys. An empty value writes an empty assignment (use to blank a pref).
+func WritePref(key, value string) error {
+	prefs := LoadPrefs()
+	prefs[key] = value
+	return savePrefsMap(prefs)
+}
+
+func savePrefsMap(prefs map[string]string) error {
+	var b strings.Builder
+	for k, v := range prefs {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(v)
+		b.WriteByte('\n')
+	}
+	if err := os.MkdirAll(StatusDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(PrefsPath(), []byte(b.String()), 0o644)
+}
+
 // projectCodePrefix namespaces per-project code assignments inside the flat
 // prefs file (e.g. "projectcode.spirit=SPR").
 const projectCodePrefix = "projectcode."

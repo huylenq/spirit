@@ -111,6 +111,27 @@ type Daemon struct {
 	digestLines         []string
 	digestOldest        time.Time
 
+	// W9 durable reactivity (daemon_reactive_lease.go): the runtime mirror of
+	// explicit enablement. durableReactive is held true for the lifetime of a
+	// ReqReactiveLease connection (the launchd-supervised `spirit reactive run`
+	// worker); reactiveLeases refcounts concurrent leases. reactivePaused mirrors
+	// the pref reactive=paused so a pause takes effect on the next tick. All
+	// three are guarded by d.mu (alongside clientCount / lastClientDisconnect).
+	durableReactive bool
+	reactiveLeases  int
+	reactivePaused  bool
+
+	// reactiveClock is a test seam for the durable reactive path's wall clock
+	// (quiet-hours windows, daily budget rollover). nil → time.Now.
+	reactiveClock func() time.Time
+	// notifyOS delivers a desktop notification for high-salience durable events
+	// (W9 §4). nil → the real osascript/terminal-notifier delivery; overridden in
+	// tests to capture calls without spawning processes.
+	notifyOS func(title, body string)
+	// reactiveBudget is the global daily provider budget (W9 §2/§6); nil until
+	// the ledger opens. Guarded by its own mutex.
+	reactiveBudget *reactiveBudgetStore
+
 	copilotCancel      context.CancelFunc  // non-nil while a copilot prompt is in-flight
 	copilotCancelEpoch uint64              // turn epoch that owns copilotCancel (guarded by copilotMu)
 	copilotMu          sync.Mutex          // protects copilotCancel + copilotCancelEpoch
@@ -215,6 +236,10 @@ func Run(info DaemonInfo) error {
 	} else {
 		d.perception = led
 	}
+
+	// Global daily provider budget (W9): durable, date-keyed, loaded at start so
+	// a crash-loop cannot reset the day's spend.
+	d.reactiveBudget = openReactiveBudget(filepath.Join(ledger.Dir(), "budget.json"), time.Now())
 
 	// Initialize copilot subsystem
 	d.copilotPreamble.Store(true)
