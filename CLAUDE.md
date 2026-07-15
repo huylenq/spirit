@@ -40,7 +40,7 @@ spirit dev                # fzf worktree picker (dev workflow)
 ## Daemon Runtime Files
 
 ```
-~/.spirit/daemon.sock   Unix socket
+/tmp/spirit-<hash>.sock Unix socket (hash of the repo root the binary lives in; falls back to ~/.spirit/daemon.sock outside a git repo)
 ~/.spirit/daemon.pid    PID file
 ~/.spirit/daemon.log    Log output
 ~/.spirit/prefs         Key=value prefs (e.g. fullscreen=true)
