@@ -5,6 +5,27 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+// mutationResult builds the standard structured return value for a mutating Lua
+// function: {ok=true, status="ok", operation=<op>, target=<id>}. Extra fields can
+// be attached to the returned table by the caller before pushing it.
+//
+// RECEIPT SEAM (W5 → W3): this is the single place that shapes Lua mutation
+// results. The W3 receipt.ActionReceipt schema (internal/receipt) now exists;
+// adopting it is a one-function change here — populate this table from a
+// receipt.New value (action_id, delivery_outcome, observed_state_after, …) and
+// every mutating Lua function inherits the new shape. The agent CLI equivalent
+// seam is mutationReceipt in cmd/spirit/cli_remote.go.
+func mutationResult(L *lua.LState, operation, target string) *lua.LTable {
+	t := L.NewTable()
+	t.RawSetString("ok", lua.LBool(true))
+	t.RawSetString("status", lua.LString("ok"))
+	t.RawSetString("operation", lua.LString(operation))
+	if target != "" {
+		t.RawSetString("target", lua.LString(target))
+	}
+	return t
+}
+
 // sessionToTable converts a ClaudeSession to a Lua table.
 // NOTE: Field names are extracted by cmd/gen-lua-help via AST analysis of RawSetString calls.
 // Keep field names as string literals (not variables/constants) or the generator will miss them.

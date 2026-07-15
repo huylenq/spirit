@@ -1,23 +1,29 @@
 package scripting
 
 import (
+	"github.com/huylenq/spirit/internal/agent"
 	lua "github.com/yuin/gopher-lua"
 )
 
-// spawn(cwd, [{tmux_session, message, split_from_pane}]) -> {session_id, pane_id}
+// spawn(cwd, [{provider, tmux_session, message, split_from_pane}]) -> {ok, operation, session_id, pane_id}
 // Category: Lifecycle
-// Spawn a new Claude session in the given directory. Blocks up to 30s.
-// If split_from_pane is set (e.g. "%145"), the new pane is split next to it
-// in the same tmux window; otherwise a new window is created.
+// Spawn a new session in the given directory. Blocks up to 30s. provider selects
+// the agent ("claude" default, "codex", …); unknown providers are rejected by the
+// daemon's provider registry. If split_from_pane is set (e.g. "%145"), the new
+// pane is split next to it in the same tmux window; otherwise a new window is created.
 func luaSpawn(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		cwd := L.CheckString(1)
 		tmuxSession := ""
 		message := ""
 		splitFromPane := ""
+		providerID := agent.ProviderClaude
 
 		if L.GetTop() >= 2 {
 			opts := L.CheckTable(2)
+			if p := opts.RawGetString("provider"); p != lua.LNil {
+				providerID = agent.ProviderID(p.String())
+			}
 			if s := opts.RawGetString("tmux_session"); s != lua.LNil {
 				tmuxSession = s.String()
 			}
@@ -29,13 +35,13 @@ func luaSpawn(deps Deps) lua.LGFunction {
 			}
 		}
 
-		result, err := deps.Client.Spawn(cwd, tmuxSession, message, splitFromPane)
+		result, err := deps.Client.SpawnProvider(providerID, cwd, tmuxSession, message, splitFromPane)
 		if err != nil {
 			L.RaiseError("spawn: %v", err)
 			return 0
 		}
 
-		t := L.NewTable()
+		t := mutationResult(L, "spawn", result.SessionID)
 		t.RawSetString("session_id", lua.LString(result.SessionID))
 		t.RawSetString("pane_id", lua.LString(result.PaneID))
 		L.Push(t)
@@ -43,7 +49,7 @@ func luaSpawn(deps Deps) lua.LGFunction {
 	}
 }
 
-// kill(id)
+// kill(id) -> {ok, operation, target}
 // Category: Lifecycle
 // Send SIGTERM to session and clean up.
 func luaKill(deps Deps) lua.LGFunction {
@@ -53,6 +59,7 @@ func luaKill(deps Deps) lua.LGFunction {
 			L.RaiseError("kill: %v", err)
 			return 0
 		}
-		return 0
+		L.Push(mutationResult(L, "kill", id))
+		return 1
 	}
 }

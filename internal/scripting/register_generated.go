@@ -25,6 +25,8 @@ func registerAllAPIs(L *lua.LState, deps Deps) {
 	L.SetGlobal("later_kill", L.NewFunction(luaLaterKill(deps)))
 	L.SetGlobal("queue_commit_done", L.NewFunction(luaQueueCommitDone(deps)))
 	L.SetGlobal("raw_transcript", L.NewFunction(luaRawTranscript(deps)))
+	L.SetGlobal("set_note", L.NewFunction(luaSetNote(deps)))
+	L.SetGlobal("set_tags", L.NewFunction(luaSetTags(deps)))
 	L.SetGlobal("summary", L.NewFunction(luaSummary(deps)))
 	L.SetGlobal("synthesize", L.NewFunction(luaSynthesize(deps)))
 	L.SetGlobal("synthesize_all", L.NewFunction(luaSynthesizeAll(deps)))

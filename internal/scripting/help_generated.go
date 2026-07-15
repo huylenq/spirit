@@ -24,44 +24,46 @@ wait(id, [{mode, timeout}]) -> session
 
 ### Send & Wait
 
-cancel_queue(id, index)
+cancel_queue(id, index) -> {ok, operation, target}
   Cancel a queued message by 1-based index.
 
-queue(id, msg)
+queue(id, msg) -> {ok, operation, target}
   Queue message for delivery when session becomes idle.
 
-send(id, msg, [{wait, timeout}])
+send(id, msg, [{wait, timeout}]) -> {ok, operation, target, [session]}
   Send message to session's tmux pane. Options: wait="idle"|"working"|"cycle", timeout=N.
   "cycle" waits until the session enters working then returns to idle (guards against
-  pre-work false-idle right after sending a slash command).
+  pre-work false-idle right after sending a slash command). Returns a structured
+  result; when wait is set, the resolved session is attached under "session".
 
 ### Lifecycle
 
-kill(id)
+kill(id) -> {ok, operation, target}
   Send SIGTERM to session and clean up.
 
-spawn(cwd, [{tmux_session, message, split_from_pane}]) -> {session_id, pane_id}
-  Spawn a new Claude session in the given directory. Blocks up to 30s.
-  If split_from_pane is set (e.g. "%145"), the new pane is split next to it
-  in the same tmux window; otherwise a new window is created.
+spawn(cwd, [{provider, tmux_session, message, split_from_pane}]) -> {ok, operation, session_id, pane_id}
+  Spawn a new session in the given directory. Blocks up to 30s. provider selects
+  the agent ("claude" default, "codex", …); unknown providers are rejected by the
+  daemon's provider registry. If split_from_pane is set (e.g. "%145"), the new
+  pane is split next to it in the same tmux window; otherwise a new window is created.
 
 ### Orchestrator
 
-register_orchestrator(id)
+register_orchestrator(id) -> {ok, operation, target}
   Exclude session from sessions() results. For orchestrator self-exclusion.
 
-unregister_orchestrator(id)
+unregister_orchestrator(id) -> {ok, operation, target}
   Re-include a previously excluded session in sessions() results.
 
 ### Features
 
-cancel_commit_done(id)
+cancel_commit_done(id) -> {ok, operation, target}
   Cancel pending commit-done auto-kill.
 
-commit(id)
+commit(id) -> {ok, operation, target}
   Send /commit to session (no auto-kill).
 
-commit_done(id)
+commit_done(id) -> {ok, operation, target}
   Send /commit and auto-kill session on completion.
 
 diff_hunks(id) -> [{file_path, old_string, new_string, is_write}]
@@ -73,13 +75,13 @@ diff_stats(id) -> {filepath: {added, removed}}
 hook_events(id) -> [{time, hook_type, effect}]
   Get hook events for session.
 
-later(id)
+later(id) -> {ok, operation, target}
   Mark session for later review.
 
-later_kill(id)
+later_kill(id) -> {ok, operation, target}
   Mark session for later and kill its pane.
 
-queue_commit_done(id)
+queue_commit_done(id) -> {ok, operation, target}
   Queue /commit behind any pending work and auto-kill on commit. Returns
   immediately — unlike commit_done(), this does not type into the pane right
   away, so it's safe to call right after send(id, "/foo") without waiting for
@@ -88,6 +90,14 @@ queue_commit_done(id)
 
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
+
+set_note(id, note) -> {ok, operation, target}
+  Set a session's note (persisted and broadcast to subscribers). An empty string
+  clears it.
+
+set_tags(id, tags) -> {ok, operation, target}
+  Replace a session's tags with the given array (persisted and broadcast to
+  subscribers). Passing an empty table clears the tags.
 
 summary(id) -> {synthesized_title}|nil
   Get cached summary for session, or nil.
@@ -101,7 +111,7 @@ synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
 transcript(id) -> []string
   Get user messages from session transcript.
 
-unlater(later_id)
+unlater(later_id) -> {ok, operation, target}
   Remove a Later record by its ID.
 
 ### Backlog

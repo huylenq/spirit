@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
 	"github.com/huylenq/spirit/internal/scripting"
@@ -63,11 +66,12 @@ var agentCommands = []agentCommand{
 		Handler: runQueue,
 	},
 	{
-		Name: "spawn", Args: "<cwd> [-m <msg>] [--new-window | --tmux-session <name>]",
-		Desc: "Spawn new Claude Code session (defaults to splitting the caller's tmux pane)",
+		Name: "spawn", Args: "<cwd> [-m <msg>] [--provider claude|codex] [--new-window | --tmux-session <name>]",
+		Desc: "Spawn new session (defaults to splitting the caller's tmux pane; --provider selects the agent)",
 		Examples: []string{
 			"spawn /path/to/project",
 			`spawn /path/to/project -m "fix the failing tests"`,
+			"spawn /path/to/project --provider codex",
 			"spawn /path/to/project --new-window",
 		},
 		Handler: runSpawn,
@@ -142,6 +146,43 @@ var agentCommands = []agentCommand{
 		Handler: runHookEvents,
 	},
 	{
+		Name: "inspect", Args: "<id> [--transcript-tail N] [--diff-hunks] [--hooks]",
+		Desc: "Aggregate dossier: session snapshot + optional transcript tail, diff hunks, hook events",
+		Examples: []string{
+			"inspect SESSION_ID",
+			"inspect SESSION_ID --transcript-tail 10",
+			"inspect SESSION_ID --diff-hunks --hooks",
+		},
+		Handler: runInspect,
+	},
+	{
+		Name: "wait", Args: "<id> --phase idle|working|cycle [--timeout N]",
+		Desc: "Block until session reaches phase (cycle = working then idle); nonzero exit on timeout",
+		Examples: []string{
+			"wait SESSION_ID --phase idle",
+			"wait SESSION_ID --phase cycle --timeout 120",
+		},
+		Handler: runWait,
+	},
+	{
+		Name: "tag", Args: "<id> [tag...]",
+		Desc: "Set a session's tags (replaces existing; no tags clears them)",
+		Examples: []string{
+			"tag SESSION_ID review urgent",
+			"tag SESSION_ID",
+		},
+		Handler: runTag,
+	},
+	{
+		Name: "note", Args: "<id> <note>",
+		Desc: "Set a session's note (empty string clears it)",
+		Examples: []string{
+			`note SESSION_ID "waiting on API review"`,
+			`note SESSION_ID ""`,
+		},
+		Handler: runNote,
+	},
+	{
 		Name: "backlog", Args: "list|create|update|delete <args>",
 		Desc: "Backlog CRUD",
 		Examples: []string{
@@ -155,6 +196,26 @@ var agentCommands = []agentCommand{
 }
 
 // --- Helpers ---
+
+// mutationReceipt shapes the structured result of a side-effecting agent verb.
+//
+// RECEIPT SEAM (W5 → W3): this is the single place that formats mutation output
+// for the agent CLI. Today it emits {"status":"ok","operation":...,"target":...}.
+// The W3 receipt.ActionReceipt schema (internal/receipt, built via receipt.New)
+// now exists; adopting it is a one-function change here — build a receipt.New,
+// stamp DeliveryOutcome/ObservedState, and return it instead of this map — after
+// which every mutating verb inherits the new shape. The Lua equivalent seam is
+// mutationResult in internal/scripting/convert.go.
+func mutationReceipt(operation, target string, extra map[string]any) map[string]any {
+	r := map[string]any{"status": "ok", "operation": operation}
+	if target != "" {
+		r["target"] = target
+	}
+	for k, v := range extra {
+		r[k] = v
+	}
+	return r
+}
 
 // jsonOut marshals v to stdout as indented JSON.
 func jsonOut(v any) {
@@ -384,7 +445,7 @@ func runSend() {
 		fmt.Fprintf(os.Stderr, "send: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(map[string]string{"status": "ok"})
+	jsonOut(mutationReceipt("send", id, nil))
 }
 
 func runQueue() {
@@ -402,7 +463,7 @@ func runQueue() {
 		fmt.Fprintf(os.Stderr, "queue: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(map[string]string{"status": "ok"})
+	jsonOut(mutationReceipt("queue", id, nil))
 }
 
 func runSpawn() {
@@ -412,6 +473,7 @@ func runSpawn() {
 	cwd := os.Args[2]
 	message := ""
 	tmuxSession := ""
+	provider := ""
 	forceNewWindow := false
 
 	for i := 3; i < len(os.Args); i++ {
@@ -419,6 +481,11 @@ func runSpawn() {
 		case "--message", "-m":
 			if i+1 < len(os.Args) {
 				message = os.Args[i+1]
+				i++
+			}
+		case "--provider":
+			if i+1 < len(os.Args) {
+				provider = os.Args[i+1]
 				i++
 			}
 		case "--tmux-session":
@@ -442,7 +509,14 @@ func runSpawn() {
 	client := connectOrDie()
 	defer client.Close()
 
-	result, err := client.Spawn(cwd, tmuxSession, message, splitFromPane)
+	// Provider defaults to Claude. Unknown providers are rejected by the daemon's
+	// provider registry / capability gate (no hardcoded name list here).
+	providerID := agent.ProviderClaude
+	if provider != "" {
+		providerID = agent.ProviderID(provider)
+	}
+
+	result, err := client.SpawnProvider(providerID, cwd, tmuxSession, message, splitFromPane)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "spawn: %v\n", err)
 		os.Exit(1)
@@ -463,7 +537,7 @@ func runKill() {
 		fmt.Fprintf(os.Stderr, "kill: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(map[string]string{"status": "ok"})
+	jsonOut(mutationReceipt("kill", id, nil))
 }
 
 func runTranscript() {
@@ -601,7 +675,7 @@ func runCommit() {
 		fmt.Fprintf(os.Stderr, "commit: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(map[string]string{"status": "ok"})
+	jsonOut(mutationReceipt("commit", id, map[string]any{"done": done}))
 }
 
 func runLater() {
@@ -630,7 +704,7 @@ func runLater() {
 		fmt.Fprintf(os.Stderr, "later: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(map[string]string{"status": "ok"})
+	jsonOut(mutationReceipt("later", id, map[string]any{"kill": kill}))
 }
 
 func runHookEvents() {
@@ -648,6 +722,209 @@ func runHookEvents() {
 		os.Exit(1)
 	}
 	jsonOut(events)
+}
+
+// runInspect aggregates a bounded dossier for one session by composing existing
+// daemon RPCs client-side (matching how every other verb calls the client): the
+// session snapshot is always included; transcript tail, diff hunks, and hook
+// events are added on demand via flags.
+func runInspect() {
+	if len(os.Args) < 3 {
+		dieUsage("usage: spirit agent inspect <session-id> [--transcript-tail N] [--diff-hunks] [--hooks]")
+	}
+	id := os.Args[2]
+	transcriptTail := 0
+	wantDiffHunks := false
+	wantHooks := false
+	for i := 3; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--transcript-tail":
+			if i+1 < len(os.Args) {
+				n, err := strconv.Atoi(os.Args[i+1])
+				if err != nil || n < 0 {
+					dieUsage("inspect: --transcript-tail requires a non-negative integer")
+				}
+				transcriptTail = n
+				i++
+			}
+		case "--diff-hunks":
+			wantDiffHunks = true
+		case "--hooks":
+			wantHooks = true
+		}
+	}
+
+	client := connectOrDie()
+	defer client.Close()
+
+	s := resolveSessionOrDie(client, id)
+	out := map[string]any{"session": s}
+
+	if transcriptTail > 0 {
+		msgs, turn, err := client.Transcript(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "inspect transcript: %v\n", err)
+			os.Exit(1)
+		}
+		out["transcript_tail"] = tailMessages(msgs, transcriptTail)
+		out["current_turn"] = turn
+	}
+
+	if wantDiffHunks {
+		hunks, err := client.DiffHunks(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "inspect diff: %v\n", err)
+			os.Exit(1)
+		}
+		out["diff_hunks"] = hunks
+	}
+
+	if wantHooks {
+		events, err := client.HookEvents(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "inspect hooks: %v\n", err)
+			os.Exit(1)
+		}
+		out["hook_events"] = events
+	}
+
+	jsonOut(out)
+}
+
+// runWait blocks until a session reaches the requested phase, mirroring the Lua
+// wait/cycle semantics exactly (idle=user-turn, working=agent-turn, cycle=working
+// then idle). Exits nonzero on timeout so callers fail fast.
+func runWait() {
+	if len(os.Args) < 3 {
+		dieUsage("usage: spirit agent wait <session-id> --phase idle|working|cycle [--timeout N]")
+	}
+	id := os.Args[2]
+	phase := ""
+	timeout := 300
+	for i := 3; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--phase":
+			if i+1 < len(os.Args) {
+				phase = os.Args[i+1]
+				i++
+			}
+		case "--timeout":
+			if i+1 < len(os.Args) {
+				n, err := strconv.Atoi(os.Args[i+1])
+				if err != nil || n <= 0 {
+					dieUsage("wait: --timeout requires a positive integer")
+				}
+				timeout = n
+				i++
+			}
+		}
+	}
+	if phase != "idle" && phase != "working" && phase != "cycle" {
+		dieUsage("wait: --phase must be idle, working, or cycle")
+	}
+
+	client := connectOrDie()
+	defer client.Close()
+
+	s, err := waitForPhase(client, id, phase, timeout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "wait: %v\n", err)
+		os.Exit(1)
+	}
+	jsonOut(s)
+}
+
+// waitForPhase polls the daemon at 500ms cadence (matching internal/scripting's
+// pollSession) until the session reaches the target phase. Returns an error on
+// timeout.
+func waitForPhase(client *daemon.Client, id, phase string, timeoutSecs int) (claude.ClaudeSession, error) {
+	deadline := time.Now().Add(time.Duration(timeoutSecs) * time.Second)
+	sawWorking := false
+	for time.Now().Before(deadline) {
+		sessions, err := client.Sessions("")
+		if err != nil {
+			return claude.ClaudeSession{}, err
+		}
+		for _, s := range sessions {
+			if s.SessionID != id {
+				continue
+			}
+			if phaseReached(phase, s.Status, &sawWorking) {
+				return s, nil
+			}
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return claude.ClaudeSession{}, fmt.Errorf("timeout waiting for session %s to reach phase %s", id, phase)
+}
+
+// phaseReached reports whether a session in the given status has reached the
+// target phase, mirroring the Lua wait/cycle semantics exactly (idle=user-turn,
+// working=agent-turn, cycle=working then idle). For "cycle" it records the first
+// working observation in *sawWorking so a later idle counts as a completed round
+// trip and a pre-work false-idle does not.
+func phaseReached(phase string, status claude.Status, sawWorking *bool) bool {
+	switch phase {
+	case "idle":
+		return status == claude.StatusUserTurn
+	case "working":
+		return status == claude.StatusAgentTurn
+	case "cycle":
+		if status == claude.StatusAgentTurn {
+			*sawWorking = true
+		}
+		return status == claude.StatusUserTurn && *sawWorking
+	}
+	return false
+}
+
+// tailMessages returns the last n messages (all of them when there are n or
+// fewer). Used to bound inspect's transcript evidence.
+func tailMessages(msgs []string, n int) []string {
+	if n <= 0 || len(msgs) <= n {
+		return msgs
+	}
+	return msgs[len(msgs)-n:]
+}
+
+// runTag replaces a session's tags. `tag <id>` with no further args clears them.
+func runTag() {
+	if len(os.Args) < 3 {
+		dieUsage("usage: spirit agent tag <session-id> [tag...]")
+	}
+	id := os.Args[2]
+	tags := os.Args[3:]
+	if tags == nil {
+		tags = []string{}
+	}
+
+	client := connectOrDie()
+	defer client.Close()
+
+	if err := client.SetTags(id, tags); err != nil {
+		fmt.Fprintf(os.Stderr, "tag: %v\n", err)
+		os.Exit(1)
+	}
+	jsonOut(mutationReceipt("tag", id, map[string]any{"tags": tags}))
+}
+
+// runNote sets a session's note. An empty string clears it.
+func runNote() {
+	if len(os.Args) < 4 {
+		dieUsage("usage: spirit agent note <session-id> <note>")
+	}
+	id := os.Args[2]
+	note := os.Args[3]
+
+	client := connectOrDie()
+	defer client.Close()
+
+	if err := client.SetNote(id, note); err != nil {
+		fmt.Fprintf(os.Stderr, "note: %v\n", err)
+		os.Exit(1)
+	}
+	jsonOut(mutationReceipt("note", id, map[string]any{"note": note}))
 }
 
 func runBacklog() {
@@ -701,7 +978,7 @@ func runBacklog() {
 			fmt.Fprintf(os.Stderr, "backlog delete: %v\n", err)
 			os.Exit(1)
 		}
-		jsonOut(map[string]string{"status": "ok"})
+		jsonOut(mutationReceipt("backlog.delete", os.Args[4], nil))
 
 	default:
 		dieUsage("usage: spirit agent backlog list|create|update|delete ...")

@@ -4,7 +4,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// register_orchestrator(id)
+// register_orchestrator(id) -> {ok, operation, target}
 // Category: Orchestrator
 // Exclude session from sessions() results. For orchestrator self-exclusion.
 func luaRegisterOrchestrator(deps Deps) lua.LGFunction {
@@ -13,11 +13,12 @@ func luaRegisterOrchestrator(deps Deps) lua.LGFunction {
 		if err := deps.Client.RegisterOrchestrator(id); err != nil {
 			L.RaiseError("register_orchestrator: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "register_orchestrator", id))
+		return 1
 	}
 }
 
-// unregister_orchestrator(id)
+// unregister_orchestrator(id) -> {ok, operation, target}
 // Category: Orchestrator
 // Re-include a previously excluded session in sessions() results.
 func luaUnregisterOrchestrator(deps Deps) lua.LGFunction {
@@ -26,6 +27,7 @@ func luaUnregisterOrchestrator(deps Deps) lua.LGFunction {
 		if err := deps.Client.UnregisterOrchestrator(id); err != nil {
 			L.RaiseError("unregister_orchestrator: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "unregister_orchestrator", id))
+		return 1
 	}
 }

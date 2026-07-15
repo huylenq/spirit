@@ -6,7 +6,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// later(id)
+// later(id) -> {ok, operation, target}
 // Category: Features
 // Mark session for later review.
 func luaLater(deps Deps) lua.LGFunction {
@@ -16,11 +16,12 @@ func luaLater(deps Deps) lua.LGFunction {
 		if err := deps.Client.Later(paneID, id, ""); err != nil {
 			L.RaiseError("later: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "later", id))
+		return 1
 	}
 }
 
-// later_kill(id)
+// later_kill(id) -> {ok, operation, target}
 // Category: Features
 // Mark session for later and kill its pane.
 func luaLaterKill(deps Deps) lua.LGFunction {
@@ -30,11 +31,12 @@ func luaLaterKill(deps Deps) lua.LGFunction {
 		if err := deps.Client.LaterKill(s.PaneID, s.PID, id, ""); err != nil {
 			L.RaiseError("later_kill: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "later_kill", id))
+		return 1
 	}
 }
 
-// unlater(later_id)
+// unlater(later_id) -> {ok, operation, target}
 // Category: Features
 // Remove a Later record by its ID.
 func luaUnlater(deps Deps) lua.LGFunction {
@@ -43,7 +45,8 @@ func luaUnlater(deps Deps) lua.LGFunction {
 		if err := deps.Client.Unlater(laterID); err != nil {
 			L.RaiseError("unlater: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "unlater", laterID))
+		return 1
 	}
 }
 
@@ -94,7 +97,7 @@ func luaSynthesizeAll(deps Deps) lua.LGFunction {
 	}
 }
 
-// commit(id)
+// commit(id) -> {ok, operation, target}
 // Category: Features
 // Send /commit to session (no auto-kill).
 func luaCommit(deps Deps) lua.LGFunction {
@@ -104,11 +107,12 @@ func luaCommit(deps Deps) lua.LGFunction {
 		if err := deps.Client.CommitOnly(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "commit", id))
+		return 1
 	}
 }
 
-// commit_done(id)
+// commit_done(id) -> {ok, operation, target}
 // Category: Features
 // Send /commit and auto-kill session on completion.
 func luaCommitDone(deps Deps) lua.LGFunction {
@@ -118,11 +122,12 @@ func luaCommitDone(deps Deps) lua.LGFunction {
 		if err := deps.Client.CommitAndDone(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit_done: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "commit_done", id))
+		return 1
 	}
 }
 
-// queue_commit_done(id)
+// queue_commit_done(id) -> {ok, operation, target}
 // Category: Features
 // Queue /commit behind any pending work and auto-kill on commit. Returns
 // immediately — unlike commit_done(), this does not type into the pane right
@@ -136,11 +141,12 @@ func luaQueueCommitDone(deps Deps) lua.LGFunction {
 		if err := deps.Client.QueueCommitDone(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("queue_commit_done: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "queue_commit_done", id))
+		return 1
 	}
 }
 
-// cancel_commit_done(id)
+// cancel_commit_done(id) -> {ok, operation, target}
 // Category: Features
 // Cancel pending commit-done auto-kill.
 func luaCancelCommitDone(deps Deps) lua.LGFunction {
@@ -149,7 +155,8 @@ func luaCancelCommitDone(deps Deps) lua.LGFunction {
 		if err := deps.Client.CancelCommitDone(id); err != nil {
 			L.RaiseError("cancel_commit_done: %v", err)
 		}
-		return 0
+		L.Push(mutationResult(L, "cancel_commit_done", id))
+		return 1
 	}
 }
 

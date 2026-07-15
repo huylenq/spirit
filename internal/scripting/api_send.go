@@ -7,11 +7,12 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// send(id, msg, [{wait, timeout}])
+// send(id, msg, [{wait, timeout}]) -> {ok, operation, target, [session]}
 // Category: Send & Wait
 // Send message to session's tmux pane. Options: wait="idle"|"working"|"cycle", timeout=N.
 // "cycle" waits until the session enters working then returns to idle (guards against
-// pre-work false-idle right after sending a slash command).
+// pre-work false-idle right after sending a slash command). Returns a structured
+// result; when wait is set, the resolved session is attached under "session".
 func luaSend(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
@@ -21,6 +22,8 @@ func luaSend(deps Deps) lua.LGFunction {
 			L.RaiseError("send: %v", err)
 			return 0
 		}
+
+		result := mutationResult(L, "send", id)
 
 		// Check for wait option
 		if L.GetTop() >= 3 {
@@ -37,12 +40,12 @@ func luaSend(deps Deps) lua.LGFunction {
 					L.RaiseError("send wait: %v", err)
 					return 0
 				}
-				L.Push(sessionToTable(L, *s))
-				return 1
+				result.RawSetString("session", sessionToTable(L, *s))
 			}
 		}
 
-		return 0
+		L.Push(result)
+		return 1
 	}
 }
 
@@ -66,7 +69,7 @@ func waitForMode(deps Deps, sessionID, mode string, timeoutSecs int) (*claude.Cl
 	}
 }
 
-// queue(id, msg)
+// queue(id, msg) -> {ok, operation, target}
 // Category: Send & Wait
 // Queue message for delivery when session becomes idle.
 func luaQueue(deps Deps) lua.LGFunction {
@@ -79,11 +82,12 @@ func luaQueue(deps Deps) lua.LGFunction {
 			L.RaiseError("queue: %v", err)
 			return 0
 		}
-		return 0
+		L.Push(mutationResult(L, "queue", id))
+		return 1
 	}
 }
 
-// cancel_queue(id, index)
+// cancel_queue(id, index) -> {ok, operation, target}
 // Category: Send & Wait
 // Cancel a queued message by 1-based index.
 func luaCancelQueue(deps Deps) lua.LGFunction {
@@ -94,6 +98,7 @@ func luaCancelQueue(deps Deps) lua.LGFunction {
 			L.RaiseError("cancel_queue: %v", err)
 			return 0
 		}
-		return 0
+		L.Push(mutationResult(L, "cancel_queue", id))
+		return 1
 	}
 }
