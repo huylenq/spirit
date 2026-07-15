@@ -190,6 +190,12 @@ func (m Model) View() string {
 		content = m.viewSidebarLayout(innerWidth, contentHeight)
 	}
 
+	// Exit shatter: while the quiet scene is bursting away, composite its falling
+	// debris on top of the returning normal view so the transition doesn't cut.
+	if m.detail.QuietExitActive() {
+		content = m.detail.OverlayQuietExit(content)
+	}
+
 	// Minimap: docked at bottom in fullscreen (inserted into layout below),
 	// overlaid in normal mode
 	if !minimapDocked && m.showMinimap {

@@ -433,6 +433,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ui.AllQuietTickMsg:
 		cmd := m.detail.TickAllQuiet()
+		if c := m.detail.TickQuietExit(); c != nil {
+			if cmd != nil {
+				cmd = tea.Batch(cmd, c)
+			} else {
+				cmd = c
+			}
+		}
 		return m, cmd
 
 	case DestroyerTickMsg:
@@ -455,6 +462,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Snapshot navigable (your-turn) count before the refresh so we can detect
 		// the last one draining away — the trigger for the quiet-mode explosion.
 		prevNavigable := m.sidebar.NavigableCount()
+		// Snapshot the quiet state (and its dashboard counts) before the refresh so
+		// we can detect a session reappearing — the trigger for the exit shatter —
+		// and reproduce the scene that was on screen at that moment.
+		prevAllQuiet := m.sidebar.IsAllQuiet()
+		prevQuietCounts := m.allQuietCounts()
 		// Detect auto-synthesis completions: SynthesizePending was true, now false
 		prevSynth := make(map[string]bool, len(m.sessions))
 		for _, s := range m.sessions {
@@ -526,6 +538,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// explosion only when the last your-turn session just completed (had
 		// navigable items, now all quiet) — not when the TUI merely polled while
 		// already quiet or opened straight into a quiet state.
+		// Exiting quiet: a session reappeared in YOUR TURN. Capture the calm scene
+		// as it looked (mobile still active) and shatter it outward — the burst is
+		// composited over the returning normal view in View(). Seed before the
+		// intro sync below, which stops the mobile animation.
+		if prevAllQuiet && !m.sidebar.IsAllQuiet() && m.detail.AllQuietAnimActive() {
+			w := m.innerWidth() - m.copilotDockedWidth() - 2
+			h := m.contentHeight()
+			src := m.detail.ViewAllQuietSized(w, h, prevQuietCounts)
+			if cmd := m.detail.StartQuietExit(src, w, h); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 		intro := prevNavigable > 0 && m.sidebar.IsAllQuiet()
 		if cmd := m.syncAllQuietAnimIntro(intro); cmd != nil {
 			cmds = append(cmds, cmd)
