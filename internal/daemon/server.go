@@ -155,6 +155,21 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqActionReport:
 		return d.handleActionReport(req.Data)
 
+	case ReqWatchCreate:
+		return d.handleWatchCreate(req.Data)
+
+	case ReqWatchList:
+		return d.handleWatchList()
+
+	case ReqWatchCancel:
+		return d.handleWatchCancel(req.Data)
+
+	case ReqAttentionList:
+		return d.handleAttentionList()
+
+	case ReqAttentionResolve:
+		return d.handleAttentionResolve(req.Data)
+
 	case ReqBacklogList:
 		return d.handleBacklogList(req.Data)
 

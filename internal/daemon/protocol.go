@@ -8,6 +8,7 @@ import (
 
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/ledger"
 	"github.com/huylenq/spirit/internal/tmux"
 )
 
@@ -67,6 +68,12 @@ const (
 	ReqSetNote                = "set_note"
 
 	ReqActionReport = "action_report"
+
+	ReqWatchCreate      = "watch_create"
+	ReqWatchList        = "watch_list"
+	ReqWatchCancel      = "watch_cancel"
+	ReqAttentionList    = "attention_list"
+	ReqAttentionResolve = "attention_resolve"
 
 	ReqBacklogList   = "backlog_list"
 	ReqBacklogCreate = "backlog_create"
@@ -294,6 +301,48 @@ type ActionReportData struct {
 	SessionID string `json:"sessionID,omitempty"`
 	Project   string `json:"project,omitempty"`
 	Error     string `json:"error,omitempty"`
+}
+
+// --- Watch / attention data payloads (W7) ---
+
+// WatchCreateData creates one reactive watch (spec Decision 10). Zero limits
+// get daemon defaults (24h expiry, 60s cooldown, 20 firings); validity (expiry
+// + rate limit present) is enforced by the ledger.
+type WatchCreateData struct {
+	SessionID          string `json:"sessionID,omitempty"`
+	Project            string `json:"project,omitempty"`
+	Condition          string `json:"condition"`
+	Response           string `json:"response"`
+	ExpiresInMinutes   int    `json:"expiresInMinutes,omitempty"`
+	CooldownSeconds    int    `json:"cooldownSeconds,omitempty"`
+	MaxFirings         int    `json:"maxFirings,omitempty"`
+	LLMBudget          int    `json:"llmBudget,omitempty"`
+	CreatedBy          string `json:"createdBy,omitempty"`
+	CreatedByRequestID string `json:"createdByRequestID,omitempty"`
+}
+
+type WatchIDData struct {
+	WatchID string `json:"watchID"`
+}
+
+type AttentionResolveData struct {
+	ItemID     string `json:"itemID"`
+	Resolution string `json:"resolution,omitempty"`
+}
+
+// WatchResultData returns one watch record.
+type WatchResultData struct {
+	Watch ledger.Watch `json:"watch"`
+}
+
+// AttentionListData is the attention inbox payload: unresolved items (with
+// audit + recommendation) and every known watch.
+type AttentionListData struct {
+	Items   []ledger.AttentionItem `json:"items"`
+	Watches []ledger.Watch         `json:"watches"`
+	// Descriptions maps item id → one-line human digest derived from the
+	// latest linked signal, so surfaces don't re-derive evidence.
+	Descriptions map[string]string `json:"descriptions,omitempty"`
 }
 
 type BacklogListData struct {
