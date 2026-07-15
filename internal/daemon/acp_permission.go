@@ -5,6 +5,8 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+
+	"github.com/huylenq/spirit/internal/batch"
 )
 
 // Permission handling. The wire client no longer decides anything: it hands each
@@ -93,6 +95,7 @@ type parsedPermission struct {
 	Kind         string // "edit", "execute", ...
 	Command      string // set for dangerous-command (execute) requests
 	Diffs        []CopilotPermissionDiff
+	BatchSteps   []CopilotPermissionBatchStep // set when rawInput decodes as a W8 batch
 	Options      []CopilotPermissionOption
 	Sensitive    bool
 	SensitiveHit string
@@ -165,6 +168,11 @@ func parsePermissionRequest(params json.RawMessage) (parsedPermission, error) {
 		if json.Unmarshal(p.ToolCall.RawInput, &ri) == nil && ri.Command != "" {
 			out.Command = ri.Command
 		}
+		// W8 batch detection is structural: a rawInput carrying an actions
+		// array of valid steps is a batch tool call (run_actions), regardless
+		// of how Hermes titles it. Decode it so the approval overlay renders
+		// targets + operations instead of an opaque JSON blob.
+		out.BatchSteps = decodeBatchSteps(p.ToolCall.RawInput)
 	}
 	// Reuse the W0 sensitive-path walker to FLAG (not deny) sensitive targets.
 	var legacy acpPermissionRequest
@@ -176,6 +184,68 @@ func parsePermissionRequest(params json.RawMessage) (parsedPermission, error) {
 	}
 	out.Options = assignPermissionKeys(p.Options)
 	return out, nil
+}
+
+// decodeBatchSteps decodes a W8 batch from a tool call's rawInput. Returns nil
+// when the payload is not batch-shaped (no valid actions array) — detection is
+// best-effort and must never fail the permission parse.
+func decodeBatchSteps(rawInput json.RawMessage) []CopilotPermissionBatchStep {
+	var probe struct {
+		Actions json.RawMessage `json:"actions"`
+	}
+	if json.Unmarshal(rawInput, &probe) != nil || len(probe.Actions) == 0 {
+		return nil
+	}
+	b, err := batch.ParseBatch(rawInput)
+	if err != nil {
+		return nil
+	}
+	steps := make([]CopilotPermissionBatchStep, 0, len(b.Actions))
+	for i, step := range b.Actions {
+		target := step.SessionID
+		if step.Op == batch.OpSpawn {
+			target = step.CWD
+		}
+		steps = append(steps, CopilotPermissionBatchStep{
+			Index:  i + 1,
+			Op:     string(step.Op),
+			Target: target,
+			Detail: step.Detail(),
+			Risk:   string(step.Risk()),
+		})
+	}
+	return steps
+}
+
+// enrichBatchTargets swaps raw session ids in batch steps for "name (id8)"
+// against current fleet truth, so the human approves recognizable targets.
+func (d *Daemon) enrichBatchTargets(steps []CopilotPermissionBatchStep) {
+	if len(steps) == 0 {
+		return
+	}
+	sessions := d.currentSessions()
+	names := make(map[string]string, len(sessions))
+	for _, s := range sessions {
+		if s.SessionID == "" {
+			continue
+		}
+		short := s.SessionID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		label := s.DisplayName()
+		if label == "" {
+			label = short
+		} else {
+			label += " (" + short + ")"
+		}
+		names[s.SessionID] = label
+	}
+	for i := range steps {
+		if label, ok := names[steps[i].Target]; ok {
+			steps[i].Target = label
+		}
+	}
 }
 
 // assignPermissionKeys maps Hermes's option ids/kinds to stable keyboard

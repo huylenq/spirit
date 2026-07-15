@@ -492,22 +492,36 @@ type CopilotPermissionDiff struct {
 	NewText string `json:"newText"`
 }
 
+// CopilotPermissionBatchStep is one step of a batch action payload (W8): the
+// daemon decodes a run_actions tool call's rawInput into typed steps so the
+// approval overlay renders targets + operations legibly instead of an opaque
+// JSON blob.
+type CopilotPermissionBatchStep struct {
+	Index  int    `json:"index"`
+	Op     string `json:"op"`
+	Target string `json:"target,omitempty"` // display name + short id (or cwd for spawn)
+	Detail string `json:"detail"`
+	Risk   string `json:"risk"` // read_only | reversible | destructive
+}
+
 // CopilotPermissionRequest is the typed session/request_permission payload the
 // daemon forwards to the originating TUI client for a human decision (Decision 5/6).
 // It carries the tool kind and title, the real diff for edits, the command for
-// dangerous executes, the offered options with assigned keys, a sensitive-path flag,
-// and the absolute auto-deny deadline so the UI can show a countdown.
+// dangerous executes, the decoded batch steps for a batch action call, the
+// offered options with assigned keys, a sensitive-path flag, and the absolute
+// auto-deny deadline so the UI can show a countdown.
 type CopilotPermissionRequest struct {
-	PermissionID string                    `json:"permissionId"`
-	ToolCallID   string                    `json:"toolCallId,omitempty"`
-	Title        string                    `json:"title"`
-	Kind         string                    `json:"kind"`
-	Command      string                    `json:"command,omitempty"`
-	Diffs        []CopilotPermissionDiff   `json:"diffs,omitempty"`
-	Options      []CopilotPermissionOption `json:"options"`
-	Sensitive    bool                      `json:"sensitive,omitempty"`
-	SensitiveHit string                    `json:"sensitiveHit,omitempty"`
-	DeadlineUnix int64                     `json:"deadlineUnix,omitempty"`
+	PermissionID string                       `json:"permissionId"`
+	ToolCallID   string                       `json:"toolCallId,omitempty"`
+	Title        string                       `json:"title"`
+	Kind         string                       `json:"kind"`
+	Command      string                       `json:"command,omitempty"`
+	Diffs        []CopilotPermissionDiff      `json:"diffs,omitempty"`
+	BatchSteps   []CopilotPermissionBatchStep `json:"batchSteps,omitempty"`
+	Options      []CopilotPermissionOption    `json:"options"`
+	Sensitive    bool                         `json:"sensitive,omitempty"`
+	SensitiveHit string                       `json:"sensitiveHit,omitempty"`
+	DeadlineUnix int64                        `json:"deadlineUnix,omitempty"`
 }
 
 // CopilotPermissionAnswerData carries the human's decision back to the daemon,

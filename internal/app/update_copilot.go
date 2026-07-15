@@ -440,6 +440,9 @@ func toUIPermission(p *daemon.CopilotPermissionRequest) ui.CopilotPermission {
 	for _, d := range p.Diffs {
 		out.Diffs = append(out.Diffs, ui.CopilotPermissionDiff{Path: d.Path, OldText: d.OldText, NewText: d.NewText})
 	}
+	for _, s := range p.BatchSteps {
+		out.BatchSteps = append(out.BatchSteps, ui.CopilotPermissionBatchStep{Index: s.Index, Op: s.Op, Target: s.Target, Detail: s.Detail, Risk: s.Risk})
+	}
 	for _, o := range p.Options {
 		out.Options = append(out.Options, ui.CopilotPermissionOption{OptionID: o.OptionID, Kind: o.Kind, Name: o.Name, Key: o.Key})
 	}

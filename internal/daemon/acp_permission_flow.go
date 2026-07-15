@@ -76,6 +76,9 @@ func (d *Daemon) decideCopilotPermission(params json.RawMessage) string {
 		log.Printf("acp: unparseable permission request denied: %v", err)
 		return ""
 	}
+	// W8: a batch payload is rendered legibly — resolve step targets against
+	// fleet truth so the human approves recognizable sessions, not raw ids.
+	d.enrichBatchTargets(parsed.BatchSteps)
 
 	// A permission request always arrives mid-prompt, tied to the active turn —
 	// route it to that turn's originating client (W2 correlation).
@@ -152,6 +155,7 @@ func (p parsedPermission) toPayload(permissionID string, deadline time.Time) *Co
 		Kind:         p.Kind,
 		Command:      p.Command,
 		Diffs:        p.Diffs,
+		BatchSteps:   p.BatchSteps,
 		Options:      p.Options,
 		Sensitive:    p.Sensitive,
 		SensitiveHit: p.SensitiveHit,

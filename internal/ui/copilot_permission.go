@@ -20,10 +20,22 @@ type CopilotPermission struct {
 	Kind         string // "edit", "execute", ...
 	Command      string
 	Diffs        []CopilotPermissionDiff
+	BatchSteps   []CopilotPermissionBatchStep
 	Options      []CopilotPermissionOption
 	Sensitive    bool
 	SensitiveHit string
 	DeadlineUnix int64
+}
+
+// CopilotPermissionBatchStep mirrors daemon.CopilotPermissionBatchStep: one
+// legible line of a W8 batch approval — operation, resolved target, detail,
+// risk class.
+type CopilotPermissionBatchStep struct {
+	Index  int
+	Op     string
+	Target string
+	Detail string
+	Risk   string
 }
 
 type CopilotPermissionOption struct {
@@ -120,6 +132,8 @@ func RenderCopilotPermission(p CopilotPermission, width int, now time.Time) stri
 	lines = append(lines, "")
 
 	switch {
+	case len(p.BatchSteps) > 0:
+		lines = append(lines, renderPermissionBatch(p.BatchSteps, contentW)...)
 	case len(p.Diffs) > 0:
 		for _, d := range p.Diffs {
 			lines = append(lines, permKindStyle.Render(ansi.Truncate(d.Path, contentW, "…")))
@@ -138,6 +152,39 @@ func RenderCopilotPermission(p CopilotPermission, width int, now time.Time) stri
 	lines = append(lines, permCountdownStyle.Render(fmt.Sprintf("auto-deny in %ds · esc denies", rem)))
 
 	return permBoxStyle.Width(contentW).Render(strings.Join(lines, "\n"))
+}
+
+// renderPermissionBatch renders a W8 batch payload as one legible line per
+// step — operation → target — detail, destructive steps flagged — plus a
+// header counting steps and destructive approval points. Never an opaque
+// JSON blob.
+func renderPermissionBatch(steps []CopilotPermissionBatchStep, width int) []string {
+	destructive := 0
+	for _, s := range steps {
+		if s.Risk == "destructive" {
+			destructive++
+		}
+	}
+	header := fmt.Sprintf("batch: %d step(s)", len(steps))
+	if destructive > 0 {
+		header += "  " + permSensitiveStyle.Render(fmt.Sprintf("⚠ %d destructive", destructive)) // ⚠
+	}
+	out := []string{ansi.Truncate(header, width, "…")}
+	for _, s := range steps {
+		line := fmt.Sprintf("%d. %s", s.Index, s.Op)
+		if s.Target != "" {
+			line += " → " + s.Target
+		}
+		if s.Detail != "" {
+			line += "  — " + s.Detail
+		}
+		rendered := permKindStyle.Render(ansi.Truncate(line, width-2, "…"))
+		if s.Risk == "destructive" {
+			rendered = permSensitiveStyle.Render(ansi.Truncate(line+"  ⚠", width-2, "…")) // ⚠
+		}
+		out = append(out, "  "+rendered)
+	}
+	return out
 }
 
 // renderPermissionOptions renders the offered answers as "y allow once   n deny".
