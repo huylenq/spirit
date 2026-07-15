@@ -29,6 +29,10 @@ const (
 	OutcomeCompleted Outcome = "completed"
 	// OutcomeFailed — the daemon rejected the operation; see Error.
 	OutcomeFailed Outcome = "failed"
+	// OutcomeSkipped — the operation was never attempted because an earlier
+	// step of its batch failed under stop-on-failure semantics (W8). The step
+	// is returned in the batch result's remainder for resubmission.
+	OutcomeSkipped Outcome = "skipped"
 )
 
 // Resolution records how the target session id was arrived at. In W3 every tool
