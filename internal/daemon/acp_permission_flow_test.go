@@ -297,3 +297,58 @@ func TestParsePermissionFlagsSensitiveInsteadOfDenying(t *testing.T) {
 		t.Fatalf("options not forwarded: %+v", p.Options)
 	}
 }
+
+// TestPermissionNonMainSessionAutoDenied: a permission request raised by any
+// session other than the main Lulu session (i.e. a reactive fork, W7) is denied
+// without ever reaching a human — reactive runs must not surprise the user with
+// approval prompts, and must not be granted anything.
+func TestPermissionNonMainSessionAutoDenied(t *testing.T) {
+	d := newPermTestDaemon()
+	// A connected client that would receive the prompt if it were forwarded.
+	sub := d.addSubscriber("client-1")
+	defer d.removeSubscriber(sub)
+	d.setActiveTurn("req-1", "client-1")
+
+	// Wire an ACP client whose main session id is known.
+	f := &fakeHermes{sessionID: "main-1"}
+	d.acpClient = newFakeClient(t, f)
+	f.start()
+	if err := d.acpClient.ensureReady(); err != nil {
+		t.Fatalf("ensureReady: %v", err)
+	}
+
+	forkParams := `{
+		"sessionId": "fork-7",
+		"toolCall": {"toolCallId": "t1", "title": "Run: rm -rf /", "kind": "execute"},
+		"options": [{"optionId": "allow_once", "kind": "allow_once", "name": "Allow"}]
+	}`
+	if got := d.decideCopilotPermission(json.RawMessage(forkParams)); got != "" {
+		t.Fatalf("non-main permission granted option %q, want denial", got)
+	}
+	// Nothing must have been forwarded to the client.
+	select {
+	case evt := <-sub.copilot:
+		t.Fatalf("unexpected chunk forwarded: %+v", evt)
+	default:
+	}
+
+	// The main session's requests still flow to the human (sanity: forwarded).
+	mainParams := `{
+		"sessionId": "main-1",
+		"toolCall": {"toolCallId": "t2", "title": "Run: ls", "kind": "execute"},
+		"options": [{"optionId": "allow_once", "kind": "allow_once", "name": "Allow"}]
+	}`
+	done := make(chan string, 1)
+	go func() { done <- d.decideCopilotPermission(json.RawMessage(mainParams)) }()
+	evt := waitPermChunk(t, sub, "permission_request")
+	if evt.Permission == nil || evt.Permission.Title != "Run: ls" {
+		t.Fatalf("main permission not forwarded: %+v", evt)
+	}
+	d.handleCopilotPermissionAnswer(marshalData(CopilotPermissionAnswerData{
+		PermissionID: evt.Permission.PermissionID,
+		OptionID:     "allow_once",
+	}))
+	if got := <-done; got != "allow_once" {
+		t.Fatalf("main permission answer = %q", got)
+	}
+}

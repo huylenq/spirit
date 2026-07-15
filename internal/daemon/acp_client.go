@@ -190,9 +190,12 @@ type acpClient struct {
 
 	// sink is the active prompt's stream consumer. Guarded by sinkMu; sinkID
 	// lets a superseding prompt's clearSink avoid clobbering the newer sink.
-	sinkMu sync.Mutex
-	sink   func(CopilotStreamData)
-	sinkID uint64
+	// sessionSinks are per-session overrides (reactive forks, W7): updates for
+	// a registered session id route there and never touch the main sink.
+	sinkMu       sync.Mutex
+	sink         func(CopilotStreamData)
+	sinkID       uint64
+	sessionSinks map[string]func(CopilotStreamData)
 
 	// onPermission, when set by the daemon, decides session/request_permission
 	// requests (returns the option id to select, or "" to refuse). When nil the
@@ -271,8 +274,12 @@ func (c *acpClient) forgetSessionID() {
 }
 
 // SessionID returns the active Hermes ACP session UUID, or the persisted UUID
-// before the lazy ACP subprocess has been started.
+// before the lazy ACP subprocess has been started. Nil-safe (tests build
+// daemons without an ACP client).
 func (c *acpClient) SessionID() string {
+	if c == nil {
+		return ""
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.sessionID != "" {
@@ -723,6 +730,7 @@ func (c *acpClient) clearSink(id uint64) {
 func (c *acpClient) clearSinkAll() {
 	c.sinkMu.Lock()
 	c.sink = nil
+	c.sessionSinks = nil
 	c.sinkMu.Unlock()
 }
 
