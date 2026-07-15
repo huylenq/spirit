@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -37,6 +39,8 @@ func NewCopilotRelayModel() RelayModel {
 	ti.Prompt = "@ "
 	ti.PromptStyle = CopilotPromptStyle
 	ti.CharLimit = 512
+	ti.ShowSuggestions = true
+	ti.SetSuggestions([]string{"/new", "/preamble", "/model"})
 	return RelayModel{input: ti, origPrompt: "@ "}
 }
 
@@ -152,6 +156,35 @@ func (m RelayModel) Active() bool {
 
 func (m RelayModel) Value() string {
 	return m.input.Value()
+}
+
+// CompleteSuggestion accepts the currently displayed textinput suggestion.
+func (m *RelayModel) CompleteSuggestion() bool {
+	value := m.input.Value()
+	for _, suggestion := range m.input.AvailableSuggestions() {
+		if suggestion != value && strings.HasPrefix(strings.ToLower(suggestion), strings.ToLower(value)) {
+			m.input.SetValue(suggestion)
+			m.input.CursorEnd()
+			return true
+		}
+	}
+	return false
+}
+
+// CanCompleteSuggestion reports whether Tab has a completion to accept.
+func (m *RelayModel) CanCompleteSuggestion() bool {
+	value := m.input.Value()
+	for _, suggestion := range m.input.AvailableSuggestions() {
+		if suggestion != value && strings.HasPrefix(strings.ToLower(suggestion), strings.ToLower(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetSuggestions replaces textinput completions without disturbing focus/value.
+func (m *RelayModel) SetSuggestions(suggestions []string) {
+	m.input.SetSuggestions(suggestions)
 }
 
 func (m RelayModel) IsBangMode() bool {

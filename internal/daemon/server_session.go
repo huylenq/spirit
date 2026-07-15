@@ -9,8 +9,12 @@ import (
 	"github.com/huylenq/spirit/internal/tmux"
 )
 
-func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
-	sub := d.addSubscriber()
+func (d *Daemon) handleSubscribe(data json.RawMessage, conn net.Conn, enc *json.Encoder) {
+	var req SubscribeData
+	if len(data) > 0 {
+		json.Unmarshal(data, &req) //nolint:errcheck — empty/old clients get broadcast delivery
+	}
+	sub := d.addSubscriber(req.ClientID)
 	defer d.removeSubscriber(sub)
 
 	// Send current state immediately
@@ -21,6 +25,12 @@ func (d *Daemon) handleSubscribe(conn net.Conn, enc *json.Encoder) {
 		Version: d.currentVersion(),
 	}
 	if err := enc.Encode(resp); err != nil {
+		return
+	}
+	if err := enc.Encode(Response{
+		Type: RespCopilotSnapshot,
+		Data: marshalData(d.copilotSnapshot()),
+	}); err != nil {
 		return
 	}
 

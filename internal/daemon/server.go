@@ -51,7 +51,7 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 		return d.handleNudge(req.Data)
 
 	case ReqSubscribe:
-		d.handleSubscribe(conn, enc)
+		d.handleSubscribe(req.Data, conn, enc)
 		return nil // subscribe manages its own lifecycle
 
 	case ReqTranscript:
@@ -181,6 +181,15 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 
 	case ReqCopilotTogglePreamble:
 		return d.handleCopilotTogglePreamble()
+
+	case ReqCopilotSetModel:
+		return d.handleCopilotSetModel(req.Data)
+
+	case ReqCopilotSetMode:
+		return d.handleCopilotSetMode(req.Data)
+
+	case ReqCopilotPermissionAnswer:
+		return d.handleCopilotPermissionAnswer(req.Data)
 
 	default:
 		r := Response{Type: RespError, Error: "unknown request type: " + req.Type}

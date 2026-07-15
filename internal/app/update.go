@@ -329,14 +329,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.copilot.SetSessionID(msg.Status.SessionID)
 				m.copilotSessionKnown = true
 			}
+			m.applyCopilotModeState(msg.Status.Modes)
 			m.applyCopilotModelState(msg.Status.Models)
 		}
 		return m, nil
 
+	case CopilotSnapshotReadyMsg:
+		// Daemon-authoritative copilot state pushed right after the initial
+		// session snapshot on subscribe. Hydrate the panel; do NOT touch the
+		// session list. Must re-arm the read loop or subsequent daemon pushes
+		// (session updates, copilot stream) would never be read.
+		uiMsgs := make([]ui.CopilotMessage, len(msg.Snapshot.History))
+		for i, h := range msg.Snapshot.History {
+			uiMsgs[i] = ui.CopilotMessage{Role: h.Role, Content: h.Content, Time: h.Time}
+		}
+		m.copilot.LoadHistory(uiMsgs)
+		if !m.copilotSessionKnown && msg.Snapshot.SessionID != "" {
+			m.copilot.SetSessionID(msg.Snapshot.SessionID)
+			m.copilotSessionKnown = true
+		}
+		return m, m.waitForDaemonUpdate()
+
 	case CopilotResetReadyMsg:
 		m.copilot.LoadHistory(nil)
 		m.copilot.SetSessionID("")
-		m.copilot.SetModelState("", nil)
+		m.copilot.SetModelID("")
 		m.copilotSessionKnown = true
 		return m, m.fetchCopilotStatus()
 
@@ -349,7 +366,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.copilot.AddInfoMessage("model: " + msg.Models.CurrentModelID)
 		return m, nil
 
+	case CopilotModeReadyMsg:
+		if msg.Err != nil {
+			m.copilot.HandleStreamMsg(ui.CopilotStreamMsg{Type: "error", Content: "mode: " + msg.Err.Error()})
+			return m, nil
+		}
+		m.copilot.SetModeID(msg.Modes.CurrentModeID)
+		m.copilot.AddInfoMessage("mode: " + msg.Modes.CurrentModeID)
+		return m, nil
+
+	case CopilotPermissionMsg:
+		// Drop a prompt from a superseded/cancelled turn.
+		if msg.RequestID != "" && m.copilotRequestID != "" && msg.RequestID != m.copilotRequestID {
+			return m, m.waitForDaemonUpdate()
+		}
+		perm := msg.Permission
+		m.copilotPermission = &perm
+		if !m.copilotVisible {
+			m.setCopilotVisible(true)
+		}
+		if m.state != StateCopilotConfirm {
+			m.copilotPriorState = m.state
+		}
+		m.state = StateCopilotConfirm
+		m.copilotInput.TextInput().Blur()
+		return m, m.waitForDaemonUpdate()
+
+	case CopilotPermissionResolvedMsg:
+		// Dismiss the confirm UI if this resolution is for the pending prompt, and
+		// drop a receipt line into the transcript (e.g. resolved by timeout, or by
+		// the owning turn's cancellation).
+		if m.copilotPermission != nil && m.copilotPermission.PermissionID == msg.PermissionID {
+			m.copilotPermission = nil
+			if m.state == StateCopilotConfirm {
+				m.state = m.copilotPriorState
+				if m.state == StateCopilot {
+					m.focusCopilot()
+				}
+			}
+		}
+		m.copilot.AddInfoMessage(permissionReceiptLine(msg))
+		return m, m.waitForDaemonUpdate()
+
 	case CopilotStreamChunkMsg:
+		// Drop late chunks from a cancelled or superseded turn: a correlated chunk
+		// whose request id no longer matches our in-flight turn must not land in the
+		// panel (belt to the daemon's turn-epoch suspenders). Chunks with no request
+		// id (locally-synthesized errors, older daemons) pass through unchanged.
+		if msg.RequestID != "" && m.copilotRequestID != "" && msg.RequestID != m.copilotRequestID {
+			return m, m.waitForDaemonUpdate()
+		}
 		if msg.Msg.Type == "session" {
 			m.copilotSessionKnown = true
 		}
@@ -357,15 +423,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Auto-pop copilot on stream completion if hidden
 		if (msg.Msg.Type == "done" || msg.Msg.Type == "error") && !m.copilotVisible {
 			m.setCopilotVisible(true) // handles applyLayout for docked mode
-		}
-		// Tool confirmation handling
-		if msg.Msg.Type == "confirm" {
-			if m.state == StateCopilot {
-				// Already focused: transition to confirm state
-				m.state = StateCopilotConfirm
-			}
-			// Unfocused (float or docked): don't steal focus, pending tool renders inline.
-			// User must tab to focus, which will detect the pending tool.
 		}
 		// Re-invoke subscribe loop to receive the next event
 		return m, m.waitForDaemonUpdate()
@@ -824,7 +881,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Shift+tab: toggle copilot visibility (off/on) from relevant states.
 	if key.Matches(msg, Keys.CopilotToggle) {
 		switch m.state {
-		case StateNormal, StateCopilot, StateCopilotConfirm, StateAdjustCopilot:
+		case StateNormal, StateCopilot, StateAdjustCopilot:
 			return execToggleCopilot(&m)
 		}
 	}
@@ -868,10 +925,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyProjectCodeEdit(msg)
 	case StateCopilot:
 		return m.handleKeyCopilot(msg)
-	case StateCopilotConfirm:
-		return m.handleKeyCopilotConfirm(msg)
 	case StateAdjustCopilot:
 		return m.handleKeyAdjustCopilot(msg)
+	case StateCopilotConfirm:
+		return m.handleKeyCopilotConfirm(msg)
 	case StateDestroyer:
 		return m.handleKeyDestroyer(msg)
 	default:

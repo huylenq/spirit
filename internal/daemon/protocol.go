@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -69,12 +71,15 @@ const (
 	ReqBacklogUpdate = "backlog_update"
 	ReqBacklogDelete = "backlog_delete"
 
-	ReqCopilotChat           = "copilot_chat"
-	ReqCopilotCancel         = "copilot_cancel"
-	ReqCopilotStatus         = "copilot_status"
-	ReqCopilotHistory        = "copilot_history"
-	ReqCopilotClearHistory   = "copilot_clear_history"
-	ReqCopilotTogglePreamble = "copilot_toggle_preamble"
+	ReqCopilotChat             = "copilot_chat"
+	ReqCopilotCancel           = "copilot_cancel"
+	ReqCopilotStatus           = "copilot_status"
+	ReqCopilotHistory          = "copilot_history"
+	ReqCopilotClearHistory     = "copilot_clear_history"
+	ReqCopilotTogglePreamble   = "copilot_toggle_preamble"
+	ReqCopilotSetModel         = "copilot_set_model"
+	ReqCopilotSetMode          = "copilot_set_mode"
+	ReqCopilotPermissionAnswer = "copilot_permission_answer"
 )
 
 // Response type constants.
@@ -84,6 +89,7 @@ const (
 	RespResult        = "result"
 	RespError         = "error"
 	RespCopilotStream = "copilot_stream"
+	RespCopilotSnapshot = "copilot_snapshot"
 )
 
 // --- Request data payloads ---
@@ -303,15 +309,158 @@ type BacklogItemResultData struct {
 	Backlog claude.Backlog `json:"backlog"`
 }
 
+// SubscribeData carries the originating client's stable identity so the daemon
+// can scope correlated copilot stream events back to the subscriber that owns
+// the in-flight turn (Decision 1/6). Empty ClientID (older clients) falls back to
+// broadcast delivery.
+type SubscribeData struct {
+	ClientID string `json:"clientId,omitempty"`
+}
+
 // --- Copilot data payloads ---
 
+// CopilotChatData is one Lulu prompt. Beyond the message it carries request
+// identity and the request-scoped selection captured at the originating client
+// (spec Decisions 1, 2): RequestID correlates the streamed turn, ClientID scopes
+// delivery, and Scope grounds "review this"/"tell it to fix it" in a specific
+// session rather than a title-match guess.
 type CopilotChatData struct {
-	Message string `json:"message"`
+	Message   string        `json:"message"`
+	RequestID string        `json:"requestId,omitempty"`
+	ClientID  string        `json:"clientId,omitempty"`
+	Scope     *CopilotScope `json:"scope,omitempty"`
+}
+
+// CopilotScope is the local UI attention state at send time. It is request-scoped
+// (never persisted daemon-side) so one TUI client can never overwrite another's
+// selection. The daemon validates SelectedSessionID against current fleet truth
+// before building the prompt.
+type CopilotScope struct {
+	SelectedSessionID string               `json:"selectedSessionId,omitempty"`
+	Selected          *CopilotScopeSession `json:"selected,omitempty"`
+	ActiveProject     string               `json:"activeProject,omitempty"`
+	ActiveLane        string               `json:"activeLane,omitempty"`
+	ActiveView        string               `json:"activeView,omitempty"`
+	VisibleSessionIDs []string             `json:"visibleSessionIds,omitempty"`
+}
+
+// CopilotScopeSession is the selected session's snapshot as the originating
+// client saw it — a copy, not a lookup-by-name. The daemon prefers its own fresh
+// copy when the id still resolves, but the client snapshot is what proves the
+// referent even if the fleet shifts between render and prompt.
+type CopilotScopeSession struct {
+	SessionID       string   `json:"sessionId"`
+	Provider        string   `json:"provider,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	Project         string   `json:"project,omitempty"`
+	GitBranch       string   `json:"gitBranch,omitempty"`
+	CWD             string   `json:"cwd,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	Lane            string   `json:"lane,omitempty"`
+	Note            string   `json:"note,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	IsWaiting       bool     `json:"isWaiting,omitempty"`
+	HasOverlap      bool     `json:"hasOverlap,omitempty"`
+	IsWorktree      bool     `json:"isWorktree,omitempty"`
+	WorktreeName    string   `json:"worktreeName,omitempty"`
+	LastUserMessage string   `json:"lastUserMessage,omitempty"`
+}
+
+type CopilotSetModelData struct {
+	ModelID string `json:"modelId"`
+}
+
+// CopilotSetModeData switches the Hermes ACP session mode — the coarse autonomy
+// ceiling (Decision 9). ModeID is one of the advertised mode ids
+// (default / accept_edits / dont_ask).
+type CopilotSetModeData struct {
+	ModeID string `json:"modeId"`
+}
+
+// CopilotModeInfo is one advertised Hermes session mode. Modes are the coarse
+// autonomy ceiling that governs Hermes-native edit approvals: `default` asks per
+// edit, `accept_edits` auto-allows workspace/tmp edits, `dont_ask` auto-allows all
+// non-sensitive edits (sensitive paths always prompt). See spec Decision 9.
+type CopilotModeInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// CopilotModeState mirrors Hermes's SessionModeState (session/new + session/load
+// responses, and current_mode_update stream events).
+type CopilotModeState struct {
+	AvailableModes []CopilotModeInfo `json:"availableModes,omitempty"`
+	CurrentModeID  string            `json:"currentModeId,omitempty"`
+}
+
+// CopilotPermissionOption is one answer Hermes offers for a session/request_permission.
+// The daemon assigns a stable keyboard accelerator (Key) so the TUI renders a
+// consistent y/a/n/N affordance regardless of which subset of options Hermes sent.
+// Kind is Hermes's hint (allow_once/allow_always/reject_once/reject_always); OptionID
+// is the stable discriminator that must be echoed back verbatim (allow_session ships
+// with kind allow_always, so the id — not the kind — is authoritative).
+type CopilotPermissionOption struct {
+	OptionID string `json:"optionId"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	Key      string `json:"key"`
+}
+
+// CopilotPermissionDiff is one file edit rendered in an edit-approval request,
+// carrying Hermes's real diff payload (a diff content block).
+type CopilotPermissionDiff struct {
+	Path    string `json:"path"`
+	OldText string `json:"oldText,omitempty"`
+	NewText string `json:"newText"`
+}
+
+// CopilotPermissionRequest is the typed session/request_permission payload the
+// daemon forwards to the originating TUI client for a human decision (Decision 5/6).
+// It carries the tool kind and title, the real diff for edits, the command for
+// dangerous executes, the offered options with assigned keys, a sensitive-path flag,
+// and the absolute auto-deny deadline so the UI can show a countdown.
+type CopilotPermissionRequest struct {
+	PermissionID string                    `json:"permissionId"`
+	ToolCallID   string                    `json:"toolCallId,omitempty"`
+	Title        string                    `json:"title"`
+	Kind         string                    `json:"kind"`
+	Command      string                    `json:"command,omitempty"`
+	Diffs        []CopilotPermissionDiff   `json:"diffs,omitempty"`
+	Options      []CopilotPermissionOption `json:"options"`
+	Sensitive    bool                      `json:"sensitive,omitempty"`
+	SensitiveHit string                    `json:"sensitiveHit,omitempty"`
+	DeadlineUnix int64                     `json:"deadlineUnix,omitempty"`
+}
+
+// CopilotPermissionAnswerData carries the human's decision back to the daemon,
+// which resolves the pending ACP request (Decision 6). OptionID is the chosen
+// option id, or "" to refuse. PermissionID correlates to the pending request; a
+// stale/duplicate answer (already resolved) is an informative no-op.
+type CopilotPermissionAnswerData struct {
+	PermissionID string `json:"permissionId"`
+	OptionID     string `json:"optionId,omitempty"`
+	ClientID     string `json:"clientId,omitempty"`
+}
+
+type CopilotModelInfo struct {
+	ModelID     string `json:"modelId"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type CopilotModelState struct {
+	AvailableModels []CopilotModelInfo `json:"availableModels,omitempty"`
+	CurrentModelID  string             `json:"currentModelId,omitempty"`
 }
 
 type CopilotStatusData struct {
-	Ready       bool `json:"ready"`
-	EventsToday int  `json:"eventsToday"`
+	Ready       bool              `json:"ready"`
+	EventsToday int               `json:"eventsToday"`
+	SessionID   string            `json:"sessionId,omitempty"`
+	Models      CopilotModelState `json:"models,omitempty"`
+	Modes       CopilotModeState  `json:"modes,omitempty"`
 }
 
 // CopilotHistoryMsg is a persisted copilot conversation turn (user or copilot role).
@@ -326,16 +475,53 @@ type CopilotHistoryData struct {
 	Messages []CopilotHistoryMsg `json:"messages"`
 }
 
-// CopilotStreamData wraps a stream message for the subscribe connection.
+// CopilotSnapshotData is the daemon-authoritative copilot state sent when a
+// TUI subscribes. It includes the persisted history plus any response that is
+// still being streamed so a reconnect can hydrate without waiting for a new
+// prompt.
+type CopilotSnapshotData struct {
+	History         []CopilotHistoryMsg `json:"history"`
+	SessionID       string              `json:"sessionId,omitempty"`
+	ActivePrompt    string              `json:"activePrompt,omitempty"`
+	ActiveOutput    string              `json:"activeOutput,omitempty"`
+	ActiveRequestID string              `json:"activeRequestId,omitempty"`
+	ActiveClientID  string              `json:"activeClientId,omitempty"`
+	Streaming       bool                `json:"streaming"`
+}
+
+// CopilotStreamData wraps a stream message for the subscribe connection. Every
+// event carries the originating RequestID and ClientID (Decision 6): the daemon
+// routes delivery to the originating client, and the client drops late chunks
+// whose RequestID no longer matches its in-flight turn (belt to the daemon's
+// turn-epoch suspenders).
 type CopilotStreamData struct {
-	Type    string `json:"type"` // "text_delta", "tool_call", "tool_update", "done", "error"
-	Content string `json:"content"`
-	ToolID  string `json:"tool_id,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Kind    string `json:"kind,omitempty"`
+	// Type is one of: text_delta, thought, tool_call, tool_update, plan, usage,
+	// session, mode, permission_request, permission_resolved, done, error.
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	ToolID    string `json:"tool_id,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+	// Permission carries the typed payload for a permission_request chunk, or the
+	// resolved id/title for a permission_resolved chunk (Decision 6).
+	Permission *CopilotPermissionRequest `json:"permission,omitempty"`
 }
 
 // --- Helpers ---
+
+// NewCorrelationID returns a random 128-bit hex id for request/client
+// correlation. Used for both per-prompt request ids and per-client stable ids.
+func NewCorrelationID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failing is catastrophic; fail loud rather than emit a
+		// predictable id that would silently break correlation.
+		panic("daemon: crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
 
 func marshalData(v any) json.RawMessage {
 	data, _ := json.Marshal(v)

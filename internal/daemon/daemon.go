@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,9 +20,10 @@ import (
 )
 
 type subscriber struct {
-	ch      chan []agent.Session
-	copilot chan CopilotStreamData // buffered; streaming events from copilot subprocess
-	done    chan struct{}
+	clientID string                 // stable id from SubscribeData; scopes copilot delivery
+	ch       chan []agent.Session
+	copilot  chan CopilotStreamData // buffered; streaming events from copilot subprocess
+	done     chan struct{}
 }
 
 // commitDoneEntry tracks a pending commit operation (commit-only or commit-and-done).
@@ -85,13 +87,24 @@ type Daemon struct {
 	usageStats    *claude.UsageStats
 	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
 
-	copilotJournal   *copilot.Journal
-	copilotCancel    context.CancelFunc  // non-nil while a copilot prompt is in-flight
-	copilotMu        sync.Mutex          // protects copilotCancel
-	copilotPreamble  atomic.Bool         // inject live sessions into copilot prompts
-	acpClient        *acpClient          // long-lived ACP subprocess for copilot
-	copilotHistory   []CopilotHistoryMsg // in-memory only (TUI display within daemon session)
-	copilotHistoryMu sync.RWMutex
+	copilotJournal     *copilot.Journal
+	copilotCancel      context.CancelFunc  // non-nil while a copilot prompt is in-flight
+	copilotCancelEpoch uint64              // turn epoch that owns copilotCancel (guarded by copilotMu)
+	copilotMu          sync.Mutex          // protects copilotCancel + copilotCancelEpoch
+	copilotPreamble    atomic.Bool         // inject live sessions into copilot prompts
+	acpClient          *acpClient          // long-lived ACP subprocess for copilot
+	copilotHistory     []CopilotHistoryMsg // in-memory only (TUI display within daemon session)
+	copilotHistoryMu   sync.RWMutex
+	copilotStateMu     sync.RWMutex
+	copilotActive      *copilotActiveState
+	copilotEpoch       uint64 // monotonic turn counter (guarded by copilotStateMu)
+
+	copilotFleetMu         sync.Mutex // guards the delta digest below
+	copilotLastFleetDigest string     // material fleet state last injected into Lulu's persistent session
+
+	copilotPermMu     sync.Mutex                    // guards the pending-permission registry
+	copilotPerms      map[string]*pendingPermission // permissionID → in-flight approval round-trip
+	copilotPermTimeout time.Duration                // override for the auto-deny wait (tests); 0 → default
 
 	listener   net.Listener
 	lockFile   *os.File
@@ -115,6 +128,7 @@ func Run(info DaemonInfo) error {
 		orchestratorIDs:    make(map[string]bool),
 		lastSynthTime:      make(map[string]time.Time),
 		overlapPanes:       make(map[string]bool),
+		copilotPerms:       make(map[string]*pendingPermission),
 		nudgeCh:            make(chan struct{}, 1),
 		socketPath:         info.SocketPath,
 		pidPath:            info.PIDPath,
@@ -170,8 +184,18 @@ func Run(info DaemonInfo) error {
 	// Initialize copilot subsystem
 	d.copilotJournal = copilot.NewJournal(copilot.EventsDir())
 	d.copilotPreamble.Store(true)
-	secureHermesSessionFile()               // migrate legacy state permissions
-	d.acpClient = &acpClient{}              // lazy-started on first copilot prompt
+	secureHermesSessionFile() // migrate legacy state permissions
+	// Inject `spirit mcp` as an ACP mcp_server so Hermes registers Spirit's typed
+	// operation tools at Lulu's session open. Command = this daemon's own binary.
+	d.acpClient = &acpClient{onPermission: d.decideCopilotPermission} // lazy-started on first copilot prompt
+	if exe, err := os.Executable(); err == nil {
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		d.acpClient.mcpServers = []acpMCPServer{SpiritMCPServer(exe)}
+	} else {
+		log.Printf("acp: could not resolve spirit binary for mcp injection: %v", err)
+	}
 	d.copilotHistory = loadCopilotHistory() // restore display history from disk
 
 	// Start polling goroutine
@@ -235,11 +259,12 @@ func (d *Daemon) notifySubscribers(sessions []agent.Session) {
 	d.subMu.Unlock()
 }
 
-func (d *Daemon) addSubscriber() *subscriber {
+func (d *Daemon) addSubscriber(clientID string) *subscriber {
 	sub := &subscriber{
-		ch:      make(chan []agent.Session, 1),
-		copilot: make(chan CopilotStreamData, 256),
-		done:    make(chan struct{}),
+		clientID: clientID,
+		ch:       make(chan []agent.Session, 1),
+		copilot:  make(chan CopilotStreamData, 256),
+		done:     make(chan struct{}),
 	}
 	d.subMu.Lock()
 	d.subscribers[sub] = struct{}{}
@@ -247,12 +272,21 @@ func (d *Daemon) addSubscriber() *subscriber {
 	return sub
 }
 
-// pushCopilotStream sends a copilot event to all subscribers. Non-blocking per subscriber:
-// if the buffer is full, the event is dropped (the full text is in history after completion).
+// pushCopilotStream delivers a copilot event to the subscriber(s) that own the
+// originating turn. Delivery is scoped to event.ClientID (Decision 6): in-flight
+// stream chunks belong to the requester, so a second attached TUI does not see
+// another client's live tokens — it picks up the completed exchange from shared
+// history on its next subscribe/snapshot. An empty ClientID (older client, or a
+// daemon-internal event) broadcasts to every subscriber for back-compat.
+// Non-blocking per subscriber: a full buffer drops the event (the full text lands
+// in history after completion).
 func (d *Daemon) pushCopilotStream(event CopilotStreamData) {
 	d.subMu.Lock()
 	defer d.subMu.Unlock()
 	for sub := range d.subscribers {
+		if event.ClientID != "" && sub.clientID != "" && sub.clientID != event.ClientID {
+			continue // scoped to a different client
+		}
 		select {
 		case sub.copilot <- event:
 		default:
@@ -265,6 +299,9 @@ func (d *Daemon) removeSubscriber(sub *subscriber) {
 	d.subMu.Lock()
 	delete(d.subscribers, sub)
 	d.subMu.Unlock()
+	// A disconnecting client can no longer answer any permission prompt it owns —
+	// deny those so the tool call isn't held open until Hermes's own timeout.
+	d.denyPermissionsForClient(sub.clientID)
 }
 
 func (d *Daemon) currentSessions() []agent.Session {

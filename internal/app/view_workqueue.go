@@ -96,15 +96,17 @@ func (m Model) renderDockedCopilot(copilotDockedW, contentHeight int) string {
 	if copilotDockedW <= 0 {
 		return ""
 	}
-	focused := m.state == StateCopilot || m.state == StateCopilotConfirm
+	focused := m.state == StateCopilot
 	inputView := m.copilotInput.View()
 	return ui.RenderCopilotPanel(
 		m.copilot.Messages(), inputView,
 		copilotDockedW, contentHeight,
 		m.copilot.ScrollOffset(), m.copilot.Streaming(),
 		m.copilot.StreamingCursor(),
-		m.copilot.PendingTool(),
 		focused,
+		m.copilot.ModelID(),
+		m.copilot.ModeID(),
+		m.copilot.SessionID(),
 	)
 }
 

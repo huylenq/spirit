@@ -299,7 +299,7 @@ func (m Model) View() string {
 		adjustMode := m.state == StateAdjustCopilot
 		row, col, overlayW, maxOverlayH := m.copilotFloatGeometry(innerWidth, contentHeight)
 
-		focused := m.state == StateCopilot || m.state == StateCopilotConfirm
+		focused := m.state == StateCopilot
 		inputView := ""
 		if !adjustMode {
 			inputView = m.copilotInput.View() // always show (dimmed when unfocused)
@@ -309,9 +309,12 @@ func (m Model) View() string {
 			overlayW, maxOverlayH,
 			m.copilot.ScrollOffset(), m.copilot.Streaming(),
 			m.copilot.StreamingCursor(),
-			m.copilot.PendingTool(),
 			focused || adjustMode,
 			adjustMode,
+			m.copilotDH != 0,
+			m.copilot.ModelID(),
+			m.copilot.ModeID(),
+			m.copilot.SessionID(),
 		)
 
 		// Refine row clamp using actual rendered height (may be shorter than maxOverlayH).
@@ -320,6 +323,18 @@ func (m Model) View() string {
 		row = max(row, 0)
 
 		content = ui.OverlayAt(content, overlay, row, col)
+	}
+
+	// Lulu permission approval prompt (highest z-order, over everything including
+	// the copilot overlay). Rendered whenever a request is pending, centered.
+	if m.copilotPermission != nil {
+		boxW := min(max(innerWidth-8, 24), 88)
+		box := ui.RenderCopilotPermission(*m.copilotPermission, boxW, time.Now())
+		boxH := lipgloss.Height(box)
+		boxWRendered := lipgloss.Width(box)
+		row := max((contentHeight-boxH)/2, 0)
+		col := max((innerWidth-boxWRendered)/2, 0)
+		content = ui.OverlayAt(content, box, row, col)
 	}
 
 	// Assemble inner content — manual join avoids JoinVertical width normalization

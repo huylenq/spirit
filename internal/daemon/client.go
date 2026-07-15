@@ -20,6 +20,10 @@ import (
 // Client connects to the daemon over two Unix socket connections:
 // one for the subscribe stream (push), one for request/response RPCs.
 type Client struct {
+	// clientID is this client's stable identity for the connection's lifetime.
+	// It scopes correlated copilot stream delivery to this client (Decision 1/6).
+	clientID string
+
 	// Subscribe stream (dedicated connection)
 	subConn    net.Conn
 	subEnc     *json.Encoder
@@ -31,6 +35,9 @@ type Client struct {
 	rpcScanner *bufio.Scanner
 	rpcMu      sync.Mutex
 }
+
+// ClientID returns this client's stable correlation id.
+func (c *Client) ClientID() string { return c.clientID }
 
 // dialWithAutoStart connects to the daemon socket, auto-starting if needed.
 func dialWithAutoStart() (net.Conn, error) {
@@ -70,6 +77,7 @@ func Connect() (*Client, error) {
 		return nil, fmt.Errorf("second connection failed: %w", err)
 	}
 	return &Client{
+		clientID:   NewCorrelationID(),
 		subConn:    subConn,
 		subEnc:     json.NewEncoder(subConn),
 		subScanner: newScanner(subConn),
@@ -102,6 +110,7 @@ func ConnectRPCOnly() (*Client, error) {
 		return nil, err
 	}
 	return &Client{
+		clientID:   NewCorrelationID(),
 		rpcConn:    rpcConn,
 		rpcEnc:     json.NewEncoder(rpcConn),
 		rpcScanner: newScanner(rpcConn),
@@ -165,7 +174,7 @@ func (c *Client) rpcInto(req Request, v any) error {
 // Subscribe sends the subscribe request and returns the initial sessions + usage.
 // Call ReadNext() afterwards to get subsequent pushes.
 func (c *Client) Subscribe() ([]agent.Session, *claude.UsageStats, error) {
-	if err := c.subEnc.Encode(Request{Type: ReqSubscribe}); err != nil {
+	if err := c.subEnc.Encode(Request{Type: ReqSubscribe, Data: marshalData(SubscribeData{ClientID: c.clientID})}); err != nil {
 		return nil, nil, err
 	}
 	resp, err := readResponse(c.subScanner)
@@ -440,11 +449,15 @@ func (c *Client) BacklogDelete(cwd, id string) error {
 	return c.rpcInto(Request{Type: ReqBacklogDelete, Data: marshalData(BacklogDeleteData{CWD: cwd, ID: id})}, nil)
 }
 
-// CopilotChat sends a message to the copilot and returns after the daemon acknowledges.
-// Actual streaming events arrive via the subscribe connection (ReadNextResponse).
-func (c *Client) CopilotChat(message string) error {
+// CopilotChat sends a scoped, correlated prompt to the copilot and returns after
+// the daemon acknowledges. The client stamps its own ClientID so stream delivery
+// is scoped back to this connection; the caller supplies the message, a
+// per-prompt RequestID, and the request-scoped selection. Actual streaming events
+// arrive via the subscribe connection (ReadNextResponse).
+func (c *Client) CopilotChat(data CopilotChatData) error {
+	data.ClientID = c.clientID
 	var result map[string]string
-	return c.rpcInto(Request{Type: ReqCopilotChat, Data: marshalData(CopilotChatData{Message: message})}, &result)
+	return c.rpcInto(Request{Type: ReqCopilotChat, Data: marshalData(data)}, &result)
 }
 
 // CopilotCancel cancels any in-flight copilot prompt.
@@ -465,6 +478,31 @@ func (c *Client) CopilotTogglePreamble() (string, error) {
 		return "", err
 	}
 	return result["preamble"], nil
+}
+
+// CopilotSetModel switches the effective model for the active Hermes ACP session.
+func (c *Client) CopilotSetModel(modelID string) (CopilotModelState, error) {
+	var state CopilotModelState
+	err := c.rpcInto(Request{Type: ReqCopilotSetModel, Data: marshalData(CopilotSetModelData{ModelID: modelID})}, &state)
+	return state, err
+}
+
+// CopilotSetMode switches the Hermes ACP session mode (the autonomy ceiling) and
+// returns the new mode selector state.
+func (c *Client) CopilotSetMode(modeID string) (CopilotModeState, error) {
+	var state CopilotModeState
+	err := c.rpcInto(Request{Type: ReqCopilotSetMode, Data: marshalData(CopilotSetModeData{ModeID: modeID})}, &state)
+	return state, err
+}
+
+// CopilotPermissionAnswer resolves a pending permission prompt with the chosen
+// option id ("" refuses). Stamps this client's id for disconnect-scoped routing.
+func (c *Client) CopilotPermissionAnswer(permissionID, optionID string) error {
+	return c.rpcInto(Request{Type: ReqCopilotPermissionAnswer, Data: marshalData(CopilotPermissionAnswerData{
+		PermissionID: permissionID,
+		OptionID:     optionID,
+		ClientID:     c.clientID,
+	})}, nil)
 }
 
 // CopilotHistory returns the full copilot conversation history from the daemon.

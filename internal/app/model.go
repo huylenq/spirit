@@ -56,8 +56,8 @@ const (
 	StateNoteEdit             // session note editor open
 	StateProjectCodeEdit      // per-project code editor open
 	StateCopilot              // copilot chat panel active
-	StateCopilotConfirm       // copilot tool confirmation pending
 	StateAdjustCopilot        // copilot overlay resize/reposition mode
+	StateCopilotConfirm       // Lulu permission approval prompt (session/request_permission)
 	StateLaterWait            // waiting for optional duration input before marking as later
 	StateRenamePrompt         // text input for /rename to claude session
 	StateDestroyer            // session destroyer easter egg
@@ -74,7 +74,6 @@ const (
 const (
 	defaultCopilotDockedW = 70
 	minCopilotDockedW     = 40
-	doubleTabThreshold    = 300 * time.Millisecond
 )
 
 // Sidebar width percentage bounds (clamped during keyboard/mouse resize).
@@ -268,14 +267,28 @@ type Model struct {
 	macroEditor          ui.MacroEditorModel
 	copilot              ui.CopilotModel
 	copilotInput         ui.RelayModel
-	copilotVisible       bool             // overlay rendered but may not be focused (StateNormal + visible = read-only)
-	copilotMode          string           // CopilotModeFloat or CopilotModeDocked (persisted)
-	copilotDockedW       int              // docked panel width in columns (persisted)
-	lastTabTime          time.Time        // for double-tab detection
-	copilotOffX          int              // horizontal offset from default position (negative = left) [float only]
-	copilotOffY          int              // vertical offset from default position (negative = up) [float only]
-	copilotDW            int              // delta width from default (positive = wider) [float only]
-	copilotDH            int              // delta max-height from default (positive = taller) [float only]
+	copilotSessionKnown  bool
+	copilotRequestID     string // correlation id of the in-flight Lulu turn; late chunks with a different id are dropped
+	copilotPermission    *ui.CopilotPermission // pending approval prompt (StateCopilotConfirm); nil when none
+	copilotPriorState    AppState              // state to restore after answering a permission prompt
+	copilotModeIDs       []string              // advertised Hermes session-mode ids (for /mode completion)
+	copilotVisible       bool            // overlay rendered but may not be focused (StateNormal + visible = read-only)
+	copilotMode          string          // CopilotModeFloat or CopilotModeDocked (persisted)
+	copilotDockedW       int             // docked panel width in columns (persisted)
+	copilotOffX          int             // horizontal offset from default position (negative = left) [float only]
+	copilotOffY          int             // vertical offset from default position (negative = up) [float only]
+	copilotDW            int             // delta width from default (positive = wider) [float only]
+	copilotDH            int             // delta max-height from default (positive = taller) [float only]
+	copilotDragMode      copilotDragMode // active mouse move/resize gesture
+	copilotDragStartX    int
+	copilotDragStartY    int
+	copilotDragStartOffX int
+	copilotDragStartOffY int
+	copilotDragStartDW   int
+	copilotDragStartDH   int
+	copilotDragStartW    int
+	copilotDragStartH    int
+	copilotDragEdges     copilotResizeEdge
 	destroyer            *destroyer.Model // session destroyer easter egg (nil = inactive)
 	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
 	workQueue            ui.WorkQueueModel
@@ -525,7 +538,6 @@ func (m Model) copilotFloatGeometry(innerWidth, contentHeight int) (row, col, ov
 
 	row = copilotFloatMargT + m.copilotOffY
 	row = max(row, 0)
-	row = min(row, contentHeight-maxOverlayH)
 	col = innerWidth - overlayW - copilotFloatMargR + m.copilotOffX
 	col = max(col, 0)
 	col = min(col, innerWidth-overlayW)
@@ -574,7 +586,11 @@ func (m *Model) applyLayoutFast() {
 	sidebarWidth := m.sidebarPanelWidth()
 	copilotW := m.copilotDockedWidth()
 	m.sidebar.SetSize(sidebarWidth-1, contentHeight)
-	m.detail.SetSizeFast(innerW-sidebarWidth-copilotW, contentHeight)
+	if m.viewMode == ViewWorkQueue {
+		m.detail.SetSizeFast(innerW-copilotW, contentHeight-ui.WorkQueueHeight)
+	} else {
+		m.detail.SetSizeFast(innerW-sidebarWidth-copilotW, contentHeight)
+	}
 }
 
 // contentHeight returns the raw content height before minimap/divider adjustments.
@@ -608,6 +624,7 @@ func (m Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		captureOriginalPane(),
 		m.fetchCopilotHistory(),
+		m.fetchCopilotStatus(),
 	)
 }
 
@@ -615,6 +632,13 @@ func (m Model) fetchCopilotHistory() tea.Cmd {
 	return func() tea.Msg {
 		msgs, _ := m.client.CopilotHistory()
 		return CopilotHistoryReadyMsg{Messages: msgs}
+	}
+}
+
+func (m Model) fetchCopilotStatus() tea.Cmd {
+	return func() tea.Msg {
+		status, _ := m.client.CopilotStatus()
+		return CopilotStatusReadyMsg{Status: status}
 	}
 }
 
@@ -660,13 +684,34 @@ func (m Model) waitForDaemonUpdate() tea.Cmd {
 		case daemon.RespCopilotStream:
 			var data daemon.CopilotStreamData
 			json.Unmarshal(resp.Data, &data)
-			return CopilotStreamChunkMsg{Msg: ui.CopilotStreamMsg{
+			switch data.Type {
+			case "permission_request":
+				return CopilotPermissionMsg{RequestID: data.RequestID, Permission: toUIPermission(data.Permission)}
+			case "permission_resolved":
+				title, kind := "", ""
+				if data.Permission != nil {
+					title, kind = data.Permission.Title, data.Permission.Kind
+				}
+				return CopilotPermissionResolvedMsg{
+					RequestID:    data.RequestID,
+					PermissionID: data.Content,
+					Status:       data.Status,
+					OptionID:     data.Kind,
+					Title:        title,
+					Kind:         kind,
+				}
+			}
+			return CopilotStreamChunkMsg{RequestID: data.RequestID, Msg: ui.CopilotStreamMsg{
 				Type:    data.Type,
 				Content: data.Content,
 				ToolID:  data.ToolID,
 				Status:  data.Status,
 				Kind:    data.Kind,
 			}}
+		case daemon.RespCopilotSnapshot:
+			var data daemon.CopilotSnapshotData
+			json.Unmarshal(resp.Data, &data)
+			return CopilotSnapshotReadyMsg{Snapshot: data}
 		default:
 			// RespSessions or unknown — treat as session update
 			var data daemon.SessionsData

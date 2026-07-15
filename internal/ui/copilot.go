@@ -1,30 +1,31 @@
 package ui
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // CopilotMessage represents a single message in the copilot chat.
 type CopilotMessage struct {
-	Role    string    // "user", "copilot", "tool_call", "tool_result", "thought", "plan", "error"
+	Role    string // "user", "copilot", "tool_call", "tool_result", "thought", "plan", "error"
 	Content string
-	ToolID  string    // for tool_call/tool_result correlation
-	Status  string    // tool status: pending, in_progress, completed, failed
-	Kind    string    // tool kind: read, edit, execute, etc.
+	ToolID  string // for tool_call/tool_result correlation
+	Status  string // tool status: pending, in_progress, completed, failed
+	Kind    string // tool kind: read, edit, execute, etc.
 	Time    time.Time
+
+	markdownSource string
+	markdownWidth  int
+	markdownRender string
 }
 
 // CopilotStreamMsg is a single streaming chunk from the copilot backend.
 type CopilotStreamMsg struct {
-	Type    string `json:"type"`    // "text_delta", "thought", "tool_call", "tool_update", "plan", "usage", "done", "error", "confirm"
+	Type    string `json:"type"` // "text_delta", "thought", "tool_call", "tool_update", "plan", "usage", "done", "error"
 	Content string `json:"content"`
 	ToolID  string `json:"tool_id,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Kind    string `json:"kind,omitempty"`
-}
-
-// CopilotToolConfirm holds info about a tool awaiting user approval.
-type CopilotToolConfirm struct {
-	ToolID   string
-	ToolName string
 }
 
 // copilotStreamingFrames is the animated cursor shown while the copilot is streaming.
@@ -34,10 +35,13 @@ var copilotStreamingFrames = []string{"◴", "◷", "◶", "◵"}
 // CopilotModel manages copilot conversation state and scroll position.
 type CopilotModel struct {
 	messages     []CopilotMessage
-	scrollOff    int  // scroll offset from bottom (0 = at bottom)
+	scrollOff    int // scroll offset from bottom (0 = at bottom)
 	streaming    bool
-	pendingTool  *CopilotToolConfirm
 	usageInfo    string
+	sessionID    string
+	modelID      string
+	modeID       string
+	snapshotLoaded bool
 	spinnerFrame int // incremented by app-level spinner tick
 }
 
@@ -133,6 +137,12 @@ func (c *CopilotModel) HandleStreamMsg(msg CopilotStreamMsg) {
 	case "usage":
 		c.usageInfo = msg.Content
 
+	case "session":
+		c.sessionID = msg.Content
+
+	case "mode":
+		c.modeID = msg.Content
+
 	case "done":
 		c.streaming = false
 
@@ -143,12 +153,6 @@ func (c *CopilotModel) HandleStreamMsg(msg CopilotStreamMsg) {
 			Time:    time.Now(),
 		})
 		c.streaming = false
-
-	case "confirm":
-		c.pendingTool = &CopilotToolConfirm{
-			ToolID:   msg.ToolID,
-			ToolName: msg.Content,
-		}
 	}
 }
 
@@ -162,16 +166,6 @@ func (c *CopilotModel) Streaming() bool {
 	return c.streaming
 }
 
-// PendingTool returns the tool confirmation awaiting user approval, if any.
-func (c *CopilotModel) PendingTool() *CopilotToolConfirm {
-	return c.pendingTool
-}
-
-// ClearPendingTool removes the pending tool confirmation.
-func (c *CopilotModel) ClearPendingTool() {
-	c.pendingTool = nil
-}
-
 // SetStreaming sets the streaming state.
 func (c *CopilotModel) SetStreaming(v bool) {
 	c.streaming = v
@@ -180,10 +174,11 @@ func (c *CopilotModel) SetStreaming(v bool) {
 // ScrollUp increases the scroll offset (moves viewport toward older messages).
 func (c *CopilotModel) ScrollUp(n int) {
 	c.scrollOff += n
-	maxOff := len(c.messages) - 1
-	if maxOff < 0 {
-		maxOff = 0
+	maxOff := 0
+	for _, msg := range c.messages {
+		maxOff += strings.Count(msg.Content, "\n") + 1
 	}
+	maxOff = max(maxOff-1, 0)
 	if c.scrollOff > maxOff {
 		c.scrollOff = maxOff
 	}
@@ -207,6 +202,35 @@ func (c *CopilotModel) UsageInfo() string {
 	return c.usageInfo
 }
 
+// SessionID returns the Hermes ACP conversation UUID shown in the Lulu panel title.
+func (c *CopilotModel) SessionID() string {
+	return c.sessionID
+}
+
+// SetSessionID updates the Hermes ACP conversation UUID.
+func (c *CopilotModel) SetSessionID(id string) {
+	c.sessionID = id
+}
+
+// SetModelID updates the effective Hermes model shown in the panel title.
+func (c *CopilotModel) SetModelID(current string) {
+	c.modelID = current
+}
+
+func (c *CopilotModel) ModelID() string {
+	return c.modelID
+}
+
+// SetModeID updates the effective Hermes session mode (autonomy ceiling) shown in
+// the Lulu panel title.
+func (c *CopilotModel) SetModeID(current string) {
+	c.modeID = current
+}
+
+func (c *CopilotModel) ModeID() string {
+	return c.modeID
+}
+
 // TickSpinner advances the spinner frame counter. Called from the app-level spinner tick.
 func (c *CopilotModel) TickSpinner() {
 	c.spinnerFrame++
@@ -226,4 +250,26 @@ func (c *CopilotModel) ResetScroll() {
 func (c *CopilotModel) LoadHistory(msgs []CopilotMessage) {
 	c.messages = msgs
 	c.scrollOff = 0
+}
+
+// LoadSnapshot hydrates the model from the daemon's authoritative reconnect
+// snapshot, including a response that is still being streamed.
+func (c *CopilotModel) LoadSnapshot(msgs []CopilotMessage, sessionID string, streaming bool) {
+	c.messages = msgs
+	c.scrollOff = 0
+	c.sessionID = sessionID
+	c.streaming = streaming
+	c.snapshotLoaded = true
+}
+
+// SnapshotLoaded reports whether this model has received the daemon snapshot.
+// It prevents the separate history RPC from racing and overwriting an active
+// response restored during reconnect.
+func (c *CopilotModel) SnapshotLoaded() bool {
+	return c.snapshotLoaded
+}
+
+// ClearSnapshot allows /new to establish a fresh local state.
+func (c *CopilotModel) ClearSnapshot() {
+	c.snapshotLoaded = false
 }

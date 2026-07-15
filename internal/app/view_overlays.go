@@ -344,16 +344,25 @@ func (m Model) renderFooter(width int) string {
 			ui.FooterKeyStyle.Render("[n]") + "o"
 		return ui.FooterStyle.Width(width).Render(prompt)
 	case StateCopilot:
-		h := ui.FooterKeyStyle.Render("tab") + " back  " +
+		h := ui.FooterKeyStyle.Render("esc") + " back  " +
+			ui.FooterKeyStyle.Render("tab") + " complete  " +
 			ui.FooterKeyStyle.Render("enter") + " send  " +
 			ui.FooterKeyStyle.Render("ctrl+c") + " cancel  " +
 			ui.FooterKeyStyle.Render("ctrl+d/u") + " scroll  " +
 			ui.FooterKeyStyle.Render("⇧tab") + " " + ui.FooterDimStyle.Render(m.copilotMode)
 		return ui.FooterStyle.Width(width).Render(h)
 	case StateCopilotConfirm:
-		h := ui.FooterKeyStyle.Render("y") + " allow  " +
-			ui.FooterKeyStyle.Render("n") + " deny"
-		return ui.FooterStyle.Width(width).Render(h)
+		var parts []string
+		if m.copilotPermission != nil {
+			for _, o := range m.copilotPermission.Options {
+				if o.Key == "" {
+					continue
+				}
+				parts = append(parts, ui.FooterKeyStyle.Render(o.Key)+" "+ui.FooterDimStyle.Render(strings.ToLower(o.Name)))
+			}
+		}
+		parts = append(parts, ui.FooterKeyStyle.Render("esc")+" deny")
+		return ui.FooterStyle.Width(width).Render(strings.Join(parts, "  "))
 	case StateDestroyer:
 		h := ui.FooterKeyStyle.Render("tab") + " tool  " +
 			ui.FooterKeyStyle.Render("1-4") + " select  " +

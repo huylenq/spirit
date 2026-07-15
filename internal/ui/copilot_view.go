@@ -3,24 +3,20 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // Copilot chat styles
 var (
-	copilotUserStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-	copilotTextStyle    = lipgloss.NewStyle()
-	copilotToolStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-	copilotThoughtStyle = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
-	copilotErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
+	copilotUserStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
+	copilotTextStyle      = lipgloss.NewStyle()
+	copilotToolStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
+	copilotThoughtStyle   = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
+	copilotErrorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
 	copilotHeartbeatStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#818cf8")).Italic(true) // indigo
 	copilotPlanStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
-	copilotConfirmStyle = lipgloss.NewStyle().
-				Background(lipgloss.AdaptiveColor{Light: "#fef3c7", Dark: "#422006"}).
-				Foreground(lipgloss.AdaptiveColor{Light: "#92400e", Dark: "#fbbf24"}).
-				Bold(true).
-				Padding(0, 1)
 )
 
 // toolStatusIcon returns a status indicator glyph for tool call messages.
@@ -44,10 +40,11 @@ func toolStatusIcon(status string) string {
 // (used by float mode to compute the default scroll offset).
 // Also appends a streaming cursor on a new line when the last message is a user
 // message or heartbeat (i.e., no copilot response has arrived yet).
-func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm) ([]string, int) {
+func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, streamCursor string) ([]string, int) {
 	var allLines []string
 	lastPairStart := 0
-	for i, msg := range messages {
+	for i := range messages {
+		msg := &messages[i]
 		if msg.Role == "user" {
 			lastPairStart = len(allLines)
 		}
@@ -62,13 +59,11 @@ func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming b
 			rendered = copilotHeartbeatStyle.Render(lines)
 
 		case "copilot":
-			text := msg.Content
+			rendered = renderCopilotMarkdown(msg, contentWidth)
 			// Append animated streaming cursor to last copilot message
 			if streaming && i == len(messages)-1 {
-				text += streamCursor
+				rendered += streamCursor
 			}
-			lines := wrapText(text, contentWidth)
-			rendered = copilotTextStyle.Render(lines)
 
 		case "tool_call":
 			icon := toolStatusIcon(msg.Status)
@@ -109,15 +104,42 @@ func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming b
 		}
 	}
 
-	// Append pending tool confirmation bar if present
-	if pendingTool != nil {
-		confirmLine := copilotConfirmStyle.Render(
-			"\u26A0 " + pendingTool.ToolName + " \u2014 allow? [y/n]", // ⚠ ... —
-		)
-		allLines = append(allLines, confirmLine)
-	}
-
 	return allLines, lastPairStart
+}
+
+func renderCopilotMarkdown(msg *CopilotMessage, width int) string {
+	if msg.markdownSource == msg.Content && msg.markdownWidth == width && msg.markdownRender != "" {
+		return msg.markdownRender
+	}
+	fallback := copilotTextStyle.Render(wrapText(msg.Content, width))
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return fallback
+	}
+	out, err := renderer.Render(msg.Content)
+	if err != nil {
+		return fallback
+	}
+	lines := strings.Split(out, "\n")
+	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[0])) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for i := range lines {
+		lines[i] = dedentANSILine(lines[i])
+	}
+	if len(lines) == 0 {
+		return fallback
+	}
+	msg.markdownSource = msg.Content
+	msg.markdownWidth = width
+	msg.markdownRender = strings.Join(lines, "\n")
+	return msg.markdownRender
 }
 
 // copilotScrollWindow applies scroll offset to allLines and returns the visible slice.
@@ -128,15 +150,25 @@ func copilotScrollWindow(allLines []string, chatH, scrollOff int) []string {
 }
 
 // copilotTitle returns the styled title line.
-func copilotTitle(focused bool, adjustMode bool) string {
+func copilotTitle(focused bool, adjustMode bool, modelID, modeID, sessionID string, width int) string {
 	titleStyle := CopilotTitleStyle
 	if !focused {
 		titleStyle = CopilotTitleDimStyle
 	}
-	titleText := "Copilot"
-	if adjustMode {
-		titleText = "↑↓←→ move · ⇧←→ width · ⇧↑↓ height · r reset · esc done"
+	titleText := "Lulu"
+	if modelID != "" {
+		titleText += " · " + modelID
 	}
+	if modeID != "" {
+		titleText += " · ◇ " + modeID
+	}
+	if sessionID != "" {
+		titleText += " · " + sessionID
+	}
+	if adjustMode {
+		titleText = "Lulu · ↑↓←→ move · ⇧←→ width · ⇧↑↓ height · r reset · esc done"
+	}
+	titleText = ansi.Truncate(titleText, width, "…")
 	return titleStyle.Render(titleText)
 }
 
@@ -151,10 +183,10 @@ func copilotAssembleBody(title string, visible []string, inputView string) strin
 
 // RenderCopilotOverlay renders the copilot as a bordered floating overlay box.
 // Always applies float-mode "last pair" default scroll offset.
-func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm, focused bool, adjustMode bool) string {
+func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, maxHeight int, scrollOff int, streaming bool, streamCursor string, focused bool, adjustMode bool, fixedHeight bool, modelID, modeID, sessionID string) string {
 	contentWidth := max(width-4, 4) // outer - border(2) - padding(2)
 
-	title := copilotTitle(focused, adjustMode)
+	title := copilotTitle(focused, adjustMode, modelID, modeID, sessionID, contentWidth)
 
 	inputHeight := 0
 	if inputView != "" {
@@ -169,15 +201,23 @@ func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, ma
 	}
 
 	// Empty state
-	if len(messages) == 0 && pendingTool == nil && !streaming {
-		placeholder := copilotUserStyle.Render("Ask the copilot anything...")
-		return overlayStyle.Width(width - 2).Render(copilotAssembleBody(title, []string{placeholder}, inputView))
+	if len(messages) == 0 && !streaming {
+		placeholder := copilotUserStyle.Render("Ask Lulu anything...")
+		lines := []string{placeholder}
+		if fixedHeight {
+			lines = make([]string, maxChatH)
+			lines[maxChatH-1] = placeholder
+		}
+		return overlayStyle.Width(width - 2).Render(copilotAssembleBody(title, lines, inputView))
 	}
 
-	allLines, lastPairStart := copilotRenderLines(messages, contentWidth, streaming, streamCursor, pendingTool)
+	allLines, lastPairStart := copilotRenderLines(messages, contentWidth, streaming, streamCursor)
 
 	// Fit-to-content: natural height capped at max
 	chatH := max(min(len(allLines), maxChatH), 1)
+	if fixedHeight {
+		chatH = maxChatH
+	}
 
 	// Float scroll: default view shows only the last pair
 	effectiveScrollOff := scrollOff
@@ -189,14 +229,17 @@ func RenderCopilotOverlay(messages []CopilotMessage, inputView string, width, ma
 	}
 
 	visible := copilotScrollWindow(allLines, chatH, effectiveScrollOff)
+	if fixedHeight && len(visible) < chatH {
+		visible = append(make([]string, chatH-len(visible)), visible...)
+	}
 	return overlayStyle.Width(width - 2).Render(copilotAssembleBody(title, visible, inputView))
 }
 
 // RenderCopilotPanel renders the copilot as a docked right-side panel (full height).
-func RenderCopilotPanel(messages []CopilotMessage, inputView string, width, height int, scrollOff int, streaming bool, streamCursor string, pendingTool *CopilotToolConfirm, focused bool) string {
+func RenderCopilotPanel(messages []CopilotMessage, inputView string, width, height int, scrollOff int, streaming bool, streamCursor string, focused bool, modelID, modeID, sessionID string) string {
 	contentWidth := max(width-3, 4) // panel - left border(1) - padding(2)
 
-	title := copilotTitle(focused, false)
+	title := copilotTitle(focused, false, modelID, modeID, sessionID, contentWidth)
 
 	inputHeight := 0
 	if inputView != "" {
@@ -210,14 +253,14 @@ func RenderCopilotPanel(messages []CopilotMessage, inputView string, width, heig
 		panelStyle = CopilotDockedDimStyle
 	}
 
-	if len(messages) == 0 && pendingTool == nil && !streaming {
-		placeholder := copilotUserStyle.Render("Ask the copilot anything...")
+	if len(messages) == 0 && !streaming {
+		placeholder := copilotUserStyle.Render("Ask Lulu anything...")
 		lines := make([]string, chatH)
 		lines[chatH-1] = placeholder
 		return panelStyle.Width(width - 1).Height(height).Render(copilotAssembleBody(title, lines, inputView))
 	}
 
-	allLines, _ := copilotRenderLines(messages, contentWidth, streaming, streamCursor, pendingTool)
+	allLines, _ := copilotRenderLines(messages, contentWidth, streaming, streamCursor)
 
 	visible := copilotScrollWindow(allLines, chatH, scrollOff)
 

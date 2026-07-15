@@ -162,13 +162,61 @@ type DaemonReconnectedMsg struct {
 type MacroEditorExitedMsg struct{}
 
 // CopilotStreamChunkMsg delivers a streaming chunk from the copilot backend.
+// RequestID correlates the chunk to a specific in-flight Lulu turn so the client
+// can drop late chunks from a cancelled/superseded request.
 type CopilotStreamChunkMsg struct {
-	Msg ui.CopilotStreamMsg
+	RequestID string
+	Msg       ui.CopilotStreamMsg
 }
 
 // CopilotHistoryReadyMsg delivers the restored copilot conversation history on TUI startup.
 type CopilotHistoryReadyMsg struct {
 	Messages []daemon.CopilotHistoryMsg
+}
+
+// CopilotStatusReadyMsg delivers the active Hermes ACP session UUID.
+type CopilotStatusReadyMsg struct {
+	Status *daemon.CopilotStatusData
+}
+
+// CopilotResetReadyMsg confirms that both daemon and UI history moved to a fresh session.
+type CopilotResetReadyMsg struct{}
+
+// CopilotSnapshotReadyMsg delivers the daemon-authoritative copilot state pushed
+// on the subscribe stream (history + active session). Distinct from a session
+// snapshot so the subscribe read loop does not mistake it for a session update.
+type CopilotSnapshotReadyMsg struct {
+	Snapshot daemon.CopilotSnapshotData
+}
+
+type CopilotModelReadyMsg struct {
+	Models daemon.CopilotModelState
+	Err    error
+}
+
+// CopilotModeReadyMsg delivers the mode selector state after a /mode switch.
+type CopilotModeReadyMsg struct {
+	Modes daemon.CopilotModeState
+	Err   error
+}
+
+// CopilotPermissionMsg delivers a forwarded session/request_permission prompt for a
+// human decision (W4). RequestID correlates it to the in-flight Lulu turn.
+type CopilotPermissionMsg struct {
+	RequestID  string
+	Permission ui.CopilotPermission
+}
+
+// CopilotPermissionResolvedMsg tells the client a pending permission was resolved
+// (answered, expired, cancelled, or the request was denied out from under it) so
+// the confirm UI can dismiss and a receipt line can land in the transcript.
+type CopilotPermissionResolvedMsg struct {
+	RequestID    string
+	PermissionID string
+	Status       string // approved / denied / expired / cancelled
+	OptionID     string
+	Title        string
+	Kind         string
 }
 
 // LuaEvalDoneMsg is sent when an async Lua eval completes.

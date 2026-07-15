@@ -110,6 +110,11 @@ func (m *WorkQueueModel) SetItems(sessions []claude.ClaudeSession, autoJumpTarge
 	m.clampScroll()
 }
 
+// Items returns the sessions currently in the work-queue strip (in display order).
+func (m *WorkQueueModel) Items() []claude.ClaudeSession {
+	return m.queue
+}
+
 // SelectedItem returns the currently selected queue session, if any.
 func (m *WorkQueueModel) SelectedItem() (claude.ClaudeSession, bool) {
 	if m.cursor >= 0 && m.cursor < len(m.queue) {
