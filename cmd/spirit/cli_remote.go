@@ -11,6 +11,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/receipt"
 	"github.com/huylenq/spirit/internal/scripting"
 )
 
@@ -197,24 +198,30 @@ var agentCommands = []agentCommand{
 
 // --- Helpers ---
 
-// mutationReceipt shapes the structured result of a side-effecting agent verb.
-//
-// RECEIPT SEAM (W5 → W3): this is the single place that formats mutation output
-// for the agent CLI. Today it emits {"status":"ok","operation":...,"target":...}.
-// The W3 receipt.ActionReceipt schema (internal/receipt, built via receipt.New)
-// now exists; adopting it is a one-function change here — build a receipt.New,
-// stamp DeliveryOutcome/ObservedState, and return it instead of this map — after
-// which every mutating verb inherits the new shape. The Lua equivalent seam is
-// mutationResult in internal/scripting/convert.go.
-func mutationReceipt(operation, target string, extra map[string]any) map[string]any {
-	r := map[string]any{"status": "ok", "operation": operation}
-	if target != "" {
-		r["target"] = target
+// emitReceipt prints the real receipt.ActionReceipt for a mutating agent verb
+// (W8 receipt unification, closing the W5 seam): action_id, target identity,
+// delivery outcome, and — for session-targeted ops — the observed post-action
+// state for reconciliation (Decision 5). Alive:false after a kill is the
+// expected observation.
+func emitReceipt(client *daemon.Client, operation, sessionID string, outcome receipt.Outcome, params map[string]any) {
+	rcpt := receipt.New(operation, receipt.Target{SessionID: sessionID, ResolvedBy: receipt.ResolvedExplicit})
+	rcpt.Params = params
+	rcpt.DeliveryOutcome = outcome
+	if sessionID != "" {
+		if sessions, err := client.Sessions(""); err == nil {
+			obs := &receipt.ObservedState{Alive: false}
+			for _, s := range sessions {
+				if s.SessionID == sessionID {
+					rcpt.Target.PaneID = s.PaneID
+					rcpt.Target.DisplayName = s.DisplayName()
+					obs = &receipt.ObservedState{Status: s.Status.String(), IsWaiting: s.IsWaiting, QueueLen: len(s.QueuePending), Alive: true}
+					break
+				}
+			}
+			rcpt.ObservedState = obs
+		}
 	}
-	for k, v := range extra {
-		r[k] = v
-	}
-	return r
+	jsonOut(rcpt)
 }
 
 // jsonOut marshals v to stdout as indented JSON.
@@ -445,7 +452,7 @@ func runSend() {
 		fmt.Fprintf(os.Stderr, "send: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("send", id, nil))
+	emitReceipt(client, "send", id, receipt.OutcomeDelivered, map[string]any{"message": msg})
 }
 
 func runQueue() {
@@ -459,11 +466,29 @@ func runQueue() {
 	defer client.Close()
 
 	s := resolveSessionOrDie(client, id)
-	if err := client.Queue(s.PaneID, id, msg); err != nil {
+	params := map[string]any{"message": msg}
+	rcptActionID := receipt.NewActionID()
+	itemID, err := client.QueueMessage(s.PaneID, id, msg, rcptActionID)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "queue: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("queue", id, nil))
+	if itemID != "" {
+		params["queue_item_id"] = itemID
+	}
+	rcpt := receipt.New("queue", receipt.Target{SessionID: id, ResolvedBy: receipt.ResolvedExplicit, PaneID: s.PaneID, DisplayName: s.DisplayName()})
+	rcpt.ActionID = rcptActionID // the id the queue item carries for ledger linkage
+	rcpt.Params = params
+	rcpt.DeliveryOutcome = receipt.OutcomeQueued
+	if sessions, err := client.Sessions(""); err == nil {
+		for _, cur := range sessions {
+			if cur.SessionID == id {
+				rcpt.ObservedState = &receipt.ObservedState{Status: cur.Status.String(), IsWaiting: cur.IsWaiting, QueueLen: len(cur.QueuePending), Alive: true}
+				break
+			}
+		}
+	}
+	jsonOut(rcpt)
 }
 
 func runSpawn() {
@@ -537,7 +562,7 @@ func runKill() {
 		fmt.Fprintf(os.Stderr, "kill: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("kill", id, nil))
+	emitReceipt(client, "kill", id, receipt.OutcomeCompleted, nil)
 }
 
 func runTranscript() {
@@ -675,7 +700,7 @@ func runCommit() {
 		fmt.Fprintf(os.Stderr, "commit: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("commit", id, map[string]any{"done": done}))
+	emitReceipt(client, "commit", id, receipt.OutcomeCompleted, map[string]any{"done": done})
 }
 
 func runLater() {
@@ -704,7 +729,7 @@ func runLater() {
 		fmt.Fprintf(os.Stderr, "later: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("later", id, map[string]any{"kill": kill}))
+	emitReceipt(client, "later", id, receipt.OutcomeCompleted, map[string]any{"kill": kill})
 }
 
 func runHookEvents() {
@@ -906,7 +931,7 @@ func runTag() {
 		fmt.Fprintf(os.Stderr, "tag: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("tag", id, map[string]any{"tags": tags}))
+	emitReceipt(client, "tag", id, receipt.OutcomeCompleted, map[string]any{"tags": tags})
 }
 
 // runNote sets a session's note. An empty string clears it.
@@ -924,7 +949,7 @@ func runNote() {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 		os.Exit(1)
 	}
-	jsonOut(mutationReceipt("note", id, map[string]any{"note": note}))
+	emitReceipt(client, "note", id, receipt.OutcomeCompleted, map[string]any{"note": note})
 }
 
 func runBacklog() {
@@ -978,7 +1003,10 @@ func runBacklog() {
 			fmt.Fprintf(os.Stderr, "backlog delete: %v\n", err)
 			os.Exit(1)
 		}
-		jsonOut(mutationReceipt("backlog.delete", os.Args[4], nil))
+		rcpt := receipt.New("backlog.delete", receipt.Target{})
+		rcpt.Params = map[string]any{"id": os.Args[4], "cwd": os.Args[3]}
+		rcpt.DeliveryOutcome = receipt.OutcomeCompleted
+		jsonOut(rcpt)
 
 	default:
 		dieUsage("usage: spirit agent backlog list|create|update|delete ...")

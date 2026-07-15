@@ -2,28 +2,64 @@ package scripting
 
 import (
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/receipt"
 	lua "github.com/yuin/gopher-lua"
 )
 
 // mutationResult builds the standard structured return value for a mutating Lua
-// function: {ok=true, status="ok", operation=<op>, target=<id>}. Extra fields can
-// be attached to the returned table by the caller before pushing it.
-//
-// RECEIPT SEAM (W5 → W3): this is the single place that shapes Lua mutation
-// results. The W3 receipt.ActionReceipt schema (internal/receipt) now exists;
-// adopting it is a one-function change here — populate this table from a
-// receipt.New value (action_id, delivery_outcome, observed_state_after, …) and
-// every mutating Lua function inherits the new shape. The agent CLI equivalent
-// seam is mutationReceipt in cmd/spirit/cli_remote.go.
+// function. Since W8 it speaks the receipt.ActionReceipt vocabulary —
+// {ok, status, operation, target, action_id, outcome} — while keeping the
+// legacy ok/status/target keys so existing scripts (and Gate A) stay green.
+// Session-targeted verbs additionally attach observed post-action state via
+// attachObserved. Extra fields can be attached by the caller before pushing.
 func mutationResult(L *lua.LState, operation, target string) *lua.LTable {
 	t := L.NewTable()
 	t.RawSetString("ok", lua.LBool(true))
 	t.RawSetString("status", lua.LString("ok"))
 	t.RawSetString("operation", lua.LString(operation))
+	t.RawSetString("action_id", lua.LString(receipt.NewActionID()))
+	t.RawSetString("outcome", lua.LString(string(receipt.OutcomeCompleted)))
 	if target != "" {
 		t.RawSetString("target", lua.LString(target))
 	}
 	return t
+}
+
+// setOutcome overrides the default "completed" delivery outcome (send →
+// delivered, queue → queued), matching the MCP receipt semantics.
+func setOutcome(t *lua.LTable, outcome receipt.Outcome) {
+	t.RawSetString("outcome", lua.LString(string(outcome)))
+}
+
+// attachObserved captures the target session's post-action state for
+// reconciliation (Decision 5): {status, is_waiting, queue_len, alive}.
+// Alive=false after a kill is the expected observation. Best-effort — a
+// fleet-read failure attaches nothing rather than failing the mutation result.
+func attachObserved(L *lua.LState, deps Deps, t *lua.LTable, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	sessions, err := deps.Client.Sessions("")
+	if err != nil {
+		return
+	}
+	obs := L.NewTable()
+	obs.RawSetString("alive", lua.LBool(false))
+	for _, s := range sessions {
+		if s.SessionID != sessionID {
+			continue
+		}
+		obs.RawSetString("alive", lua.LBool(true))
+		if s.Status == claude.StatusAgentTurn {
+			obs.RawSetString("status", lua.LString("working"))
+		} else {
+			obs.RawSetString("status", lua.LString("idle"))
+		}
+		obs.RawSetString("is_waiting", lua.LBool(s.IsWaiting))
+		obs.RawSetString("queue_len", lua.LNumber(len(s.QueuePending)))
+		break
+	}
+	t.RawSetString("observed", obs)
 }
 
 // sessionToTable converts a ClaudeSession to a Lua table.

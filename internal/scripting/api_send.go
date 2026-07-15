@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/receipt"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -24,6 +25,8 @@ func luaSend(deps Deps) lua.LGFunction {
 		}
 
 		result := mutationResult(L, "send", id)
+		setOutcome(result, receipt.OutcomeDelivered)
+		attachObserved(L, deps, result, id)
 
 		// Check for wait option
 		if L.GetTop() >= 3 {
@@ -78,11 +81,22 @@ func luaQueue(deps Deps) lua.LGFunction {
 		msg := L.CheckString(2)
 
 		paneID := resolvePane(L, deps.Client, id)
-		if err := deps.Client.Queue(paneID, id, msg); err != nil {
+		result := mutationResult(L, "queue", id)
+		actionID := ""
+		if v := result.RawGetString("action_id"); v != lua.LNil {
+			actionID = v.String()
+		}
+		itemID, err := deps.Client.QueueMessage(paneID, id, msg, actionID)
+		if err != nil {
 			L.RaiseError("queue: %v", err)
 			return 0
 		}
-		L.Push(mutationResult(L, "queue", id))
+		setOutcome(result, receipt.OutcomeQueued)
+		if itemID != "" {
+			result.RawSetString("queue_item_id", lua.LString(itemID))
+		}
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }

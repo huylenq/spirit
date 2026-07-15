@@ -59,7 +59,9 @@ func luaKill(deps Deps) lua.LGFunction {
 			L.RaiseError("kill: %v", err)
 			return 0
 		}
-		L.Push(mutationResult(L, "kill", id))
+		result := mutationResult(L, "kill", id)
+		attachObserved(L, deps, result, id) // alive=false is the expected observation
+		L.Push(result)
 		return 1
 	}
 }

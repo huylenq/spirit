@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/receipt"
 )
 
 // TestPhaseReached exercises the wait <id> --phase state machine, which mirrors
@@ -77,26 +78,20 @@ func TestTailMessages(t *testing.T) {
 	}
 }
 
-// TestMutationReceipt pins the structured shape of the receipt seam so W3's
-// ActionReceipt adoption is a deliberate, visible change.
-func TestMutationReceipt(t *testing.T) {
-	r := mutationReceipt("tag", "sess-1", map[string]any{"tags": []string{"x"}})
-	if r["status"] != "ok" {
-		t.Fatalf("status = %v, want ok", r["status"])
+// TestCLIReceiptShape pins the W8 receipt unification: mutating agent verbs
+// emit a real receipt.ActionReceipt (action_id + operation + target +
+// delivery_outcome), not the pre-W3 {"status":"ok"} map.
+func TestCLIReceiptShape(t *testing.T) {
+	rcpt := receipt.New("tag", receipt.Target{SessionID: "sess-1", ResolvedBy: receipt.ResolvedExplicit})
+	rcpt.Params = map[string]any{"tags": []string{"x"}}
+	rcpt.DeliveryOutcome = receipt.OutcomeCompleted
+	if rcpt.ActionID == "" || rcpt.AcceptedAt == "" {
+		t.Fatalf("receipt missing identity: %+v", rcpt)
 	}
-	if r["operation"] != "tag" {
-		t.Fatalf("operation = %v, want tag", r["operation"])
+	if rcpt.Target.SessionID != "sess-1" {
+		t.Fatalf("target = %+v", rcpt.Target)
 	}
-	if r["target"] != "sess-1" {
-		t.Fatalf("target = %v, want sess-1", r["target"])
-	}
-	if !reflect.DeepEqual(r["tags"], []string{"x"}) {
-		t.Fatalf("tags = %v, want [x]", r["tags"])
-	}
-
-	// Empty target is omitted.
-	r2 := mutationReceipt("synthesize", "", nil)
-	if _, ok := r2["target"]; ok {
-		t.Fatal("empty target should be omitted from the receipt")
+	if !reflect.DeepEqual(rcpt.Params["tags"], []string{"x"}) {
+		t.Fatalf("params = %v", rcpt.Params)
 	}
 }

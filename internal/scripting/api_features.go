@@ -16,7 +16,9 @@ func luaLater(deps Deps) lua.LGFunction {
 		if err := deps.Client.Later(paneID, id, ""); err != nil {
 			L.RaiseError("later: %v", err)
 		}
-		L.Push(mutationResult(L, "later", id))
+		result := mutationResult(L, "later", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }
@@ -31,7 +33,9 @@ func luaLaterKill(deps Deps) lua.LGFunction {
 		if err := deps.Client.LaterKill(s.PaneID, s.PID, id, ""); err != nil {
 			L.RaiseError("later_kill: %v", err)
 		}
-		L.Push(mutationResult(L, "later_kill", id))
+		result := mutationResult(L, "later_kill", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }
@@ -107,7 +111,9 @@ func luaCommit(deps Deps) lua.LGFunction {
 		if err := deps.Client.CommitOnly(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit: %v", err)
 		}
-		L.Push(mutationResult(L, "commit", id))
+		result := mutationResult(L, "commit", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }
@@ -122,7 +128,9 @@ func luaCommitDone(deps Deps) lua.LGFunction {
 		if err := deps.Client.CommitAndDone(s.PaneID, id, s.PID); err != nil {
 			L.RaiseError("commit_done: %v", err)
 		}
-		L.Push(mutationResult(L, "commit_done", id))
+		result := mutationResult(L, "commit_done", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }

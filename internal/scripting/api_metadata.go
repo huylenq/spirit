@@ -22,7 +22,9 @@ func luaSetTags(deps Deps) lua.LGFunction {
 			L.RaiseError("set_tags: %v", err)
 			return 0
 		}
-		L.Push(mutationResult(L, "set_tags", id))
+		result := mutationResult(L, "set_tags", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }
@@ -40,7 +42,9 @@ func luaSetNote(deps Deps) lua.LGFunction {
 			L.RaiseError("set_note: %v", err)
 			return 0
 		}
-		L.Push(mutationResult(L, "set_note", id))
+		result := mutationResult(L, "set_note", id)
+		attachObserved(L, deps, result, id)
+		L.Push(result)
 		return 1
 	}
 }

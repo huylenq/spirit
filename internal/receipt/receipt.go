@@ -84,7 +84,7 @@ type ActionReceipt struct {
 // failure) Error before returning it.
 func New(operation string, target Target) *ActionReceipt {
 	return &ActionReceipt{
-		ActionID:   newActionID(),
+		ActionID:   NewActionID(),
 		Operation:  operation,
 		Target:     target,
 		AcceptedAt: time.Now().UTC().Format(time.RFC3339),
@@ -101,8 +101,10 @@ func (r *ActionReceipt) Fail(err error) *ActionReceipt {
 	return r
 }
 
-// newActionID returns a short, collision-resistant action id like "act_9f3c1a2b7d4e".
-func newActionID() string {
+// NewActionID returns a short, collision-resistant action id like
+// "act_9f3c1a2b7d4e". Exported so surfaces that assemble receipt-shaped
+// results field-by-field (the Lua wrappers) mint ids from the same vocabulary.
+func NewActionID() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// Fail-fast fallback: a time-based id is still unique enough to correlate.
