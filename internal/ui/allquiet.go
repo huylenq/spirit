@@ -47,26 +47,43 @@ const (
 // outward — letters burst from screen center on a light gravity arc — before
 // the calm pendulum mobile takes over.
 const (
-	explodeFrames   = 16   // explosion duration in frames before the mobile reveals
+	explodeFrames   = 16   // explosion duration in frames before the implode begins
 	explodeGravity  = 0.12 // per-frame downward pull on debris
 	explodeMinSpeed = 1.8  // minimum outward burst speed (cells/frame)
 	explodeSpeedVar = 2.4  // additional speed spread on top of the minimum
 	explodeLift     = 0.8  // initial upward kick so debris arcs before falling
 )
 
+// After the burst, surviving debris is sucked back inward and converges onto the
+// exact cells the steady-state quiet dashboard will occupy, morphing each rune
+// into its landing glyph — so the explosion collapses seamlessly into the calm
+// scene instead of cutting to it. Untargeted debris (more particles than
+// dashboard cells) keeps falling away.
+const (
+	implodeFrames = 18   // implode duration in frames before the mobile reveals
+	implodeStiff  = 0.22 // spring pull toward the target cell
+	implodeDamp   = 0.55 // velocity damping so the convergence settles, not oscillates
+	implodeSnap   = 1.4  // distance (cells) at which a rune morphs into its landing glyph
+)
+
 type quietPhase int
 
 const (
-	phaseMobile quietPhase = iota // calm pendulum scene (steady state)
-	phaseExplode                  // intro: dashboard text bursting apart
+	phaseMobile  quietPhase = iota // calm pendulum scene (steady state)
+	phaseExplode                   // intro: dashboard text bursting apart
+	phaseImplode                   // intro: debris converging onto the quiet dashboard
 )
 
-// debrisParticle is one styled rune flung outward during the intro explosion.
+// debrisParticle is one styled rune flung outward during the intro explosion and,
+// if assigned a target, sucked back onto a dashboard cell during the implode.
 type debrisParticle struct {
-	x, y   float64
-	vx, vy float64
-	cell   string // pre-rendered "ansiPrefix + rune + reset"
-	ttl    int    // frames remaining before the rune vanishes
+	x, y      float64
+	vx, vy    float64
+	cell      string // pre-rendered "ansiPrefix + rune + reset" (currently displayed)
+	ttl       int    // frames remaining before the rune vanishes
+	tx, ty    float64 // implode target cell (valid when hasTarget)
+	hasTarget bool    // true once bound to a dashboard cell for the implode
+	landCell  string  // the dashboard glyph this particle morphs into on arrival
 }
 
 // AllQuietTickMsg advances the all-quiet animation by one frame.
@@ -146,10 +163,12 @@ type AllQuietAnim struct {
 	active        bool
 	frame         int // monotonically increasing tick counter (drives the shimmer)
 
-	// Intro explosion state (phaseExplode → phaseMobile).
-	phase   quietPhase
-	debris  []debrisParticle
-	introFr int
+	// Intro explosion state (phaseExplode → phaseImplode → phaseMobile).
+	phase     quietPhase
+	debris    []debrisParticle
+	introFr   int
+	implodeFr int
+	targets   []styledFrag // absolute-positioned dashboard cells the implode converges onto
 }
 
 // Active reports whether the animation is running.
@@ -160,7 +179,7 @@ func (a *AllQuietAnim) Active() bool { return a.active }
 // dashboard is laid out, shattered into debris, and flung outward before the
 // mobile scene settles in. When false (e.g. the TUI simply opened into a quiet
 // state), the calm mobile renders straight away with no explosion.
-func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool) tea.Cmd {
+func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool, srcFrame string) tea.Cmd {
 	if a.active {
 		return nil
 	}
@@ -203,8 +222,10 @@ func (a *AllQuietAnim) Init(counts AllQuietCounts, w, h int, intro bool) tea.Cmd
 	a.phase = phaseMobile
 	a.debris = nil
 	a.introFr = 0
+	a.implodeFr = 0
+	a.targets = nil
 	if intro && w >= 24 && h >= 12 {
-		a.initExplosion(counts, w, h)
+		a.initExplosion(counts, w, h, srcFrame)
 	}
 	return tickAllQuiet()
 }
@@ -261,18 +282,28 @@ func (a *AllQuietAnim) FewerParticles() {
 	}
 }
 
-// initExplosion lays out the quiet dashboard centered in the canvas, decomposes
-// it into styled runes, and gives each an outward velocity from screen center.
-// Every invocation draws a fresh random seed plus a randomized "flavor" — overall
-// speed, rotational swirl, and upward bias — so no two bursts look alike.
-func (a *AllQuietAnim) initExplosion(counts AllQuietCounts, w, h int) {
-	dash := renderQuietDashboard(counts, 0)
-	src := lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, dash)
+// initExplosion decomposes a source frame into styled runes and gives each an
+// outward velocity from screen center. The source is the frame that was just on
+// screen (srcFrame — sidebar + detail) so the burst appears to erupt from the
+// exact characters the user was looking at; when no frame is available (e.g. the
+// canvas was too small to have cached one) it falls back to the centered quiet
+// dashboard. Every invocation draws a fresh random seed plus a randomized
+// "flavor" — overall speed, rotational swirl, and upward bias — so no two bursts
+// look alike.
+func (a *AllQuietAnim) initExplosion(counts AllQuietCounts, w, h int, srcFrame string) {
+	src := srcFrame
+	if strings.TrimSpace(src) == "" {
+		dash := renderQuietDashboard(counts, 0)
+		src = lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, dash)
+	}
 	frags := decomposeStyled(src, w, h)
 	if len(frags) == 0 {
 		return
 	}
 	a.phase = phaseExplode
+	// Precompute where the steady-state dashboard will sit so the implode can
+	// suck the debris back onto those exact cells.
+	a.seedImplodeTargets(counts, w, h)
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	// Per-burst flavor: a global speed scale, a tangential swirl that bends the
@@ -306,6 +337,90 @@ func (a *AllQuietAnim) initExplosion(counts AllQuietCounts, w, h int) {
 	}
 }
 
+// quietBarAnchor returns the mobile bar's top row and width, positioning the
+// mobile+dashboard block vertically centered for a canvas of the given size and
+// dashboard height. Shared by Render and the intro morph so debris converges onto
+// the exact cells the steady-state dashboard occupies.
+func quietBarAnchor(width, height, dashH int) (barRow, barW int) {
+	barW = min(36, width*45/100)
+	if barW < 14 {
+		barW = 14
+	}
+	blockH := (pendStringH + 2) + 3 + dashH
+	barRow = (height - blockH) / 2
+	if barRow < 2 {
+		barRow = 2
+	}
+	return
+}
+
+// quietDashAnchor returns the absolute row/col where the dashboard block is
+// overlaid, given the bar row and the dashboard's height and max width.
+func quietDashAnchor(width, height, barRow, dashH, dashMaxW int) (dashRow, dashCol int) {
+	dashRow = barRow + pendStringH + 4
+	if dashRow+dashH > height {
+		dashRow = max(barRow+pendStringH+3, height-dashH)
+	}
+	dashCol = (width - dashMaxW) / 2
+	if dashCol < 0 {
+		dashCol = 0
+	}
+	return
+}
+
+// seedImplodeTargets decomposes the steady-state quiet dashboard and records each
+// glyph at the absolute cell it will occupy once the mobile scene renders, so the
+// implode can converge debris onto those exact positions.
+func (a *AllQuietAnim) seedImplodeTargets(counts AllQuietCounts, width, height int) {
+	dash := renderQuietDashboard(counts, 0)
+	dashLines := strings.Split(dash, "\n")
+	dashH := len(dashLines)
+	dashMaxW := 0
+	for _, l := range dashLines {
+		if w := lipgloss.Width(l); w > dashMaxW {
+			dashMaxW = w
+		}
+	}
+	barRow, _ := quietBarAnchor(width, height, dashH)
+	dashRow, dashCol := quietDashAnchor(width, height, barRow, dashH, dashMaxW)
+	frags := decomposeStyled(dash, dashMaxW, dashH)
+	a.targets = make([]styledFrag, len(frags))
+	for i, f := range frags {
+		a.targets[i] = styledFrag{x: dashCol + f.x, y: dashRow + f.y, styled: f.styled}
+	}
+}
+
+// beginImplode binds surviving debris to dashboard target cells (nearest-first)
+// and switches to the implode phase. Targets outnumbered by debris leave the
+// surplus untargeted (they fall away); debris outnumbered by targets leaves the
+// remaining cells to appear when the mobile dashboard renders.
+func (a *AllQuietAnim) beginImplode() {
+	a.phase = phaseImplode
+	a.implodeFr = 0
+	assigned := make([]bool, len(a.debris))
+	for _, t := range a.targets {
+		best, bestDist := -1, math.MaxFloat64
+		for i := range a.debris {
+			if assigned[i] || a.debris[i].ttl <= 0 {
+				continue
+			}
+			dx, dy := a.debris[i].x-float64(t.x), a.debris[i].y-float64(t.y)
+			if d := dx*dx + dy*dy; d < bestDist {
+				best, bestDist = i, d
+			}
+		}
+		if best < 0 {
+			continue // no debris left to fill this cell
+		}
+		assigned[best] = true
+		d := &a.debris[best]
+		d.tx, d.ty = float64(t.x), float64(t.y)
+		d.hasTarget = true
+		d.landCell = t.styled
+		d.ttl = implodeFrames + 2 // keep targeted debris alive through the settle
+	}
+}
+
 // Stop halts the animation.
 func (a *AllQuietAnim) Stop() { a.active = false }
 
@@ -317,6 +432,10 @@ func (a *AllQuietAnim) Tick() tea.Cmd {
 	a.frame++
 	if a.phase == phaseExplode {
 		a.tickExplosion()
+		return tickAllQuiet()
+	}
+	if a.phase == phaseImplode {
+		a.tickImplode()
 		return tickAllQuiet()
 	}
 	for i := range a.pends {
@@ -353,6 +472,44 @@ func (a *AllQuietAnim) tickExplosion() {
 		d.ttl--
 	}
 	if a.introFr >= explodeFrames {
+		if len(a.targets) == 0 {
+			a.phase = phaseMobile
+			a.debris = nil
+			return
+		}
+		a.beginImplode()
+	}
+}
+
+// tickImplode springs targeted debris toward its dashboard cell (morphing the
+// rune into its landing glyph on arrival) while untargeted debris keeps falling
+// away, then hands off to the calm mobile scene once the settle completes.
+func (a *AllQuietAnim) tickImplode() {
+	a.implodeFr++
+	for i := range a.debris {
+		d := &a.debris[i]
+		if d.ttl <= 0 {
+			continue
+		}
+		if d.hasTarget {
+			// Critically-damped spring: respects the outward velocity from the
+			// burst, then reels the rune back onto its target cell.
+			d.vx += (d.tx-d.x)*implodeStiff - d.vx*implodeDamp
+			d.vy += (d.ty-d.y)*implodeStiff - d.vy*implodeDamp
+			d.x += d.vx
+			d.y += d.vy
+			if math.Hypot(d.tx-d.x, d.ty-d.y) <= implodeSnap {
+				d.cell = d.landCell // morph into the dashboard glyph as it lands
+			}
+			continue
+		}
+		// Surplus debris with no cell to fill keeps arcing away and fades out.
+		d.vy += explodeGravity
+		d.x += d.vx
+		d.y += d.vy
+		d.ttl--
+	}
+	if a.implodeFr >= implodeFrames {
 		a.phase = phaseMobile
 		a.debris = nil
 	}
@@ -369,7 +526,7 @@ type placed struct {
 
 // Render draws the full animated scene (mobile + particles + dashboard text).
 func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
-	if a.phase == phaseExplode {
+	if a.phase == phaseExplode || a.phase == phaseImplode {
 		return a.renderExplosion(width, height)
 	}
 	if height < 12 || width < 24 {
@@ -398,19 +555,10 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	dashH := len(dashLines)
 
 	// --- Mobile ---
-	barW := min(36, width*45/100)
-	if barW < 14 {
-		barW = 14
-	}
-	barLeft := (width - barW) / 2
-
 	// Vertically center the composition: mobile (bar + strings + bob) spans
 	// pendStringH+2 rows, then a 3-row gap, then the dashboard.
-	blockH := (pendStringH + 2) + 3 + dashH
-	barRow := (height - blockH) / 2
-	if barRow < 2 {
-		barRow = 2
-	}
+	barRow, barW := quietBarAnchor(width, height, dashH)
+	barLeft := (width - barW) / 2
 
 	// Attachment points (evenly spaced along bar)
 	spacing := barW / (numPendulums + 1)
@@ -507,20 +655,13 @@ func (a *AllQuietAnim) Render(width, height int, counts AllQuietCounts) string {
 	bg := strings.Join(lines, "\n")
 
 	// --- Dashboard overlay (centered below mobile) ---
-	dashRow := barRow + pendStringH + 4
-	if dashRow+dashH > height {
-		dashRow = max(barRow+pendStringH+3, height-dashH)
-	}
 	dashMaxW := 0
 	for _, l := range dashLines {
 		if w := lipgloss.Width(l); w > dashMaxW {
 			dashMaxW = w
 		}
 	}
-	dashCol := (width - dashMaxW) / 2
-	if dashCol < 0 {
-		dashCol = 0
-	}
+	dashRow, dashCol := quietDashAnchor(width, height, barRow, dashH, dashMaxW)
 	return OverlayAt(bg, dash, dashRow, dashCol)
 }
 

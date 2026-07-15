@@ -293,6 +293,11 @@ type Model struct {
 	viewMode             string           // ViewSidebar or ViewWorkQueue (persisted)
 	workQueue            ui.WorkQueueModel
 	dinoTicking          bool // empty work-queue dino game tick scheduled
+	// lastContentFrame holds the most recent non-quiet content region (sidebar +
+	// detail) rendered by View. It's a pointer so the value-receiver View can
+	// write through it; the all-quiet intro explosion shatters this exact frame
+	// so the burst appears to erupt from the characters that were just on screen.
+	lastContentFrame *string
 }
 
 func NewModel(client *daemon.Client) Model {
@@ -354,6 +359,7 @@ func NewModel(client *daemon.Client) Model {
 		binaryPath:        bin,
 		messageLog:        loadMessageLog(),
 		autoJumpOn:        autoJump,
+		lastContentFrame:  new(string),
 	}
 	ensureSettingDefaults()
 	ui.ProjectIconUseAnimal = Flag("projectAnimalIcon")
@@ -406,7 +412,14 @@ func (m *Model) syncAllQuietAnimIntro(intro bool) tea.Cmd {
 		// pads 1 col each side → -2) so the intro explosion is laid out and
 		// flung over the exact area the mobile will occupy.
 		w := m.innerWidth() - m.copilotDockedWidth() - 2
-		return m.detail.StartAllQuietAnim(m.allQuietCounts(), w, m.contentHeight(), intro)
+		// Hand the intro explosion the frame that was just on screen (sidebar +
+		// detail) so the burst shatters those exact characters rather than a
+		// freshly laid-out quiet dashboard. Only meaningful when intro is true.
+		srcFrame := ""
+		if intro && m.lastContentFrame != nil {
+			srcFrame = *m.lastContentFrame
+		}
+		return m.detail.StartAllQuietAnim(m.allQuietCounts(), w, m.contentHeight(), intro, srcFrame)
 	}
 	if !show && m.detail.AllQuietAnimActive() {
 		m.detail.StopAllQuietAnim()

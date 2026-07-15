@@ -173,11 +173,19 @@ func (m Model) viewSidebarLayout(innerWidth, contentHeight int) string {
 		rightColumn = detailPanel + "\n" + queueView
 	}
 
+	// Cache the sidebar+detail composite (excluding the copilot dock, which the
+	// all-quiet canvas also excludes) so a subsequent quiet-mode transition can
+	// shatter the frame that was just on screen. See Model.lastContentFrame.
+	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
+	if m.lastContentFrame != nil {
+		*m.lastContentFrame = content
+	}
+
 	copilotDockedPanel := m.renderDockedCopilot(copilotDockedW, contentHeight)
 	if copilotDockedPanel != "" {
-		return lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn, copilotDockedPanel)
+		return lipgloss.JoinHorizontal(lipgloss.Top, content, copilotDockedPanel)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarPanel, rightColumn)
+	return content
 }
 
 // viewWorkQueueLayout renders the work queue strip + full-width detail layout.
