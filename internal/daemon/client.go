@@ -14,6 +14,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/ledger"
 	"github.com/huylenq/spirit/internal/tmux"
 )
 
@@ -432,6 +433,43 @@ func (c *Client) SetNote(sessionID, note string) error {
 func (c *Client) ReportActionFailure(actionID, operation, sessionID, errMsg string) error {
 	return c.rpcInto(Request{Type: ReqActionReport, Data: marshalData(ActionReportData{
 		ActionID: actionID, Operation: operation, SessionID: sessionID, Error: errMsg,
+	})}, nil)
+}
+
+// WatchCreate registers a reactive watch (W7). Zero limits get daemon defaults;
+// the ledger enforces validity (expiry + rate limit required).
+func (c *Client) WatchCreate(req WatchCreateData) (ledger.Watch, error) {
+	var data WatchResultData
+	err := c.rpcInto(Request{Type: ReqWatchCreate, Data: marshalData(req)}, &data)
+	return data.Watch, err
+}
+
+// WatchList returns every known watch (live and recently terminal).
+func (c *Client) WatchList() ([]ledger.Watch, error) {
+	var data AttentionListData
+	err := c.rpcInto(Request{Type: ReqWatchList}, &data)
+	return data.Watches, err
+}
+
+// WatchCancel cancels a live watch and returns its final record.
+func (c *Client) WatchCancel(watchID string) (ledger.Watch, error) {
+	var data WatchResultData
+	err := c.rpcInto(Request{Type: ReqWatchCancel, Data: marshalData(WatchIDData{WatchID: watchID})}, &data)
+	return data.Watch, err
+}
+
+// AttentionList returns the attention inbox: unresolved items (with audit +
+// recommendation), watches, and per-item one-line descriptions.
+func (c *Client) AttentionList() (AttentionListData, error) {
+	var data AttentionListData
+	err := c.rpcInto(Request{Type: ReqAttentionList}, &data)
+	return data, err
+}
+
+// AttentionResolve explicitly resolves an attention item (user ack / Lulu).
+func (c *Client) AttentionResolve(itemID, resolution string) error {
+	return c.rpcInto(Request{Type: ReqAttentionResolve, Data: marshalData(AttentionResolveData{
+		ItemID: itemID, Resolution: resolution,
 	})}, nil)
 }
 

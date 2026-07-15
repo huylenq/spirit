@@ -57,6 +57,20 @@ type pendingPermission struct {
 // waiting for the human without stalling the streaming prompt. It returns the
 // chosen option id, or "" to refuse the request.
 func (d *Daemon) decideCopilotPermission(params json.RawMessage) string {
+	// Reactive isolation (W7): a permission request from any session other than
+	// the main Lulu session can only come from a reactive fork — and a reactive
+	// run must never surprise the human with an approval prompt, nor be granted
+	// anything. Deny structurally. (Forks carry no tools, so this is the belt to
+	// that suspender.)
+	var envelope struct {
+		SessionID string `json:"sessionId"`
+	}
+	json.Unmarshal(params, &envelope) //nolint:errcheck
+	if main := d.acpClient.SessionID(); envelope.SessionID != "" && main != "" && envelope.SessionID != main {
+		log.Printf("acp: auto-denied permission request from non-main session %s (reactive isolation)", envelope.SessionID)
+		return ""
+	}
+
 	parsed, err := parsePermissionRequest(params)
 	if err != nil {
 		log.Printf("acp: unparseable permission request denied: %v", err)

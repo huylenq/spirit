@@ -26,6 +26,10 @@ type acpContentBlock struct {
 // dispatchUpdate routes one session/update notification. Stream chunks go to the
 // active sink; usage/commands/rotation are applied to client state regardless of
 // whether a prompt is in flight.
+//
+// Sessions with a dedicated sink (reactive forks, W7) get their stream chunks
+// routed there via emit, and their stateful updates (usage/commands/mode/info)
+// are dropped — a fork's context pressure or mode is not the main session's.
 func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 	var up acpUpdateParams
 	if err := json.Unmarshal(params, &up); err != nil {
@@ -41,6 +45,13 @@ func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 		return
 	}
 
+	emit := c.emit
+	scopedToFork := false
+	if sink := c.sessionSinkFor(up.SessionID); sink != nil {
+		emit = sink
+		scopedToFork = true
+	}
+
 	switch head.SessionUpdate {
 	case "agent_message_chunk":
 		var body struct {
@@ -48,7 +59,7 @@ func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 		}
 		json.Unmarshal(up.Update, &body) //nolint:errcheck
 		for _, evt := range parseContentBlocks(body.Content, "text_delta", "thought") {
-			c.emit(evt)
+			emit(evt)
 		}
 
 	case "agent_thought_chunk":
@@ -58,7 +69,7 @@ func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 		json.Unmarshal(up.Update, &body) //nolint:errcheck
 		// A thought chunk's blocks are plain text; surface them as thoughts.
 		for _, evt := range parseContentBlocks(body.Content, "thought", "thought") {
-			c.emit(evt)
+			emit(evt)
 		}
 
 	case "tool_call":
@@ -69,7 +80,7 @@ func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 			Status     string `json:"status"`
 		}
 		json.Unmarshal(up.Update, &body) //nolint:errcheck
-		c.emit(CopilotStreamData{
+		emit(CopilotStreamData{
 			Type:    "tool_call",
 			Content: body.Title,
 			ToolID:  body.ToolCallID,
@@ -95,21 +106,33 @@ func (c *acpClient) dispatchUpdate(params json.RawMessage) {
 				evt.Content = blocks[0].Content.Text
 			}
 		}
-		c.emit(evt)
+		emit(evt)
 
 	case "plan":
-		c.emit(CopilotStreamData{Type: "plan", Content: string(up.Update)})
+		emit(CopilotStreamData{Type: "plan", Content: string(up.Update)})
 
 	case "usage_update":
+		if scopedToFork {
+			return
+		}
 		c.handleUsageUpdate(up.Update)
 
 	case "available_commands_update":
+		if scopedToFork {
+			return
+		}
 		c.handleCommandsUpdate(up.Update)
 
 	case "session_info_update":
+		if scopedToFork {
+			return
+		}
 		c.handleSessionInfoUpdate(up.SessionID, up.Update)
 
 	case "current_mode_update":
+		if scopedToFork {
+			return
+		}
 		c.handleCurrentModeUpdate(up.Update)
 
 	default:

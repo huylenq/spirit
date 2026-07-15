@@ -11,6 +11,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/ledger"
 )
 
 // fakeDaemon is an in-process daemonAPI double. It records side-effect calls and can
@@ -25,6 +26,11 @@ type fakeDaemon struct {
 	spawnID       string
 	spawnPane     string
 	actionReports []string // "actionID|operation|sessionID|error" per failed-receipt report
+
+	watches        []ledger.Watch
+	watchErr       error
+	attentionItems []ledger.AttentionItem
+	resolved       []string // "itemID|resolution"
 }
 
 func (f *fakeDaemon) Sessions(string) ([]agent.Session, error) { return f.sessions, nil }
@@ -89,6 +95,40 @@ func (f *fakeDaemon) CommitOnly(string, string, int) error        { return nil }
 func (f *fakeDaemon) CommitAndDone(string, string, int) error     { return nil }
 func (f *fakeDaemon) ReportActionFailure(actionID, operation, sessionID, errMsg string) error {
 	f.actionReports = append(f.actionReports, actionID+"|"+operation+"|"+sessionID+"|"+errMsg)
+	return nil
+}
+
+func (f *fakeDaemon) WatchCreate(req daemon.WatchCreateData) (ledger.Watch, error) {
+	if f.watchErr != nil {
+		return ledger.Watch{}, f.watchErr
+	}
+	w := ledger.Watch{
+		ID:                 "watch-1",
+		Scope:              ledger.WatchScope{SessionID: req.SessionID, Project: req.Project},
+		Condition:          ledger.WatchCondition(req.Condition),
+		Response:           ledger.WatchResponse(req.Response),
+		State:              ledger.WatchActive,
+		CreatedBy:          req.CreatedBy,
+		CreatedByRequestID: req.CreatedByRequestID,
+	}
+	f.watches = append(f.watches, w)
+	return w, nil
+}
+func (f *fakeDaemon) WatchList() ([]ledger.Watch, error) { return f.watches, nil }
+func (f *fakeDaemon) WatchCancel(watchID string) (ledger.Watch, error) {
+	for i := range f.watches {
+		if f.watches[i].ID == watchID {
+			f.watches[i].State = ledger.WatchCancelled
+			return f.watches[i], nil
+		}
+	}
+	return ledger.Watch{}, fmt.Errorf("watch not found: %s", watchID)
+}
+func (f *fakeDaemon) AttentionList() (daemon.AttentionListData, error) {
+	return daemon.AttentionListData{Items: f.attentionItems, Watches: f.watches}, nil
+}
+func (f *fakeDaemon) AttentionResolve(itemID, resolution string) error {
+	f.resolved = append(f.resolved, itemID+"|"+resolution)
 	return nil
 }
 

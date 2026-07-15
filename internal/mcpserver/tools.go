@@ -8,6 +8,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/daemon"
+	"github.com/huylenq/spirit/internal/ledger"
 	"github.com/huylenq/spirit/internal/receipt"
 )
 
@@ -32,6 +33,11 @@ type daemonAPI interface {
 	CommitOnly(paneID, sessionID string, pid int) error
 	CommitAndDone(paneID, sessionID string, pid int) error
 	ReportActionFailure(actionID, operation, sessionID, errMsg string) error
+	WatchCreate(req daemon.WatchCreateData) (ledger.Watch, error)
+	WatchList() ([]ledger.Watch, error)
+	WatchCancel(watchID string) (ledger.Watch, error)
+	AttentionList() (daemon.AttentionListData, error)
+	AttentionResolve(itemID, resolution string) error
 }
 
 // Compile-time check that the real client satisfies the interface.
@@ -110,6 +116,18 @@ func buildTools() []tool {
 			Handler:     handleGetSummary,
 		},
 		{
+			Name:        "list_watches",
+			Description: "List reactive watches (spec Decision 10): scope, condition, response policy, FSM state, firing/LLM budgets, and last outcome. Includes recently expired/cancelled/failed watches.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+			Handler:     handleListWatches,
+		},
+		{
+			Name:        "list_attention",
+			Description: "List unresolved attention items (open + delivered): category, severity, scope, one-line description, any attached recommendation, and the causal audit chain (signals → watch → policy → LLM run → delivery). Use resolve_attention to close items that no longer need the user.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+			Handler:     handleListAttention,
+		},
+		{
 			Name:        "wait_session",
 			Description: "Block until a session reaches a lifecycle phase: idle (user-turn), working (agent-turn), or cycle (a full working-then-idle round trip). Use after a side-effect tool to reconcile that the target actually reacted — e.g. send_message then wait_session working. Returns a receipt-style result with the outcome (reached | timeout | vanished) and observed session state.",
 			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"},"phase":{"type":"string","enum":["idle","working","cycle"],"description":"Target phase; cycle waits for the session to be observed working and then return to idle."},"timeout_seconds":{"type":"integer","description":"Max seconds to wait (default 60, capped at 600)."}},"required":["session_id","phase"]}`),
@@ -172,6 +190,27 @@ func buildTools() []tool {
 			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"},"done":{"type":"boolean","description":"Auto-kill the session after committing."}},"required":["session_id"]}`),
 			SideEffect:  true,
 			Handler:     handleCommitSession,
+		},
+		{
+			Name:        "create_watch",
+			Description: "Create a reactive watch: while a TUI client is attached, Spirit reacts to the watched condition — inbox records it, notify raises one coalesced notification, inspect_and_recommend additionally runs one bounded LLM inspection and attaches a proposal to the attention item (never a prompt to a coding session, never fleet mutation). A watch must have an expiry and rate limit; defaults: 24h expiry, 60s cooldown, 20 firings, LLM budget 5. Returns an ActionReceipt whose action_id is the watch's created_by_request_id.",
+			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string","description":"Watch one session."},"project":{"type":"string","description":"Watch a whole project (repo root path). Omit both for fleet-wide."},"condition":{"type":"string","enum":["completed_turn","waiting","overlap","action_reconciled"]},"response":{"type":"string","enum":["inbox","notify","inspect_and_recommend"]},"expires_in_minutes":{"type":"integer","description":"Watch lifetime (default 1440 = 24h, max 7 days)."},"cooldown_seconds":{"type":"integer","description":"Minimum gap between firings (default 60)."},"max_firings":{"type":"integer","description":"Total firing budget (default 20, max 100)."},"llm_budget":{"type":"integer","description":"Max LLM runs for inspect_and_recommend (default 5, max 20)."}},"required":["condition","response"]}`),
+			SideEffect:  true,
+			Handler:     handleCreateWatch,
+		},
+		{
+			Name:        "cancel_watch",
+			Description: "Cancel a live reactive watch by watch_id. Returns an ActionReceipt with the watch's final record.",
+			InputSchema: schema(`{"type":"object","properties":{"watch_id":{"type":"string"}},"required":["watch_id"]}`),
+			SideEffect:  true,
+			Handler:     handleCancelWatch,
+		},
+		{
+			Name:        "resolve_attention",
+			Description: "Resolve an attention item that no longer needs the user (verified, handled, or moot). Records the resolution on the item's audit chain. Returns an ActionReceipt.",
+			InputSchema: schema(`{"type":"object","properties":{"item_id":{"type":"string"},"resolution":{"type":"string","description":"Why it is resolved (e.g. 'verified: tests pass')."}},"required":["item_id"]}`),
+			SideEffect:  true,
+			Handler:     handleResolveAttention,
 		},
 	}
 }

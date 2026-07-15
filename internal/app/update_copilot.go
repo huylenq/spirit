@@ -127,6 +127,20 @@ func (m Model) handleKeyCopilot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.copilotInput.Activate()
 				return m, m.toggleCopilotPreamble()
 			}
+			if text == "/watch" {
+				// Create a default reactive watch on the scoped session:
+				// completed_turn → inspect_and_recommend, daemon defaults for
+				// expiry/cooldown/firings (W7).
+				m.copilotInput.Deactivate()
+				m.copilotInput.Activate()
+				s, ok := m.currentSelectedSession()
+				if !ok || s.SessionID == "" {
+					m.copilot.AddInfoMessage("watch: no session selected")
+					return m, nil
+				}
+				m.copilot.AddInfoMessage("watching " + s.DisplayName() + " (completed_turn → inspect_and_recommend)")
+				return m, m.createWatch(s.SessionID, "completed_turn", "inspect_and_recommend", true)
+			}
 			if text == "/model" || strings.HasPrefix(text, "/model ") {
 				modelID := strings.TrimSpace(strings.TrimPrefix(text, "/model"))
 				m.copilotInput.Deactivate()
@@ -451,7 +465,7 @@ func permissionReceiptLine(msg CopilotPermissionResolvedMsg) string {
 }
 
 func (m *Model) applyCopilotModelState(models daemon.CopilotModelState) {
-	suggestions := []string{"/new", "/preamble", "/model", "/mode"}
+	suggestions := []string{"/new", "/preamble", "/model", "/mode", "/watch"}
 	for _, model := range models.AvailableModels {
 		if model.ModelID == "" {
 			continue

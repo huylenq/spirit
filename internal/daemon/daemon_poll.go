@@ -21,8 +21,10 @@ func (d *Daemon) pollLoop(stop chan struct{}) {
 			return
 		case <-ticker.C:
 			d.poll()
+			d.reactiveTick()
 		case <-d.nudgeCh:
 			d.poll()
+			d.reactiveTick()
 		}
 	}
 }

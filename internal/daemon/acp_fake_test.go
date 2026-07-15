@@ -33,6 +33,14 @@ type fakeHermes struct {
 	// reply). If nil, the fake replies end_turn immediately.
 	onPrompt func(f *fakeHermes, id int64, text string)
 
+	// onPromptSession, if set, takes precedence over onPrompt and additionally
+	// receives the prompt's target session id (fork-aware tests).
+	onPromptSession func(f *fakeHermes, id int64, sessionID, text string)
+
+	// forkSessionID is the id session/fork returns (default "fake-fork-1").
+	forkSessionID string
+	lastForkFrom  string // sessionId the last session/fork request named
+
 	// modes, when set, is returned as the SessionModeState in session/new and
 	// session/load responses so the client captures mode state.
 	modes map[string]any
@@ -198,9 +206,23 @@ func (f *fakeHermes) handleRequest(id int64, method string, params json.RawMessa
 		f.lastSetMode = map[string]string{"sessionId": p.SessionID, "modeId": p.ModeID}
 		f.mu.Unlock()
 		f.reply(id, map[string]any{})
+	case "session/fork":
+		var p struct {
+			SessionID string `json:"sessionId"`
+		}
+		json.Unmarshal(params, &p) //nolint:errcheck
+		fid := f.forkSessionID
+		if fid == "" {
+			fid = "fake-fork-1"
+		}
+		f.mu.Lock()
+		f.lastForkFrom = p.SessionID
+		f.mu.Unlock()
+		f.reply(id, map[string]any{"sessionId": fid})
 	case "session/prompt":
 		var p struct {
-			Prompt []struct {
+			SessionID string `json:"sessionId"`
+			Prompt    []struct {
 				Text string `json:"text"`
 			} `json:"prompt"`
 		}
@@ -208,6 +230,10 @@ func (f *fakeHermes) handleRequest(id int64, method string, params json.RawMessa
 		text := ""
 		if len(p.Prompt) > 0 {
 			text = p.Prompt[0].Text
+		}
+		if f.onPromptSession != nil {
+			f.onPromptSession(f, id, p.SessionID, text)
+			return
 		}
 		if f.onPrompt != nil {
 			f.onPrompt(f, id, text)

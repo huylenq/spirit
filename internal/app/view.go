@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +15,10 @@ const debugMinimap = false
 var autoJumpDimStyle = lipgloss.NewStyle().Foreground(ui.ColorMuted)
 var autoJumpOnStyle = lipgloss.NewStyle().Foreground(ui.ColorAutoJump)
 var focusModeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
+
+// attentionBadgeStyle tints the unseen reactive-attention counter (⚡N) purple,
+// matching the attention inbox overlay's border.
+var attentionBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("135")).Bold(true)
 
 // autoJumpIndicator renders the autojump glyph for the header label line.
 // Solid flash when ON, hollow outline when OFF. Shows text briefly after toggling.
@@ -86,6 +91,9 @@ func (m Model) View() string {
 		left := m.autoJumpIndicator()
 		if m.sidebar.FocusMode() {
 			left += " " + focusModeStyle.Render(ui.IconFlag+" FOCUS")
+		}
+		if m.attentionUnseen > 0 {
+			left += " " + attentionBadgeStyle.Render(fmt.Sprintf("⚡%d", m.attentionUnseen))
 		}
 		right := m.usageBar.LabelView()
 		leftW := lipgloss.Width(left)
@@ -264,6 +272,16 @@ func (m Model) View() string {
 	// Settings overlay centered
 	if m.state == StatePrefsEditor {
 		content = ui.OverlayCentered(content, m.renderSettingsOverlay(), innerWidth)
+	}
+
+	// Attention inbox overlay centered (W7)
+	if m.state == StateAttentionInbox {
+		content = ui.OverlayCentered(content, m.attention.View(innerWidth, contentHeight), innerWidth)
+	}
+
+	// Watch-creation picker (gw): tiny centered two-phase prompt
+	if m.state == StateWatchPicker {
+		content = ui.OverlayCentered(content, m.renderWatchPicker(), innerWidth)
 	}
 
 	// Path input overlay for A (new session at typed path) — same pivot as new-session prompt

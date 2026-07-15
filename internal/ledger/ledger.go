@@ -113,6 +113,10 @@ type AttentionItem struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 	Deliveries []Delivery `json:"deliveries,omitempty"`
 	Resolution string     `json:"resolution,omitempty"` // what closed it: superseding signal id, user ack, expiry
+	// W7 reactive-attention fields: the causal audit chain and the bounded
+	// proposal a recommend-level watch attached (spec Decisions 9, 10).
+	Audit          []AuditEvent `json:"audit,omitempty"`
+	Recommendation string       `json:"recommendation,omitempty"`
 }
 
 // Cursor is a consumer's high-water mark in the signal log, keyed by Hermes
@@ -149,6 +153,7 @@ type Ledger struct {
 	byID    map[string]*Signal
 	items   []*AttentionItem
 	cursors map[string]Cursor
+	watches []*Watch // durable reactive contracts (W7); persisted in watches.json
 }
 
 // Open loads the ledger from dir, reading day segments within window (0 →
@@ -173,7 +178,9 @@ func Open(dir string, window time.Duration) (*Ledger, error) {
 	l.loadSegments()
 	l.loadAttention()
 	l.loadCursors()
+	l.loadWatches()
 	l.expireStaleLocked(l.now())
+	l.sweepWatchesLocked(l.now())
 	return l, nil
 }
 
@@ -221,7 +228,8 @@ func (l *Ledger) Ingest(kind SignalKind, anchor, sessionID, project string, evid
 	if supersedes != "" {
 		l.resolveItemsBySignalLocked(supersedes, "superseded by "+sig.ID, now)
 	}
-	l.deriveAttentionLocked(stored, now)
+	item := l.deriveAttentionLocked(stored, now)
+	l.matchWatchesLocked(stored, item, now)
 	l.expireStaleLocked(now)
 	l.saveAttention()
 	return stored, true
@@ -389,27 +397,28 @@ func severityOf(c Category) Severity {
 	}
 }
 
-// deriveAttentionLocked folds a fresh signal into the attention set. A signal
-// joins an existing *open* (undelivered) item of the same category and session
-// scope — that is the coalescing that keeps five completed turns from becoming
-// five inbox rows — otherwise it creates a new open item.
+// deriveAttentionLocked folds a fresh signal into the attention set and returns
+// the item it landed in (nil for kinds that produce none). A signal joins an
+// existing *open* (undelivered) item of the same category and session scope —
+// that is the coalescing that keeps five completed turns from becoming five
+// inbox rows — otherwise it creates a new open item.
 //
 // session_started deliberately produces no item: a spawn is context, not a
 // call on the user's attention; it still reaches Lulu as a fleet-snapshot
 // change and remains in the signal log.
-func (l *Ledger) deriveAttentionLocked(sig *Signal, now time.Time) {
+func (l *Ledger) deriveAttentionLocked(sig *Signal, now time.Time) *AttentionItem {
 	if sig.Kind == SignalSessionStarted {
-		return
+		return nil
 	}
 	cat := categoryOf(sig)
 	for _, it := range l.items {
 		if it.Status == StatusOpen && it.Category == cat && it.Scope.SessionID == sig.SessionID {
 			it.SignalIDs = append(it.SignalIDs, sig.ID)
 			it.UpdatedAt = now
-			return
+			return it
 		}
 	}
-	l.items = append(l.items, &AttentionItem{
+	item := &AttentionItem{
 		ID:        newULID(now),
 		Category:  cat,
 		Severity:  severityOf(cat),
@@ -418,7 +427,9 @@ func (l *Ledger) deriveAttentionLocked(sig *Signal, now time.Time) {
 		Status:    StatusOpen,
 		CreatedAt: now,
 		UpdatedAt: now,
-	})
+	}
+	l.items = append(l.items, item)
+	return item
 }
 
 // expireStaleLocked expires unresolved items older than itemExpiry.

@@ -57,6 +57,10 @@ unregister_orchestrator(id) -> {ok, operation, target}
 
 ### Features
 
+attention() -> {items=[]item, watches=[]watch}
+  The attention inbox: unresolved attention items (with description, any
+  recommendation, and the causal audit chain) plus all known watches.
+
 cancel_commit_done(id) -> {ok, operation, target}
   Cancel pending commit-done auto-kill.
 
@@ -113,6 +117,21 @@ transcript(id) -> []string
 
 unlater(later_id) -> {ok, operation, target}
   Remove a Later record by its ID.
+
+unwatch(watch_id) -> {ok, operation, target}
+  Cancel a live reactive watch by its watch_id.
+
+watch(id, [{condition, response, project, expires_in_minutes, cooldown_seconds, max_firings, llm_budget}]) -> watch
+  Create a reactive watch on a session (W7). Defaults: condition
+  "completed_turn", response "inspect_and_recommend", 24h expiry, 60s
+  cooldown, 20 firings. Pass "" as id with opts.project for a project-wide
+  watch, or "" with no project for fleet-wide. While a TUI client is attached,
+  Spirit reacts: inbox records, notify raises one coalesced notification,
+  inspect_and_recommend attaches a bounded LLM proposal to the attention item.
+
+watches() -> []watch
+  List reactive watches: scope, condition, response, FSM state, firing/LLM
+  budgets, last outcome. Includes recently expired/cancelled/failed watches.
 
 ### Backlog
 
