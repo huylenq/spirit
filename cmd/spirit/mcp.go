@@ -120,6 +120,14 @@ Follow proposal → approval → receipt → reconciliation: send/queue for a di
 	}
 
 	b.WriteString(`
+## Batches and runbooks (W8)
+
+- **One batch = one decision.** ` + "`run_actions`" + ` executes a validated batch of steps as a single tool call, so the human approves the WHOLE batch in one permission round-trip (the approval overlay renders every step with its target and risk class). Prefer one batch over N separate side-effect calls when the steps belong to one intent.
+- **Plan before destructive batches.** A batch containing ` + "`kill`" + `, ` + "`later`" + ` with kill, or ` + "`commit`" + ` with done follows the approval table: show the ` + "`plan_actions`" + ` preview and get explicit approval unless the user gave the exact imperative and target.
+- **Partial failure is structured.** Default ` + "`on_error: stop`" + `: steps after a failure are skipped (receipts say so) and returned in ` + "`remainder`" + ` — resume by resubmitting the remainder with ` + "`resume_of`" + ` set to the failed batch's ` + "`batch_id`" + `. Never re-run already-executed steps.
+- **Reconcile queued steps by action id.** Each queued step's receipt ` + "`action_id`" + ` is stamped onto the queue item; create an ` + "`action_reconciled`" + ` watch with that ` + "`action_id`" + ` to be told when exactly that instruction is delivered or fails.
+- **Runbooks are named batch emitters.** ` + "`list_runbooks`" + ` → ` + "`explain_runbook`" + ` (metadata, zero execution) → ` + "`plan_runbook`" + ` (dry-run; the build phase is structurally side-effect-free) → ` + "`run_runbook`" + ` (the emitted batch rides the run_actions pipeline). Always explain/plan a runbook that declares destructive action classes before running it.
+
 ## Session status vocabulary
 
 - ` + "`agent-turn`" + ` / "working" — the coding agent is actively working.

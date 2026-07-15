@@ -24,6 +24,7 @@ type daemonAPI interface {
 	Summary(sessionID string) (*claude.SessionSummary, error)
 	Send(sessionID, message string) error
 	Queue(paneID, sessionID, message string) error
+	QueueMessage(paneID, sessionID, message, actionID string) (string, error)
 	SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (daemon.SpawnResultData, error)
 	Kill(sessionID string) error
 	SetTags(sessionID string, tags []string) error
@@ -73,6 +74,27 @@ func Tools() []ToolInfo {
 
 // schema is a helper to write a tool input schema literally.
 func schema(s string) json.RawMessage { return json.RawMessage(s) }
+
+// batchInputSchema is the shared plan_actions / run_actions argument schema —
+// the single batch step schema (internal/batch) expressed as JSON Schema.
+const batchInputSchema = `{"type":"object","properties":{
+"actions":{"type":"array","minItems":1,"description":"Ordered batch steps.","items":{"type":"object","properties":{
+"op":{"type":"string","enum":["send","queue","tag","note","later","kill","commit","spawn","wait"]},
+"session_id":{"type":"string","description":"Target session (required for every op except spawn)."},
+"message":{"type":"string","description":"send/queue: the message; spawn: optional initial prompt."},
+"tags":{"type":"array","items":{"type":"string"},"description":"tag: replacement tag list."},
+"note":{"type":"string","description":"note: the note text (empty clears)."},
+"kill":{"type":"boolean","description":"later: also kill the pane (destructive)."},
+"done":{"type":"boolean","description":"commit: auto-kill after the commit completes (destructive)."},
+"cwd":{"type":"string","description":"spawn: working directory."},
+"provider":{"type":"string","enum":["claude","codex"],"description":"spawn: agent provider (default claude)."},
+"tmux_session":{"type":"string","description":"spawn: tmux session to open a window in."},
+"phase":{"type":"string","enum":["idle","working","cycle"],"description":"wait: target lifecycle phase."},
+"timeout_seconds":{"type":"integer","description":"wait: max seconds (default 60, cap 600)."}
+},"required":["op"]}},
+"on_error":{"type":"string","enum":["stop","continue"],"description":"Partial-failure policy (default stop: later steps are skipped and returned as the resubmittable remainder)."},
+"resume_of":{"type":"string","description":"Set to a previous batch_id when resubmitting its remainder."}
+},"required":["actions"]}`
 
 // buildTools returns the full tool inventory. Read-only tools return raw data;
 // side-effect tools return an *receipt.ActionReceipt.
@@ -128,6 +150,30 @@ func buildTools() []tool {
 			Handler:     handleListAttention,
 		},
 		{
+			Name:        "plan_actions",
+			Description: "Dry-run a batch of actions (W8): validates the whole batch fail-fast (unknown session, capability-gated op for the target's provider, malformed step), resolves every target against the live fleet, and returns the ordered plan — one line per step with its risk class (read_only / reversible / destructive per the approval table) and approval points marked. Executes NOTHING. Use before run_actions to preview and to propose destructive batches for approval.",
+			InputSchema: schema(batchInputSchema),
+			Handler:     handlePlanActions,
+		},
+		{
+			Name:        "list_runbooks",
+			Description: "List the named runbooks (durable Lua definitions in ~/.spirit/runbooks plus builtins): name, description, declared params (required marked with '!'), and declared action classes. A runbook's execute phase emits a batch that rides the same action pipeline as run_actions.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+			Handler:     handleListRunbooks,
+		},
+		{
+			Name:        "explain_runbook",
+			Description: "Explain a runbook without executing ANY of it (not even its build phase): metadata, declared params, declared action classes, and source path.",
+			InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`),
+			Handler:     handleExplainRunbook,
+		},
+		{
+			Name:        "plan_runbook",
+			Description: "Dry-run a runbook: runs its side-effect-free build phase (pure computation over the fleet snapshot + params — no side-effect functions exist in that VM) and returns the emitted batch as a plan with resolved targets and risk classes. Executes NOTHING.",
+			InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string"},"params":{"type":"object","additionalProperties":{"type":"string"},"description":"Runbook parameters (string values). Required params are marked in explain_runbook/list_runbooks."}},"required":["name"]}`),
+			Handler:     handlePlanRunbook,
+		},
+		{
 			Name:        "wait_session",
 			Description: "Block until a session reaches a lifecycle phase: idle (user-turn), working (agent-turn), or cycle (a full working-then-idle round trip). Use after a side-effect tool to reconcile that the target actually reacted — e.g. send_message then wait_session working. Returns a receipt-style result with the outcome (reached | timeout | vanished) and observed session state.",
 			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"},"phase":{"type":"string","enum":["idle","working","cycle"],"description":"Target phase; cycle waits for the session to be observed working and then return to idle."},"timeout_seconds":{"type":"integer","description":"Max seconds to wait (default 60, capped at 600)."}},"required":["session_id","phase"]}`),
@@ -135,6 +181,20 @@ func buildTools() []tool {
 		},
 
 		// --- Side effects (return an ActionReceipt) ---
+		{
+			Name:        "run_actions",
+			Description: "Execute a validated batch of actions as ONE unit (one tool call = one human decision for the whole batch). Validates exactly like plan_actions — an invalid batch is rejected whole, never half-executed — then runs the steps in order through the same daemon operations the individual tools use, returning one ActionReceipt per step (stamped with the batch_id). Partial failure: on_error 'stop' (default) skips the steps after a failure and returns them verbatim in 'remainder' — resume by resubmitting the remainder with resume_of set to this batch_id; 'continue' runs every step regardless. Destructive steps (kill, later+kill, commit+done) follow the approval table: propose via plan_actions first unless the user gave the exact imperative and target.",
+			InputSchema: schema(batchInputSchema),
+			SideEffect:  true,
+			Handler:     handleRunActions,
+		},
+		{
+			Name:        "run_runbook",
+			Description: "Execute a named runbook: its build phase emits a batch which rides the same action pipeline as run_actions — per-step ActionReceipts, stop-on-failure with a resubmittable remainder. Structured results, never bare terminal side effects. Use explain_runbook/plan_runbook first for anything declaring destructive action classes.",
+			InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string"},"params":{"type":"object","additionalProperties":{"type":"string"}}},"required":["name"]}`),
+			SideEffect:  true,
+			Handler:     handleRunRunbook,
+		},
 		{
 			Name:        "send_message",
 			Description: "Send a message to a session's tmux pane now. The session must be idle to accept input. Returns an ActionReceipt with the observed post-send session state for reconciliation.",
@@ -487,8 +547,15 @@ func handleQueueMessage(api daemonAPI, args json.RawMessage) (any, bool) {
 	if !ok {
 		return rcpt.Fail(fmt.Errorf("session not found: %s", a.SessionID)), true
 	}
-	if err := api.Queue(s.PaneID, a.SessionID, a.Message); err != nil {
+	// Stamp the receipt's action id onto the queue item (W8): the delivery
+	// signal and the turn it causes carry it, so action_reconciled watches can
+	// anchor to this exact instruction.
+	itemID, err := api.QueueMessage(s.PaneID, a.SessionID, a.Message, rcpt.ActionID)
+	if err != nil {
 		return rcpt.Fail(err), true
+	}
+	if itemID != "" {
+		rcpt.Params["queue_item_id"] = itemID
 	}
 	rcpt.DeliveryOutcome = receipt.OutcomeQueued
 	rcpt.ObservedState = observe(api, a.SessionID)

@@ -85,6 +85,13 @@ later(id) -> {ok, operation, target}
 later_kill(id) -> {ok, operation, target}
   Mark session for later and kill its pane.
 
+plan_actions(steps) -> plan
+  Dry-run a batch of actions (W8): validates fail-fast (unknown session,
+  capability-gated op, malformed step), resolves targets against the live
+  fleet, and returns the ordered plan with a risk class per step (Decision 5)
+  and approval points marked. Executes NOTHING. Steps use the shared schema:
+  {op="send|queue|tag|note|later|kill|commit|spawn|wait", session_id=..., ...}.
+
 queue_commit_done(id) -> {ok, operation, target}
   Queue /commit behind any pending work and auto-kill on commit. Returns
   immediately — unlike commit_done(), this does not type into the pane right
@@ -94,6 +101,35 @@ queue_commit_done(id) -> {ok, operation, target}
 
 raw_transcript(id) -> []entry
   Get parsed transcript entries with index, type, content_type, summary, timestamp.
+
+run_actions(steps, [{on_error, resume_of}]) -> result
+  Execute a batch of actions as ONE unit (W8): validates exactly like
+  plan_actions (an invalid batch is rejected whole, never half-executed),
+  then runs steps sequentially and returns one ActionReceipt per step.
+  Partial failure: on_error="stop" (default) skips the steps after a failure
+  and returns them verbatim in result.remainder — resume by resubmitting the
+  remainder with resume_of=result.batch_id. on_error="continue" runs every
+  step regardless.
+
+runbook_explain(name) -> runbook
+  Explain a runbook without executing ANY of it (not even the build phase):
+  metadata, declared params (required marked), and declared action classes.
+
+runbook_plan(name, [params]) -> plan
+  Dry-run a runbook (W8): runs its side-effect-free build phase over the live
+  fleet snapshot and returns the emitted batch as a plan — targets resolved,
+  risk classes marked, nothing executed.
+
+runbook_run(name, [params]) -> result
+  Execute a runbook: the build phase emits a batch which then rides the same
+  action pipeline as run_actions — per-step ActionReceipts, stop-on-failure
+  with a resubmittable remainder. Structured results, not terminal side
+  effects.
+
+runbooks() -> []runbook
+  List the named runbooks (~/.spirit/runbooks/*.lua plus builtins): name,
+  description, declared params and action classes. A runbook's execute phase
+  emits a batch that rides the same action pipeline as run_actions.
 
 set_note(id, note) -> {ok, operation, target}
   Set a session's note (persisted and broadcast to subscribers). An empty string
@@ -121,13 +157,16 @@ unlater(later_id) -> {ok, operation, target}
 unwatch(watch_id) -> {ok, operation, target}
   Cancel a live reactive watch by its watch_id.
 
-watch(id, [{condition, response, project, expires_in_minutes, cooldown_seconds, max_firings, llm_budget}]) -> watch
+watch(id, [{condition, response, project, action_id, expires_in_minutes, cooldown_seconds, max_firings, llm_budget}]) -> watch
   Create a reactive watch on a session (W7). Defaults: condition
   "completed_turn", response "inspect_and_recommend", 24h expiry, 60s
   cooldown, 20 firings. Pass "" as id with opts.project for a project-wide
-  watch, or "" with no project for fleet-wide. While a TUI client is attached,
-  Spirit reacts: inbox records, notify raises one coalesced notification,
-  inspect_and_recommend attaches a bounded LLM proposal to the attention item.
+  watch, or "" with no project for fleet-wide. opts.action_id (with condition
+  "action_reconciled") anchors the watch to ONE action — e.g. a batch step's
+  action_id — firing exactly when that action's delivery/failure signal lands.
+  While a TUI client is attached, Spirit reacts: inbox records, notify raises
+  one coalesced notification, inspect_and_recommend attaches a bounded LLM
+  proposal to the attention item.
 
 watches() -> []watch
   List reactive watches: scope, condition, response, FSM state, firing/LLM

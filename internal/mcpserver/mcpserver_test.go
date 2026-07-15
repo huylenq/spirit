@@ -17,15 +17,16 @@ import (
 // fakeDaemon is an in-process daemonAPI double. It records side-effect calls and can
 // be told to reject a Send so error mapping is exercised.
 type fakeDaemon struct {
-	sessions      []agent.Session
-	sendErr       error
-	sent          []string // "sessionID|message" for each Send
-	queued        []string
-	killed        []string
-	tagsSet       map[string][]string
-	spawnID       string
-	spawnPane     string
-	actionReports []string // "actionID|operation|sessionID|error" per failed-receipt report
+	sessions        []agent.Session
+	sendErr         error
+	sent            []string // "sessionID|message" for each Send
+	queued          []string
+	queuedActionIDs []string
+	killed          []string
+	tagsSet         map[string][]string
+	spawnID         string
+	spawnPane       string
+	actionReports   []string // "actionID|operation|sessionID|error" per failed-receipt report
 
 	watches        []ledger.Watch
 	watchErr       error
@@ -60,6 +61,12 @@ func (f *fakeDaemon) Send(sessionID, message string) error {
 func (f *fakeDaemon) Queue(paneID, sessionID, message string) error {
 	f.queued = append(f.queued, sessionID+"|"+message)
 	return nil
+}
+
+func (f *fakeDaemon) QueueMessage(paneID, sessionID, message, actionID string) (string, error) {
+	f.queued = append(f.queued, sessionID+"|"+message)
+	f.queuedActionIDs = append(f.queuedActionIDs, actionID)
+	return "qi_fake", nil
 }
 
 func (f *fakeDaemon) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (daemon.SpawnResultData, error) {

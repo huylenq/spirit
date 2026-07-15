@@ -184,6 +184,35 @@ var agentCommands = []agentCommand{
 		Handler: runNote,
 	},
 	{
+		Name: "plan", Args: "'<batch-json>'|-",
+		Desc: "Dry-run a batch of actions: validate + resolve targets + risk classes; executes NOTHING",
+		Examples: []string{
+			`plan '[{"op":"queue","session_id":"SESSION_ID","message":"run the linter"}]'`,
+			`plan '{"actions":[{"op":"kill","session_id":"SESSION_ID"}]}'`,
+		},
+		Handler: runPlan,
+	},
+	{
+		Name: "action", Args: "'<batch-json>'|-",
+		Desc: "Execute a validated batch as one unit; one ActionReceipt per step, stop-on-failure remainder is resubmittable (resume_of)",
+		Examples: []string{
+			`action '[{"op":"queue","session_id":"SESSION_ID","message":"run the linter"},{"op":"wait","session_id":"SESSION_ID","phase":"cycle"}]'`,
+			`action '{"actions":[...],"on_error":"continue"}'`,
+		},
+		Handler: runAction,
+	},
+	{
+		Name: "runbook", Args: "list|explain|plan|run <name> [--param k=v ...]",
+		Desc: "Named runbooks: explain (metadata only), plan (dry-run the emitted batch), run (execute with per-step receipts)",
+		Examples: []string{
+			"runbook list",
+			"runbook explain broadcast",
+			`runbook plan broadcast --param message="wrap up" --param project=/path/to/repo`,
+			`runbook run broadcast --param message="wrap up"`,
+		},
+		Handler: runRunbook,
+	},
+	{
 		Name: "backlog", Args: "list|create|update|delete <args>",
 		Desc: "Backlog CRUD",
 		Examples: []string{
