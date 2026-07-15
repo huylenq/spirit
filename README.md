@@ -98,7 +98,7 @@ Inside the TUI:
 | `j` / `k` | Navigate sessions |
 | `Enter` | Switch to selected pane |
 | `/` | Search · `p` Filter by project · `;` Command palette |
-| `Tab` / `Shift-Tab` | Open Copilot / cycle Copilot mode |
+| `Tab` / `Shift-Tab` | Open Lulu / toggle Lulu · `alt+'` switch mode |
 | `Ctrl-j` / `Ctrl-k` | Next/prev message in detail |
 | `Ctrl-d` / `Ctrl-u` | Half-page scroll preview |
 | `s` / `S` | Synthesize one / all sessions (AI) |

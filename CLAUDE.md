@@ -68,7 +68,7 @@ The daemon is a long-lived process that polls Claude sessions every ~1s and push
 - **`internal/claude/`** — Session discovery and parsing. `discover.go` finds sessions from status files. `session.go` defines `ClaudeSession`. `transcript.go` parses JSONL transcripts. `hook.go` handles `spirit _hook` events. `status.go` manages status file I/O. `backlog.go`, `macros.go`, `usage.go`, `worktree.go`, `synthesize.go`, `digest.go`.
 - **`internal/scripting/`** — Lua scripting via `gopher-lua`. `eval.go` is the entry point. API registered per domain: `api_sessions.go`, `api_send.go`, `api_lifecycle.go`, `api_features.go`, `api_orchestrator.go`, `api_util.go`, `api_context.go`. `sandbox.go` creates the restricted VM. `convert.go` handles Lua↔Go value conversion.
 - **`internal/tmux/`** — tmux API wrapper (`api.go`).
-- **`internal/copilot/`** — Copilot AI companion. `workspace.go` manages the `~/.spirit/copilot/` workspace (bootstrap files, CLAUDE.md generation). `journal.go` is an append-only NDJSON event log. `memory.go` provides two-tier memory (long-term `MEMORY.md` + daily logs with keyword search + MMR reranking). `prompt.go` builds context preambles (sessions, events, memory, digest — capped at 12k chars). `events.go` defines event types.
+- **`internal/copilot/`** — Lulu companion helpers. `prompt.go` builds the lightweight `<live-sessions>` preamble. `journal.go` is an append-only NDJSON event log (retained for the planned W7 signal store). `events.go` defines event types. The ACP transport, session lifecycle, and permission gating live in `internal/daemon/acp_client.go`.
 - **`internal/spirit/`** — Spirit animal name generation for session avatars.
 
 ### Key Data Flow
@@ -84,7 +84,7 @@ Newline-delimited JSON over Unix socket. `protocol.go` defines all request types
 
 ### App State Machine
 
-`Model.state` in `internal/app/` controls which key handler is active. States include `StateNormal`, `StateSearching`, `StateKillConfirm`, `StatePromptRelay`, `StateQueueRelay`, `StatePalette`, `StateMacro`, `StateNoteEdit`, `StatePrefsEditor`, `StateMinimapSettings`, `StateCopilot`, `StateCopilotConfirm`, etc.
+`Model.state` in `internal/app/` controls which key handler is active. States include `StateNormal`, `StateSearching`, `StateKillConfirm`, `StatePromptRelay`, `StateQueueRelay`, `StatePalette`, `StateMacro`, `StateNoteEdit`, `StatePrefsEditor`, `StateMinimapSettings`, `StateCopilot`, `StateCopilotConfirm`, `StateAdjustCopilot`, etc.
 
 ## Troubleshooting TUI Rendering
 
@@ -99,17 +99,20 @@ Headless render using the same `View()` code, with ANSI stripped. Works outside 
 
 `spirit setup` patches `~/.claude/settings.json` to register `spirit _hook <type> #spirit-hook` for each event type. The `#spirit-hook` marker identifies spirit-managed hooks for future migration/updates without touching unrelated hooks.
 
-## Copilot
+## Copilot (Lulu)
 
-Persistent AI companion inside Spirit, toggled with `gc`. Renders as a floating indigo-bordered overlay in the bottom-right corner. The daemon runs a `claude` CLI subprocess per prompt with a 3-minute timeout.
+Lulu is the persistent AI companion inside Spirit, toggled with `gc` or `shift+tab` and rendered as a floating indigo-bordered overlay (float mode) or a docked right-side column; `alt+'` switches mode. It is backed by a persistent **Hermes ACP session**, not a `claude` CLI subprocess per prompt.
 
 **Key architecture:**
-- **Context preamble** (`internal/copilot/prompt.go`): Every prompt is injected with live session states, recent events (last 50), workspace digest, and long-term memory — capped at 12k chars.
-- **Event journal** (`~/.spirit/copilot/events/YYYY-MM-DD.ndjson`): Append-only log of all daemon activity (session spawns, status changes, git commits, etc.). Feeds the copilot's situational awareness.
-- **Two-tier memory**: Evergreen `MEMORY.md` + temporal-decayed `memory/YYYY-MM-DD.md` daily logs, with keyword search and MMR reranking.
-- **History persistence**: In-memory `[]CopilotHistoryMsg` in daemon, serialized to `~/.spirit/copilot/chat_history.json`. Survives TUI and daemon restarts. Last 200 messages kept.
-- **Protocol**: `copilot_chat`, `copilot_cancel`, `copilot_status`, `copilot_history`, `copilot_clear_history` request types. Streaming responses via `copilot_stream` with chunk types: `text_delta`, `thought`, `tool_call`, `tool_update`, `plan`, `usage`, `done`, `error`, `confirm`.
-- **Tool confirmations**: `StateCopilotConfirm` state — user approves (`y`) or rejects (`n`) tool calls before execution.
+- **ACP transport** (`internal/daemon/acp_client.go`): the daemon runs one long-lived `hermes acp` subprocess speaking JSON-RPC 2.0 over newline-delimited stdio. It starts lazily on the first prompt: `initialize` → `session/load` (resume) or `session/new` (fresh) → `session/prompt` streams `session/update` notifications. A single subprocess serves the whole conversation; there is no per-prompt process spawn.
+- **Session persistence**: the Hermes session UUID is written to `~/.spirit/copilot/hermes_session` and resumed via `session/load` on daemon restart, so the conversation survives restarts. `/new` (`copilot_clear_history`) kills the subprocess, forgets the UUID, and starts a fresh session.
+- **Scope + context** (`internal/copilot/prompt.go`): each chat carries a `request_id`/`client_id` and a scope object — the selected session captured at the originating client and validated by the daemon (vanished session → eager failure, never silent retargeting). Prompts get a bounded `<selected-session>` dossier built from fleet truth, plus a `<live-sessions>` fleet snapshot injected only when it materially changed since Lulu last saw it (digest delta). `/preamble` toggles only the fleet snapshot; stream events are delivered to the originating client only.
+- **MCP tools** (`internal/mcpserver`, `internal/receipt`): `spirit mcp` is injected via `mcp_servers` at session open — Hermes registers 14 typed `mcp__spirit__*` tools (list/get/transcript/diff/hooks/summary + send/queue/spawn/kill/tag/note/later/commit). Side-effect tools return an `ActionReceipt` (action_id, target, delivery outcome, observed post-action state). SKILL.md is generated from the tool registry and installed to `~/.hermes/skills/spirit/` by `spirit setup`.
+- **Model & mode switching**: `/model [id]` maps to `session/set_model`; `/mode [id]` maps to `session/set_mode` (`default`/`accept_edits`/`dont_ask`), persists to `~/.spirit/copilot/mode`, and is re-applied on session open. Both are shown in the panel title.
+- **Event journal** (`~/.spirit/copilot/events/YYYY-MM-DD.ndjson`, `internal/copilot/journal.go`): append-only NDJSON log of daemon activity. Currently write-mostly; **retained** as the raw signal source for the planned W7 reactive-attention store (see `laxicon/plans/lulu-w0-hygiene.md`).
+- **History persistence**: in-memory `[]CopilotHistoryMsg` in the daemon, serialized to `~/.spirit/copilot/chat_history.json`. Survives TUI and daemon restarts. Last 200 messages kept.
+- **Protocol**: `copilot_chat`, `copilot_cancel`, `copilot_status`, `copilot_history`, `copilot_clear_history`, `copilot_toggle_preamble`, `copilot_set_model`, `copilot_set_mode`, `copilot_permission_answer` request types. Streaming responses via `copilot_stream` with chunk types: `session`, `text_delta`, `thought`, `tool_call`, `tool_update`, `plan`, `usage`, `mode`, `permission_request`, `permission_resolved`, `done`, `error` — all stamped with `request_id`/`client_id` and delivered to the originating client.
+- **Permission flow** (`internal/daemon/acp_permission_flow.go`): every Hermes `session/request_permission` is forwarded to the human — the TUI enters `StateCopilotConfirm` and renders the typed payload (real diff for edits, `$ command` for executes, `⚠ sensitive` flag) with option accelerators (`y`/`a`/`n`/`N`, esc denies) and an auto-deny countdown (daemon resolves at 55s, under Hermes's 60s). Fail-safe deny when no client is attached, on client disconnect, and on prompt cancel/supersede.
 
 ## Lua Scripting
 
