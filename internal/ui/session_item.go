@@ -807,15 +807,30 @@ func (m *SidebarModel) RenderCard(cardWidth, maxLines int, isSelected, isAutoJum
 	// Pad or truncate to exactly maxLines
 	lines := strings.Split(result, "\n")
 	for len(lines) < maxLines {
-		lines = append(lines, strings.Repeat(" ", cardWidth))
+		lines = append(lines, "")
 	}
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
 	}
+
+	// Fill every line to the full card width so the accent background reads as
+	// one solid block. renderItem only fills line 1 (via its gap) and subtitle
+	// lines; the badges/tag line and any trailing padding lines stop short. When
+	// selected, pad the remainder with the avatar fill background; otherwise pad
+	// with plain spaces. PinStatsRight re-pads the last line, so it's covered too.
+	_, padSp := selectionFuncs(isSelected, s.AvatarColorIdx)
+	for i := range lines {
+		if w := lipgloss.Width(lines[i]); w < cardWidth {
+			pad := strings.Repeat(" ", cardWidth-w)
+			if padSp != nil {
+				pad = padSp(pad)
+			}
+			lines[i] += pad
+		}
+	}
 	result = strings.Join(lines, "\n")
 
 	// Pin stats on the bottom-right — selection-aware
-	_, padSp := selectionFuncs(isSelected, s.AvatarColorIdx)
 	statsRight := m.BuildStatsRight(s, dw, isSelected, s.AvatarColorIdx)
 	out := PinStatsRight(result, statsRight, cardWidth, padSp)
 	// Card mode has no slot/flag prefix — selection background starts at col 0.
