@@ -98,6 +98,11 @@ func sessionToTable(L *lua.LState, s claude.ClaudeSession) *lua.LTable {
 		queueTable.Append(lua.LString(msg))
 	}
 	t.RawSetString("queue_pending", queueTable)
+	tagsTable := L.NewTable()
+	for _, tag := range s.Tags {
+		tagsTable.Append(lua.LString(tag))
+	}
+	t.RawSetString("tags", tagsTable)
 
 	if !s.CreatedAt.IsZero() {
 		t.RawSetString("created_at", lua.LNumber(s.CreatedAt.Unix()))
