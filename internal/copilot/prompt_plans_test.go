@@ -124,6 +124,21 @@ func TestDossierPlanHintIsExplicitlyAHint(t *testing.T) {
 	}
 }
 
+// A branch whose name contains an active plan's slug upgrades the hint to a
+// specific branch-resemblance line — still labeled unasserted.
+func TestDossierPlanHintBranchAdjacency(t *testing.T) {
+	projects := demoProjects()
+	s := agent.Session{SessionID: "sess-1", GitBranch: "feat/w6-plan-track-b"}
+
+	dossier := BuildDossier(s, "", "", "", &projects[0])
+	if !strings.Contains(dossier, `plan-hint: branch "feat/w6-plan-track-b" resembles plan w6-plan`) {
+		t.Errorf("dossier missing branch-adjacency hint:\n%s", dossier)
+	}
+	if !strings.Contains(dossier, "not an asserted correlation") {
+		t.Errorf("branch hint must stay labeled as a hint:\n%s", dossier)
+	}
+}
+
 func TestDossierNoPlansNoLines(t *testing.T) {
 	s := agent.Session{SessionID: "sess-1"}
 	dossier := BuildDossier(s, "", "", "", nil)

@@ -89,8 +89,8 @@ func planLine(d laxicon.Doc) string {
 // dossierPlanSection renders the plan-awareness lines of the selected-session
 // dossier (spec Decision 13). The `plan:<slug>` tag is the only asserted
 // correlation — it is Lulu-maintained truth. Everything else is offered as a
-// hint (project adjacency) and explicitly labeled as such, never asserted.
-func dossierPlanSection(tags []string, plans *laxicon.ProjectPlans) []string {
+// hint (cwd/branch adjacency) and explicitly labeled as such, never asserted.
+func dossierPlanSection(tags []string, branch string, plans *laxicon.ProjectPlans) []string {
 	var lines []string
 	slug := PlanTagSlug(tags)
 
@@ -112,6 +112,21 @@ func dossierPlanSection(tags []string, plans *laxicon.ProjectPlans) []string {
 	if len(active) == 0 {
 		return nil
 	}
+
+	// Branch adjacency: a branch name that contains an active plan's slug is a
+	// stronger (still unasserted) hint than bare project adjacency.
+	if branch != "" {
+		lowerBranch := strings.ToLower(branch)
+		for _, d := range active {
+			if strings.Contains(lowerBranch, strings.ToLower(d.Slug)) {
+				lines = append(lines, fmt.Sprintf(
+					"plan-hint: branch %q resembles plan %s — cwd/branch adjacency only, not an asserted correlation; confirm with set_tags as plan:%s",
+					branch, planLine(d), d.Slug))
+				return lines
+			}
+		}
+	}
+
 	var slugs []string
 	for i, d := range active {
 		if i == 5 {

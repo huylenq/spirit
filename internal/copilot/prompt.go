@@ -107,7 +107,7 @@ func BuildDossier(s claude.ClaudeSession, view, lane, project string, plans *lax
 	line("last-user-intent", truncate(s.LastUserMessage, maxDossierMessage))
 
 	// Plan awareness: the intent altitude this session serves (Decision 13).
-	for _, planLine := range dossierPlanSection(s.Tags, plans) {
+	for _, planLine := range dossierPlanSection(s.Tags, s.GitBranch, plans) {
 		b.WriteString(planLine)
 		b.WriteString("\n")
 	}
