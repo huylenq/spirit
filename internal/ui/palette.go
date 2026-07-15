@@ -71,6 +71,14 @@ func (m *PaletteModel) EnterLuaMode() {
 	m.input.SetValue("")
 }
 
+// PrefillLua seeds the Lua input with a script (cursor at end) — used by
+// palette entries that hand the user an editable invocation (e.g. a runbook
+// with required params).
+func (m *PaletteModel) PrefillLua(script string) {
+	m.input.SetValue(script)
+	m.input.CursorEnd()
+}
+
 // IsLuaMode returns true when the palette is in Lua eval mode.
 func (m PaletteModel) IsLuaMode() bool {
 	return m.luaMode

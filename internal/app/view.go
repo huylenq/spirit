@@ -284,6 +284,11 @@ func (m Model) View() string {
 		content = ui.OverlayCentered(content, m.renderWatchPicker(), innerWidth)
 	}
 
+	// Runbook dry-run preview (W8): approve the exact planned steps
+	if m.state == StateRunbookConfirm {
+		content = ui.OverlayCentered(content, m.renderRunbookConfirm(innerWidth), innerWidth)
+	}
+
 	// Path input overlay for A (new session at typed path) — same pivot as new-session prompt
 	if m.state == StateNewSessionPathInput {
 		row := max(m.sidebar.SelectedProjectRow(), 0)

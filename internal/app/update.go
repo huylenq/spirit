@@ -291,6 +291,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.macros = claude.LoadMacros(nil)
 		return m, nil
 
+	case runbookPlanMsg:
+		return m.handleRunbookPlanMsg(msg)
+
+	case runbookRunMsg:
+		return m.handleRunbookRunMsg(msg)
+
 	case LuaEvalDoneMsg:
 		var cmds []tea.Cmd
 		for _, f := range msg.Msgs.Flashes {
@@ -1000,6 +1006,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyAttentionInbox(msg)
 	case StateWatchPicker:
 		return m.handleKeyWatchPicker(msg)
+	case StateRunbookConfirm:
+		return m.handleKeyRunbookConfirm(msg)
 	default:
 		return m.handleKeyNormal(msg)
 	}

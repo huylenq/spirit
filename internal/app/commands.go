@@ -3,6 +3,7 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/huylenq/spirit/internal/agent"
+	"github.com/huylenq/spirit/internal/runbook"
 )
 
 // buildCommands returns all palette-worthy commands grouped by category.
@@ -173,6 +174,20 @@ func buildCommands() []Command {
 			Name: "Capture view", Chord: chord("yc"),
 		},
 	}
+	// Runbooks (W8): each named runbook is a palette entry. Selecting one
+	// dry-runs it and shows the preview overlay; y executes the exact
+	// previewed steps. Runbooks with required params open a prefilled Lua
+	// invocation instead.
+	for _, rb := range runbook.List() {
+		rb := rb
+		cmds = append(cmds, Command{
+			Name: "Runbook: " + rb.Name,
+			Execute: func(m *Model) (Model, tea.Cmd) {
+				return m.execRunbookPlan(rb)
+			},
+		})
+	}
+
 	// Chord-bound entries inherit their executor from the chord registry.
 	for i := range cmds {
 		if cmds[i].Chord != nil && cmds[i].Execute == nil {
