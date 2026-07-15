@@ -33,6 +33,16 @@ var (
 	statusDirOnce   sync.Once
 )
 
+// OverrideStatusDirForTest points StatusDir at dir and returns a restore func.
+// Test seam only (cross-package tests need to redirect session-file IO away
+// from the real ~/.spirit); never call it from production code.
+func OverrideStatusDirForTest(dir string) (restore func()) {
+	old := cachedStatusDir
+	statusDirOnce.Do(func() {}) // ensure the Once is spent before we override
+	cachedStatusDir = dir
+	return func() { cachedStatusDir = old }
+}
+
 // DaemonSocketPath returns the path to the daemon Unix socket.
 // If the binary lives inside a git repository, the socket is scoped to that
 // repo root under /tmp (matching the daemon's WorkdirDaemonInfo logic).
@@ -333,6 +343,26 @@ func WriteStopReason(sessionID, reason string) {
 func ReadWaiting(sessionID string) bool {
 	_, err := os.Stat(waitingFilePath(sessionID))
 	return err == nil
+}
+
+// ReadWaitingInfo returns the waiting notification type (permission_prompt /
+// elicitation_dialog) and the waiting file's mtime, or ("" , zero) when the
+// session is not waiting. The mtime identifies the waiting episode for the
+// perception ledger's rising-edge anchor.
+func ReadWaitingInfo(sessionID string) (kind string, at time.Time) {
+	path := waitingFilePath(sessionID)
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", time.Time{}
+	}
+	data, _ := os.ReadFile(path)
+	return strings.TrimSpace(string(data)), info.ModTime()
+}
+
+// StatusModTime exposes the status file's mtime (the last hook write); the
+// perception ledger uses it as a last-resort turn discriminator.
+func StatusModTime(sessionID string) time.Time {
+	return getStatusModTime(sessionID)
 }
 
 func WriteWaiting(sessionID, notifType string) {

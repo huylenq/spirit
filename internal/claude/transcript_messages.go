@@ -157,6 +157,7 @@ func ReadLastUserMessage(sessionID string) string {
 // extracted from a single scan of the transcript tail.
 type AssistantInfo struct {
 	Message  string   // last assistant text
+	UUID     string   // transcript uuid of the last assistant text entry (Claude; empty for providers without entry uuids)
 	Recap    string   // most recent away_summary content (system recap)
 	Insights []string // all ★ Insight blocks found (oldest first)
 }
@@ -268,6 +269,15 @@ func ReadLastAssistantInfo(sessionID string) AssistantInfo {
 		}
 		if result.Message == "" {
 			result.Message = text
+			// Capture the entry's transcript uuid alongside the text: it is the
+			// stable per-turn discriminator the perception ledger anchors
+			// turn_completed on (every Claude transcript entry carries one).
+			var meta struct {
+				UUID string `json:"uuid"`
+			}
+			if json.Unmarshal(line, &meta) == nil {
+				result.UUID = meta.UUID
+			}
 		}
 		if insight := extractInsight(text); insight != "" {
 			result.Insights = append(result.Insights, insight)
