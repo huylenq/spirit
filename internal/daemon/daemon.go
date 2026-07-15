@@ -16,7 +16,7 @@ import (
 
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
-	"github.com/huylenq/spirit/internal/copilot"
+	"github.com/huylenq/spirit/internal/ledger"
 )
 
 type subscriber struct {
@@ -70,8 +70,9 @@ type Daemon struct {
 	synthesizingMu    sync.Mutex
 	synthesizingPanes map[string]bool // paneIDs with in-flight synthesis
 
-	lastSynthMu   sync.Mutex
-	lastSynthTime map[string]time.Time // sessionID → last synth time (manual or auto)
+	lastSynthMu       sync.Mutex
+	lastSynthTime     map[string]time.Time // sessionID → last synth time (manual or auto)
+	autoSynthDisabled bool                 // test override: suppress auto-synthesis goroutines
 
 	overlapMu    sync.RWMutex
 	overlaps     []claude.FileOverlap
@@ -87,7 +88,13 @@ type Daemon struct {
 	usageStats    *claude.UsageStats
 	usageFetching sync.Mutex // held for the duration of a fetch; TryLock prevents overlap
 
-	copilotJournal     *copilot.Journal
+	// perception is the durable signal/attention ledger (W6). Ingest points
+	// live in daemon_ingest.go; nil disables perception (never wedges the
+	// daemon). ledgerBaselined and hadOverlaps are poll-goroutine-only state.
+	perception      *ledger.Ledger
+	ledgerBaselined bool
+	hadOverlaps     bool
+
 	copilotCancel      context.CancelFunc  // non-nil while a copilot prompt is in-flight
 	copilotCancelEpoch uint64              // turn epoch that owns copilotCancel (guarded by copilotMu)
 	copilotMu          sync.Mutex          // protects copilotCancel + copilotCancelEpoch
@@ -181,8 +188,16 @@ func Run(info DaemonInfo) error {
 	// Recover queued messages from disk
 	d.recoverQueue()
 
+	// Initialize the perception ledger (durable signals + attention items).
+	// A failed open logs and leaves perception nil — the daemon runs blind
+	// rather than not at all.
+	if led, err := ledger.Open(ledger.Dir(), ledger.DefaultWindow); err != nil {
+		log.Printf("ledger: disabled: %v", err)
+	} else {
+		d.perception = led
+	}
+
 	// Initialize copilot subsystem
-	d.copilotJournal = copilot.NewJournal(copilot.EventsDir())
 	d.copilotPreamble.Store(true)
 	secureHermesSessionFile() // migrate legacy state permissions
 	// Inject `spirit mcp` as an ACP mcp_server so Hermes registers Spirit's typed

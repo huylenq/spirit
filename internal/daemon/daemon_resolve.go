@@ -137,6 +137,9 @@ func (d *Daemon) resolveQueue(sessions []agent.Session) {
 			log.Printf("queue: session %s disappeared, removing", sessionID)
 			delete(d.queuePanes, sessionID)
 			claude.RemoveQueueMessage(sessionID)
+			for _, msg := range msgs {
+				d.signalQueueOutcome(false, sessionID, sessionID, "", msg, "session disappeared before delivery")
+			}
 			continue
 		}
 		if s.Status != claude.StatusUserTurn || len(msgs) == 0 {
@@ -145,9 +148,11 @@ func (d *Daemon) resolveQueue(sessions []agent.Session) {
 		// Session is Done — deliver the first message only
 		if err := d.sendPrompt(*s, msgs[0]); err != nil {
 			log.Printf("queue: send to pane %s (session %s) failed: %v (will retry)", s.PaneID, sessionID, err)
+			d.signalQueueOutcome(false, sessionID, sessionID, s.Project, msgs[0], err.Error())
 			continue
 		}
 		log.Printf("queue: delivered 1/%d to pane %s (session %s)", len(msgs), s.PaneID, sessionID)
+		d.signalQueueOutcome(true, sessionID, sessionID, s.Project, msgs[0], "")
 		remaining := msgs[1:]
 		if len(remaining) == 0 {
 			delete(d.queuePanes, sessionID)
@@ -180,6 +185,7 @@ func (d *Daemon) resolvePendingPrompts(sessions []agent.Session) {
 		if time.Since(entry.CreatedAt) > 60*time.Second {
 			log.Printf("pending-prompt: pane %s expired after 60s", paneID)
 			delete(d.pendingPromptPanes, paneID)
+			d.signalQueueOutcome(false, "pane:"+paneID, "", "", entry.Prompt, "pending prompt expired: pane never became ready")
 			continue
 		}
 		s, exists := sessionByPane[paneID]
@@ -203,5 +209,6 @@ func (d *Daemon) resolvePendingPrompts(sessions []agent.Session) {
 		}
 		log.Printf("pending-prompt: delivered to pane %s", paneID)
 		delete(d.pendingPromptPanes, paneID)
+		d.signalQueueOutcome(true, s.SessionID, s.SessionID, s.Project, text, "")
 	}
 }

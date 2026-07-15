@@ -66,6 +66,8 @@ const (
 	ReqSetTags                = "set_tags"
 	ReqSetNote                = "set_note"
 
+	ReqActionReport = "action_report"
+
 	ReqBacklogList   = "backlog_list"
 	ReqBacklogCreate = "backlog_create"
 	ReqBacklogUpdate = "backlog_update"
@@ -279,6 +281,19 @@ type SetTagsData struct {
 type SetNoteData struct {
 	SessionID string `json:"sessionID"`
 	Note      string `json:"note"`
+}
+
+// ActionReportData reports the outcome of a side-effect operation executed
+// through an out-of-process surface (the `spirit mcp` server) back to the
+// daemon, so failed ActionReceipts become action_failed signals in the
+// perception ledger. Successful operations are currently not reported — the
+// receipt returned to the caller is their record.
+type ActionReportData struct {
+	ActionID  string `json:"actionID"`
+	Operation string `json:"operation"`
+	SessionID string `json:"sessionID,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type BacklogListData struct {

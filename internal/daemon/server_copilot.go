@@ -160,7 +160,20 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 	// Run streaming in background; results push to the originating client.
 	go func() {
 		defer d.clearCopilotCancel(epoch)
-		output, err := d.runCopilotPromptStreaming(ctx, epoch, req.RequestID, req.ClientID, fullPrompt)
+		// Away-delta (W6 Track A): what happened while the user was away,
+		// pulled from the perception ledger at each user-initiated turn. The
+		// ACP session is ensured first so the Hermes session UUID — the
+		// cursor's owner — is known even on the very first prompt of a fresh
+		// conversation (/new ⇒ fresh UUID ⇒ open-item snapshot, no history).
+		prompt := fullPrompt
+		if d.perception != nil {
+			if err := d.acpClient.ensureReady(); err == nil {
+				if delta, ok := d.perception.ConsumeDelta(d.acpClient.SessionID(), req.RequestID); ok {
+					prompt = delta + "\n\n" + prompt
+				}
+			} // on error, Prompt() below surfaces it through the normal path
+		}
+		output, err := d.runCopilotPromptStreaming(ctx, epoch, req.RequestID, req.ClientID, prompt)
 		if err != nil {
 			return // error + done already sent by runCopilotPromptStreaming
 		}
@@ -360,7 +373,6 @@ func (d *Daemon) handleCopilotSetModel(data json.RawMessage) *Response {
 
 // handleCopilotStatus returns copilot readiness and stats.
 func (d *Daemon) handleCopilotStatus() *Response {
-	events := d.copilotJournal.RecentEventsOrEmpty(999)
 	models, err := d.acpClient.ModelStatus()
 	if err != nil {
 		r := errResponse("copilot status: " + err.Error())
@@ -374,7 +386,7 @@ func (d *Daemon) handleCopilotStatus() *Response {
 
 	r := resultResponse(CopilotStatusData{
 		Ready:       true,
-		EventsToday: len(events),
+		EventsToday: d.perception.SignalsToday(),
 		SessionID:   d.acpClient.SessionID(),
 		Models:      models,
 		Modes:       modes,

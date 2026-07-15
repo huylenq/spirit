@@ -1,13 +1,11 @@
 package daemon
 
 import (
-	"fmt"
 	"slices"
 	"time"
 
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
-	"github.com/huylenq/spirit/internal/copilot"
 )
 
 func (d *Daemon) pollLoop(stop chan struct{}) {
@@ -79,28 +77,23 @@ func (d *Daemon) poll() {
 	d.mu.Lock()
 	if sessionsEqual(d.sessions, sessions) {
 		d.mu.Unlock()
+		d.ledgerBaselined = true // an unchanged fleet is still a baseline
 		return
 	}
-	// Emit copilot events for newly appeared sessions
-	if d.copilotJournal != nil {
-		oldIDs := make(map[string]bool, len(d.sessions))
-		for _, s := range d.sessions {
-			if s.SessionID != "" {
-				oldIDs[s.SessionID] = true
-			}
-		}
-		for _, s := range sessions {
-			if s.SessionID != "" && !oldIDs[s.SessionID] {
-				d.copilotJournal.Append(copilot.CopilotEvent{
-					Time: time.Now(), Type: copilot.EventSessionSpawned,
-					SessionID: s.SessionID, Project: s.Project,
-				})
-			}
-		}
-	}
+	old := d.sessions
 	d.sessions = sessions
 	d.version++
 	d.mu.Unlock()
+
+	// Perception ingest: diff the previous snapshot against the new truth.
+	// The first poll after daemon start only seeds the baseline — a restart
+	// must not replay session_started for the standing fleet.
+	if d.ledgerBaselined {
+		d.observeFleet(old, sessions)
+	} else {
+		d.ledgerBaselined = true
+	}
+
 	d.notifySubscribers(sessions)
 }
 
@@ -138,20 +131,17 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 			d.mu.Unlock()
 			return patchNotFound
 		}
-		// Capture paneID + sessionID before removal for auto-synthesis
-		endPaneID := d.sessions[idx].PaneID
-		endSessionID := d.sessions[idx].SessionID
-		endProject := d.sessions[idx].Project
+		// Capture the session before removal for auto-synthesis + perception
+		endSession := d.sessions[idx]
+		endPaneID := endSession.PaneID
+		endSessionID := endSession.SessionID
 		d.sessions = append(d.sessions[:idx], d.sessions[idx+1:]...)
 		d.version++
 		sessions := d.sessions
 		d.mu.Unlock()
 		d.notifySubscribers(sessions)
-		if d.copilotJournal != nil && endSessionID != "" {
-			d.copilotJournal.Append(copilot.CopilotEvent{
-				Time: time.Now(), Type: copilot.EventSessionDied,
-				SessionID: endSessionID, Project: endProject,
-			})
+		if !endSession.IsPhantom {
+			d.signalSessionEnded(endSession)
 		}
 		if endSessionID != "" {
 			go d.autoSynthesize(endPaneID, endSessionID)
@@ -174,6 +164,9 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	s := &d.sessions[idx]
 	changed := false
 	becameUserTurn := false
+	waitingRose := false
+	waitingFell := false
+	turnStarted := s.LastChanged // when the (possibly) ending turn last changed state
 
 	// Session moved panes (e.g. --resume in a new pane)
 	if nudge.PaneID != "" && s.PaneID != nudge.PaneID {
@@ -184,7 +177,6 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	status := claude.ParseStatus(nudge.Status)
 
 	if nudge.Status != "" && s.Status != status {
-		oldStatus := s.Status
 		// Only a genuine turn completion (Stop) should trigger auto-synthesis.
 		// A permission/elicitation Notification also flips to user-turn but carries
 		// IsWaiting=true — that's a mid-turn pause, not a finished turn, so exclude it
@@ -195,13 +187,6 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 		}
 		s.Status = status
 		changed = true
-		if d.copilotJournal != nil {
-			d.copilotJournal.Append(copilot.CopilotEvent{
-				Time: time.Now(), Type: copilot.EventStatusChange,
-				SessionID: s.SessionID, Project: s.Project,
-				Detail: fmt.Sprintf("%s → %s", oldStatus, status),
-			})
-		}
 	}
 	if nudge.LastUserMessage != "" && s.LastUserMessage != nudge.LastUserMessage {
 		s.LastUserMessage = nudge.LastUserMessage
@@ -218,6 +203,7 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 		}
 		if s.IsWaiting {
 			s.IsWaiting = false
+			waitingFell = true
 			changed = true
 		}
 	}
@@ -227,6 +213,12 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	}
 	if nudge.IsWaiting != nil && s.IsWaiting != *nudge.IsWaiting {
 		s.IsWaiting = *nudge.IsWaiting
+		if s.IsWaiting {
+			waitingRose = true
+			waitingFell = false
+		} else {
+			waitingFell = true
+		}
 		changed = true
 	}
 	if nudge.IsGitCommit != nil && *nudge.IsGitCommit && !s.LastActionCommit {
@@ -244,12 +236,6 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	if nudge.Compacted {
 		s.CompactCount++
 		changed = true
-		if d.copilotJournal != nil {
-			d.copilotJournal.Append(copilot.CopilotEvent{
-				Time: time.Now(), Type: copilot.EventCompacted,
-				SessionID: s.SessionID, Project: s.Project,
-			})
-		}
 	}
 
 	if !changed {
@@ -260,10 +246,23 @@ func (d *Daemon) patchSession(nudge NudgeData) patchResult {
 	s.LastChanged = time.Now()
 	paneID := s.PaneID
 	sessionID := s.SessionID
+	sCopy := *s // snapshot for post-unlock perception ingest
 	d.version++
 	sessions := d.sessions
 	d.mu.Unlock()
 	d.notifySubscribers(sessions)
+
+	// Perception ingest (edge-confirmed + content-anchored; see daemon_ingest.go).
+	if becameUserTurn {
+		d.signalTurnCompleted(sCopy, turnStarted)
+	}
+	if waitingRose {
+		d.signalWaitingRise(sCopy)
+	}
+	if waitingFell && sessionID != "" {
+		d.signalWaitingFall(sessionID)
+	}
+
 	if becameUserTurn && sessionID != "" {
 		go d.autoSynthesize(paneID, sessionID)
 	}
@@ -319,6 +318,10 @@ func (d *Daemon) refreshOverlaps(sessions []agent.Session) {
 	d.overlaps = overlaps
 	d.overlapPanes = panes
 	d.overlapMu.Unlock()
+
+	// Perception ingest: overlap rising edges (deduped per session-set+file
+	// anchor) and resolution once the fleet is overlap-free.
+	d.observeOverlaps(overlaps, sessions)
 }
 
 // timePointerEqual compares two *time.Time pointers for equality.

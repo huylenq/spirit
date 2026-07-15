@@ -152,6 +152,9 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 	case ReqSetNote:
 		return d.handleSetNote(req.Data)
 
+	case ReqActionReport:
+		return d.handleActionReport(req.Data)
+
 	case ReqBacklogList:
 		return d.handleBacklogList(req.Data)
 

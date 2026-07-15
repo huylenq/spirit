@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/huylenq/spirit/internal/claude"
-	"github.com/huylenq/spirit/internal/copilot"
 )
 
 // Debounce windows for auto-synthesis. Short window applies while a session
@@ -20,6 +19,9 @@ const (
 // autoSynthesize runs synthesis for a session that just became idle.
 // Called as a goroutine from patchSession on agent-turn → user-turn transitions.
 func (d *Daemon) autoSynthesize(paneID, sessionID string) {
+	if d.autoSynthDisabled { // test override: keep synthesis out of ingest tests
+		return
+	}
 	if d.readPref("autoSynthesize") == "false" {
 		return
 	}
@@ -61,7 +63,7 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 
 	d.nudge() // show spinner immediately
 
-	summary, _, err := claude.Summarize(sessionID)
+	_, _, err := claude.Summarize(sessionID)
 
 	d.synthesizingMu.Lock()
 	delete(d.synthesizingPanes, paneID)
@@ -71,18 +73,6 @@ func (d *Daemon) autoSynthesize(paneID, sessionID string) {
 	if err != nil {
 		log.Printf("auto-synth: session %s: %v", sessionID, err)
 		return
-	}
-
-	if d.copilotJournal != nil {
-		detail := ""
-		if summary != nil {
-			detail = summary.SynthesizedTitle
-		}
-		d.copilotJournal.Append(copilot.CopilotEvent{
-			Time: time.Now(), Type: copilot.EventSynthesized,
-			SessionID: sessionID,
-			Detail:    detail,
-		})
 	}
 
 	// No /rename SendKeys here — auto-synth must not inject keystrokes into

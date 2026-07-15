@@ -427,6 +427,14 @@ func (c *Client) SetNote(sessionID, note string) error {
 	return c.rpcInto(Request{Type: ReqSetNote, Data: marshalData(SetNoteData{SessionID: sessionID, Note: note})}, nil)
 }
 
+// ReportActionFailure records a failed side-effect operation in the daemon's
+// perception ledger (action_failed signal, anchored on the receipt's action id).
+func (c *Client) ReportActionFailure(actionID, operation, sessionID, errMsg string) error {
+	return c.rpcInto(Request{Type: ReqActionReport, Data: marshalData(ActionReportData{
+		ActionID: actionID, Operation: operation, SessionID: sessionID, Error: errMsg,
+	})}, nil)
+}
+
 func (c *Client) BacklogList(cwd string) ([]claude.Backlog, error) {
 	var data BacklogListResultData
 	err := c.rpcInto(Request{Type: ReqBacklogList, Data: marshalData(BacklogListData{CWD: cwd})}, &data)

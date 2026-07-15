@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+
+	"github.com/huylenq/spirit/internal/receipt"
 )
 
 // protocolVersion is what the server advertises when a client omits one. When the
@@ -199,6 +201,14 @@ func (s *Server) handleToolsCall(params json.RawMessage) (*toolCallResult, *rpcE
 	for _, t := range s.tools {
 		if t.Name == p.Name {
 			payload, isErr := t.Handler(s.api, p.Arguments)
+			// A failed side-effect receipt becomes an action_failed signal in
+			// the daemon's perception ledger. Best-effort: a report failure
+			// must not mask the receipt the caller is owed.
+			if rcpt, ok := payload.(*receipt.ActionReceipt); ok && rcpt.DeliveryOutcome == receipt.OutcomeFailed {
+				if err := s.api.ReportActionFailure(rcpt.ActionID, rcpt.Operation, rcpt.Target.SessionID, rcpt.Error); err != nil {
+					log.Printf("mcp: action_report failed: %v", err)
+				}
+			}
 			return textResult(payload, isErr), nil
 		}
 	}

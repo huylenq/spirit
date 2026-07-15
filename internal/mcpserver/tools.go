@@ -30,6 +30,7 @@ type daemonAPI interface {
 	LaterKill(paneID string, pid int, sessionID, wait string) error
 	CommitOnly(paneID, sessionID string, pid int) error
 	CommitAndDone(paneID, sessionID string, pid int) error
+	ReportActionFailure(actionID, operation, sessionID, errMsg string) error
 }
 
 // Compile-time check that the real client satisfies the interface.

@@ -16,14 +16,15 @@ import (
 // fakeDaemon is an in-process daemonAPI double. It records side-effect calls and can
 // be told to reject a Send so error mapping is exercised.
 type fakeDaemon struct {
-	sessions  []agent.Session
-	sendErr   error
-	sent      []string // "sessionID|message" for each Send
-	queued    []string
-	killed    []string
-	tagsSet   map[string][]string
-	spawnID   string
-	spawnPane string
+	sessions      []agent.Session
+	sendErr       error
+	sent          []string // "sessionID|message" for each Send
+	queued        []string
+	killed        []string
+	tagsSet       map[string][]string
+	spawnID       string
+	spawnPane     string
+	actionReports []string // "actionID|operation|sessionID|error" per failed-receipt report
 }
 
 func (f *fakeDaemon) Sessions(string) ([]agent.Session, error) { return f.sessions, nil }
@@ -81,11 +82,15 @@ func (f *fakeDaemon) SetTags(sessionID string, tags []string) error {
 	f.tagsSet[sessionID] = tags
 	return nil
 }
-func (f *fakeDaemon) SetNote(string, string) error                    { return nil }
-func (f *fakeDaemon) Later(string, string, string) error              { return nil }
-func (f *fakeDaemon) LaterKill(string, int, string, string) error     { return nil }
-func (f *fakeDaemon) CommitOnly(string, string, int) error            { return nil }
-func (f *fakeDaemon) CommitAndDone(string, string, int) error         { return nil }
+func (f *fakeDaemon) SetNote(string, string) error                { return nil }
+func (f *fakeDaemon) Later(string, string, string) error          { return nil }
+func (f *fakeDaemon) LaterKill(string, int, string, string) error { return nil }
+func (f *fakeDaemon) CommitOnly(string, string, int) error        { return nil }
+func (f *fakeDaemon) CommitAndDone(string, string, int) error     { return nil }
+func (f *fakeDaemon) ReportActionFailure(actionID, operation, sessionID, errMsg string) error {
+	f.actionReports = append(f.actionReports, actionID+"|"+operation+"|"+sessionID+"|"+errMsg)
+	return nil
+}
 
 // pipeClient drives a Server over io.Pipes and reads newline-delimited responses.
 type pipeClient struct {
@@ -288,6 +293,20 @@ func TestSideEffectErrorMapsToFailedReceipt(t *testing.T) {
 	json.Unmarshal(body, &rc)
 	if rc.DeliveryOutcome != "failed" || !strings.Contains(rc.Error, "busy") {
 		t.Errorf("failed receipt = %+v", rc)
+	}
+	// The failed receipt is reported back to the daemon for the perception
+	// ledger (action_failed signal).
+	if len(fd.actionReports) != 1 || !strings.Contains(fd.actionReports[0], "send_message|sess-1|") {
+		t.Errorf("action report = %v", fd.actionReports)
+	}
+
+	// A successful side effect reports nothing.
+	fd2 := &fakeDaemon{sessions: fixtureSessions()}
+	pc2 := newPipeClient(t, fd2)
+	defer pc2.close()
+	pc2.callTool(t, "send_message", map[string]any{"session_id": "sess-1", "message": "hi"})
+	if len(fd2.actionReports) != 0 {
+		t.Errorf("successful send reported an action failure: %v", fd2.actionReports)
 	}
 }
 
