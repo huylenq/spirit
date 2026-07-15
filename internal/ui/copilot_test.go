@@ -84,6 +84,47 @@ func TestCopilotStreamUpdatesHermesSessionID(t *testing.T) {
 	}
 }
 
+func TestCopilotRenderLinesSeparatesUserTurns(t *testing.T) {
+	messages := []CopilotMessage{
+		{Role: "user", Content: "first question"},
+		{Role: "copilot", Content: "first answer"},
+		{Role: "user", Content: "second question"},
+		{Role: "copilot", Content: "second answer"},
+	}
+	lines, _ := copilotRenderLines(messages, 60, false, "")
+
+	sep := strings.Repeat("─", 60)
+	count := 0
+	for _, l := range lines {
+		if ansi.Strip(l) == sep {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("got %d separator lines, want exactly 1: %q", count, lines)
+	}
+
+	firstUserIdx := -1
+	secondUserIdx := -1
+	for i, l := range lines {
+		plain := ansi.Strip(l)
+		if firstUserIdx == -1 && strings.Contains(plain, "first question") {
+			firstUserIdx = i
+		}
+		if secondUserIdx == -1 && strings.Contains(plain, "second question") {
+			secondUserIdx = i
+		}
+	}
+	if firstUserIdx <= 0 {
+		// fine as long as there's no separator right before it
+	} else if ansi.Strip(lines[firstUserIdx-1]) == sep {
+		t.Fatalf("unexpected separator before first user turn: %q", lines)
+	}
+	if secondUserIdx <= 0 || ansi.Strip(lines[secondUserIdx-1]) != sep {
+		t.Fatalf("expected separator immediately before second user turn, got: %q", lines)
+	}
+}
+
 func TestCopilotScrollUpUsesContentLinesInsteadOfMessageCount(t *testing.T) {
 	model := NewCopilotModel()
 	model.LoadHistory([]CopilotMessage{{

@@ -43,9 +43,14 @@ func toolStatusIcon(status string) string {
 func copilotRenderLines(messages []CopilotMessage, contentWidth int, streaming bool, streamCursor string) ([]string, int) {
 	var allLines []string
 	lastPairStart := 0
+	seenUser := false
 	for i := range messages {
 		msg := &messages[i]
 		if msg.Role == "user" {
+			if seenUser {
+				allLines = append(allLines, SeparatorStyle.Render(strings.Repeat("─", contentWidth)))
+			}
+			seenUser = true
 			lastPairStart = len(allLines)
 		}
 		var rendered string
