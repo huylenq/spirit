@@ -17,6 +17,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/copilot"
+	"github.com/huylenq/spirit/internal/laxicon"
 )
 
 type subscriber struct {
@@ -101,6 +102,8 @@ type Daemon struct {
 
 	copilotFleetMu         sync.Mutex // guards the delta digest below
 	copilotLastFleetDigest string     // material fleet state last injected into Lulu's persistent session
+
+	laxiconReader laxicon.Reader // read-only, mtime-cached plan/spec parser (zero value ready)
 
 	copilotPermMu     sync.Mutex                    // guards the pending-permission registry
 	copilotPerms      map[string]*pendingPermission // permissionID → in-flight approval round-trip

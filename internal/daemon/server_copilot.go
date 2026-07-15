@@ -12,6 +12,7 @@ import (
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
 	"github.com/huylenq/spirit/internal/copilot"
+	"github.com/huylenq/spirit/internal/laxicon"
 )
 
 const maxCopilotHistory = 200 // 100 exchanges (user + copilot per exchange)
@@ -195,12 +196,18 @@ func findSessionByID(sessions []agent.Session, id string) *agent.Session {
 // when the fleet's material state is unchanged since Lulu last saw it, so the
 // persistent Hermes session stops accumulating N verbatim snapshots over N turns.
 func (d *Daemon) buildCopilotPrompt(req CopilotChatData, scoped *agent.Session, sessions []agent.Session) string {
+	// Plan awareness (Decision 13): the intent altitude joins both context
+	// surfaces — the dossier gets the scoped session's project plans, and the
+	// fleet snapshot gets a per-project active-plans block whose state also
+	// joins the delta digest (a plan edit is a material change).
+	planProjects := d.copilotPlanProjects(sessions)
+
 	var sections []string
 	if scoped != nil {
-		sections = append(sections, copilot.BuildDossier(*scoped, req.Scope.ActiveView, req.Scope.ActiveLane, req.Scope.ActiveProject))
+		sections = append(sections, copilot.BuildDossier(*scoped, req.Scope.ActiveView, req.Scope.ActiveLane, req.Scope.ActiveProject, planProjectFor(planProjects, *scoped)))
 	}
 	if d.copilotPreamble.Load() {
-		if snapshot, changed := d.fleetSnapshotDelta(sessions); changed {
+		if snapshot, changed := d.fleetSnapshotDelta(sessions, planProjects); changed {
 			sections = append(sections, snapshot)
 		}
 	}
@@ -214,15 +221,23 @@ func (d *Daemon) buildCopilotPrompt(req CopilotChatData, scoped *agent.Session, 
 // material state changed since it was last injected; otherwise it reports no
 // change and the caller omits the snapshot. This is the anti-accumulation guard
 // for the persistent Hermes session (Audit finding: "the preamble accumulates").
-func (d *Daemon) fleetSnapshotDelta(sessions []agent.Session) (string, bool) {
-	digest := copilot.FleetDigest(sessions)
+//
+// Plan state joins the fingerprint (W6 Track B): a plan status or checkbox
+// change re-injects the snapshot — including its <active-plans> block — even
+// when the sessions themselves are unchanged.
+func (d *Daemon) fleetSnapshotDelta(sessions []agent.Session, planProjects []laxicon.ProjectPlans) (string, bool) {
+	digest := copilot.FleetDigest(sessions) + "\x00plans\x00" + laxicon.Fingerprint(planProjects)
 	d.copilotFleetMu.Lock()
 	defer d.copilotFleetMu.Unlock()
 	if digest == d.copilotLastFleetDigest {
 		return "", false
 	}
 	d.copilotLastFleetDigest = digest
-	return copilot.BuildSessionsPreamble(sessions), true
+	snapshot := copilot.BuildSessionsPreamble(sessions)
+	if plansBlock := copilot.BuildPlansBlock(planProjects); plansBlock != "" {
+		snapshot += "\n\n" + plansBlock
+	}
+	return snapshot, true
 }
 
 // resetFleetDelta forgets the last-injected fleet digest so the next prompt of a
