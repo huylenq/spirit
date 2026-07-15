@@ -20,6 +20,7 @@ func (l *Ledger) segmentPath(day time.Time) string {
 
 func (l *Ledger) attentionPath() string { return filepath.Join(l.dir, "attention.json") }
 func (l *Ledger) cursorsPath() string   { return filepath.Join(l.dir, "cursors.json") }
+func (l *Ledger) watchesPath() string   { return filepath.Join(l.dir, "watches.json") }
 
 // appendSignal appends one signal to today's day segment.
 func (l *Ledger) appendSignal(sig Signal) error {
@@ -159,6 +160,43 @@ func (l *Ledger) saveCursors() {
 	}
 	if err := atomicWriteJSON(l.cursorsPath(), l.cursors); err != nil {
 		log.Printf("ledger: save cursors: %v", err)
+	}
+}
+
+// loadWatches reads watches.json. Watches found in processing are reset to
+// triggered: the daemon died mid-run and the trigger is still owed a response.
+func (l *Ledger) loadWatches() {
+	data, err := os.ReadFile(l.watchesPath())
+	if err != nil {
+		return // fresh ledger
+	}
+	var watches []*Watch
+	if err := json.Unmarshal(data, &watches); err != nil {
+		log.Printf("ledger: watches.json corrupt, starting empty: %v", err)
+		return
+	}
+	for _, w := range watches {
+		if w.State == WatchProcessing {
+			w.State = WatchTriggered
+		}
+	}
+	l.watches = watches
+}
+
+// saveWatches atomically rewrites watches.json, pruning terminal watches older
+// than the retention window so the file stays small.
+func (l *Ledger) saveWatches() {
+	cutoff := l.now().Add(-l.window)
+	keep := make([]*Watch, 0, len(l.watches))
+	for _, w := range l.watches {
+		if w.State.terminal() && w.UpdatedAt.Before(cutoff) {
+			continue
+		}
+		keep = append(keep, w)
+	}
+	l.watches = keep
+	if err := atomicWriteJSON(l.watchesPath(), keep); err != nil {
+		log.Printf("ledger: save watches: %v", err)
 	}
 }
 

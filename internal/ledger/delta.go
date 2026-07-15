@@ -151,6 +151,9 @@ func (l *Ledger) renderItemLocked(it *AttentionItem, now time.Time) string {
 		fmt.Fprintf(&b, " (×%d)", n)
 	}
 	fmt.Fprintf(&b, " (%s)", relativeAge(now.Sub(it.UpdatedAt)))
+	if it.Recommendation != "" {
+		b.WriteString(" — recommended: " + firstLine(it.Recommendation))
+	}
 	return b.String()
 }
 
