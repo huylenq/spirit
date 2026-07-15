@@ -13,7 +13,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.Up, k.NavLeft, k.Enter, k.NewSession, k.PromptRelay, k.Queue, k.Search, k.Later, k.LaterKill, k.LaterToggle,
 		k.ApplyTitle, k.RenamePrompt, k.GroupMode, k.GoBottom, k.Synthesize, k.SynthesizeAll, k.Macro, k.AutoJumpToggle,
 		k.Rename, k.ChatOutline, k.Minimap, k.ListShrink, k.Fullscreen, k.ViewMode, k.Kill, k.Commit,
-		k.JumpBack, k.Note, k.FocusMode, k.UserTurnOnly, k.SlotJump, k.SlotBind,
+		k.JumpBack, k.Note, k.FocusMode, k.SlotJump, k.SlotBind,
 	}
 	bindings = append(bindings, chordBindings()...)
 	bindings = append(bindings, k.Quit)
@@ -152,8 +152,6 @@ type KeyMap struct {
 
 	// Focus mode (show only flagged sessions)
 	FocusMode key.Binding
-	// YOUR-TURN-only (collapse all sidebar sections except YOUR TURN)
-	UserTurnOnly key.Binding
 
 	// Toggle flag on selected session/project/backlog
 	Flag key.Binding
@@ -337,8 +335,8 @@ var Keys = KeyMap{
 		key.WithHelp("alt+b", "toggle backlog"),
 	),
 	ClaudingToggle: key.NewBinding(
-		key.WithKeys("alt+c"),
-		key.WithHelp("alt+c", "toggle clauding"),
+		key.WithKeys("i"),
+		key.WithHelp("i", "toggle clauding"),
 	),
 	RenamePrompt: key.NewBinding(
 		key.WithKeys("r"),
@@ -538,10 +536,6 @@ var Keys = KeyMap{
 	FocusMode: key.NewBinding(
 		key.WithKeys("F"),
 		key.WithHelp("F", "focus mode"),
-	),
-	UserTurnOnly: key.NewBinding(
-		key.WithKeys("i"),
-		key.WithHelp("i", "your-turn only"),
 	),
 	Flag: key.NewBinding(
 		key.WithKeys("alt+f"),

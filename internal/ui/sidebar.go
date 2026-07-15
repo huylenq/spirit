@@ -90,7 +90,6 @@ type SidebarModel struct {
 	flaggedBacklogs     map[string]bool  // backlog ID → flagged
 	flaggedProjects     map[string]bool  // project name → flagged
 	focusMode           bool             // when true, only show effectively-flagged sessions
-	userTurnOnly        bool             // when true, collapse all sections except YOUR TURN
 	hideLastMessage     bool             // when true, suppress the last-message subtitle on items
 	numberSlots         map[int]string   // slot (1-9) → PaneID
 }
@@ -270,9 +269,8 @@ func wrapCapLines(text string, width, maxLines int) []string {
 // IsAllQuiet returns true when sessions exist but none are cursor-navigable
 // (all hidden behind collapsed sections, no YOUR TURN items, not in search mode).
 // Focus mode is excluded — an empty focused set is intentional filtering, not
-// "all quiet". YOUR-TURN-only is NOT excluded: zero YOUR TURN sessions means
-// nothing needs you, which is exactly the all-quiet condition. Backlog items
-// don't count either — they're passive ideas, not active work, so the quiet
+// "all quiet". Backlog items don't count either — they're passive ideas, not
+// active work, so the quiet
 // scene takes over even when the BACKLOG section is non-empty.
 func (m SidebarModel) IsAllQuiet() bool {
 	return len(m.items) > 0 && len(m.filtered) == 0 && m.narrow == "" && !m.focusMode
@@ -606,17 +604,6 @@ func (m SidebarModel) FocusMode() bool {
 	return m.focusMode
 }
 
-// SetUserTurnOnly toggles YOUR-TURN-only mode and re-applies the filter.
-func (m *SidebarModel) SetUserTurnOnly(v bool) {
-	m.userTurnOnly = v
-	m.applyNarrow()
-}
-
-// UserTurnOnly returns whether YOUR-TURN-only mode is active.
-func (m SidebarModel) UserTurnOnly() bool {
-	return m.userTurnOnly
-}
-
 // SetHideLastMessage controls whether item rows show the last-message subtitle.
 func (m *SidebarModel) SetHideLastMessage(v bool) {
 	m.hideLastMessage = v
@@ -809,17 +796,6 @@ func (m *SidebarModel) applyNarrow() {
 		n := 0
 		for _, s := range m.filtered {
 			if m.IsEffectivelyFlagged(s) {
-				m.filtered[n] = s
-				n++
-			}
-		}
-		m.filtered = m.filtered[:n]
-	}
-	// YOUR TURN only: collapse every other section
-	if m.userTurnOnly {
-		n := 0
-		for _, s := range m.filtered {
-			if sessionOrder(s) == OrderUserTurn {
 				m.filtered[n] = s
 				n++
 			}

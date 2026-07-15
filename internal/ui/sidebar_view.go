@@ -43,9 +43,6 @@ func (m *SidebarModel) renderItemWithStats(isSelected, isAutoJump bool, s claude
 // their visible rows and line counts stay aligned.
 func (m SidebarModel) passesViewFilters(s claude.ClaudeSession, projectFilter string) bool {
 	order := sessionOrder(s)
-	if m.userTurnOnly && order != OrderUserTurn {
-		return false
-	}
 	if !m.claudingExpanded && order == OrderAgentTurn {
 		return false
 	}
@@ -141,9 +138,7 @@ func (m *SidebarModel) View() string {
 		// Only YOUR TURN owns a closing line — its full outline must terminate
 		// with a heavy ━ + ┛ corner. Non-YT sections have no closing chrome;
 		// the next section's addTopRule (or nothing) handles the boundary.
-		// In YOUR-TURN-only mode the whole list IS the section, so the closing
-		// boundary is dropped for a simpler, chrome-free look.
-		if order != OrderUserTurn || m.userTurnOnly {
+		if order != OrderUserTurn {
 			return
 		}
 		muted := mutedFor(order)
@@ -168,11 +163,6 @@ func (m *SidebarModel) View() string {
 	// catastrophic, so we hard-block it here.
 	emittedHeader := map[int]bool{}
 	addHeader := func(order int) {
-		// YOUR-TURN-only mode hides the section title — the whole list is YOUR
-		// TURN, so the header is redundant chrome.
-		if m.userTurnOnly && order == OrderUserTurn {
-			return
-		}
 		if emittedHeader[order] {
 			return
 		}
@@ -368,10 +358,10 @@ func (m *SidebarModel) View() string {
 	// split point is YOUR TURN's unique closing separator (order YT, kindBottom);
 	// with no YOUR TURN sessions the whole body sinks (topCount stays 0). The
 	// split is confined to the default status-grouped body: search (flat,
-	// score-sorted), YOUR-TURN-only, and group-by-project modes keep the classic
-	// top-anchored layout (topCount spans everything → empty bottom block).
+	// score-sorted) and group-by-project modes keep the classic top-anchored
+	// layout (topCount spans everything → empty bottom block).
 	topCount := len(lines)
-	if query == "" && !m.userTurnOnly && !m.groupByProject {
+	if query == "" && !m.groupByProject {
 		topCount = 0
 		for i := range kinds {
 			if kinds[i].order == OrderUserTurn && kinds[i].kind == kindBottom {
@@ -667,7 +657,7 @@ func entriesWithinBudget(rows []string, budget int) int {
 // italicized once the pulse is older than an hour so stale state is visually
 // demoted without disappearing.
 func (m *SidebarModel) pulseBlock() []string {
-	if m.width <= 0 || m.height <= 0 || m.userTurnOnly {
+	if m.width <= 0 || m.height <= 0 {
 		return nil
 	}
 	pulse := claude.ReadCachedPulse()
@@ -698,7 +688,7 @@ func (m *SidebarModel) pulseBlock() []string {
 // badges to pin to the floor of the sidebar. Returns nil when no sections
 // are collapsed.
 func (m *SidebarModel) collapsedBadgesBlock() []string {
-	if m.height <= 0 || m.userTurnOnly {
+	if m.height <= 0 {
 		return nil
 	}
 	claudingCount := m.claudingCount

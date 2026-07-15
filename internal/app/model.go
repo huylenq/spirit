@@ -310,7 +310,6 @@ func NewModel(client *daemon.Client) Model {
 	sidebar.SetLaterExpanded(!loadPrefBool("laterCollapsed"))
 	sidebar.SetClaudingExpanded(!loadPrefBool("claudingCollapsed"))
 	sidebar.SetFocusMode(loadPrefBool("focusMode"))
-	sidebar.SetUserTurnOnly(loadPrefBool("userTurnOnly"))
 	sidebar.SetHideLastMessage(!Flag("showLastMessage"))
 	autoJump := Flag("autoJump")
 	sidebar.ShowAutoJump = autoJump
