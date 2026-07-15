@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/huylenq/spirit/internal/agent"
 	"github.com/huylenq/spirit/internal/claude"
@@ -107,6 +108,12 @@ func buildTools() []tool {
 			Description: "Get the cached AI summary for a session, if one has been synthesized.",
 			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}`),
 			Handler:     handleGetSummary,
+		},
+		{
+			Name:        "wait_session",
+			Description: "Block until a session reaches a lifecycle phase: idle (user-turn), working (agent-turn), or cycle (a full working-then-idle round trip). Use after a side-effect tool to reconcile that the target actually reacted — e.g. send_message then wait_session working. Returns a receipt-style result with the outcome (reached | timeout | vanished) and observed session state.",
+			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"},"phase":{"type":"string","enum":["idle","working","cycle"],"description":"Target phase; cycle waits for the session to be observed working and then return to idle."},"timeout_seconds":{"type":"integer","description":"Max seconds to wait (default 60, capped at 600)."}},"required":["session_id","phase"]}`),
+			Handler:     handleWaitSession,
 		},
 
 		// --- Side effects (return an ActionReceipt) ---
@@ -267,6 +274,138 @@ func handleGetSummary(api daemonAPI, args json.RawMessage) (any, bool) {
 		return errPayload("get_summary", err), true
 	}
 	return summary, false
+}
+
+// --- wait_session (blocking observation, receipt-style result) ---
+
+// waitPollInterval is the fleet polling cadence while waiting, matching the
+// agent CLI's waitForPhase and Lua's pollSession. Package var so tests can
+// shrink it.
+var waitPollInterval = 500 * time.Millisecond
+
+const (
+	defaultWaitTimeout = 60 * time.Second
+	maxWaitTimeout     = 600 * time.Second
+)
+
+// waitResult is wait_session's receipt-style structured result (spec Decision 5
+// reconciliation): not an ActionReceipt — nothing was mutated — but the same
+// target/observed-state vocabulary so a receipt and its reconciliation read
+// alike.
+type waitResult struct {
+	Operation     string                 `json:"operation"`
+	Target        receipt.Target         `json:"target"`
+	Phase         string                 `json:"phase"`
+	Outcome       string                 `json:"outcome"` // reached | timeout | vanished
+	WaitedMs      int64                  `json:"waited_ms"`
+	ObservedState *receipt.ObservedState `json:"observed_state,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+}
+
+// handleWaitSession blocks until the target session reaches the requested
+// phase, the timeout elapses, or the session disappears from the fleet
+// (useful for kill reconciliation). Timeout is a tool error so the model
+// notices reconciliation failed; vanished is a legitimate observation.
+func handleWaitSession(api daemonAPI, args json.RawMessage) (any, bool) {
+	var a struct {
+		SessionID      string `json:"session_id"`
+		Phase          string `json:"phase"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || a.SessionID == "" {
+		return errPayload("wait_session", fmt.Errorf("session_id and phase are required")), true
+	}
+	if a.Phase != "idle" && a.Phase != "working" && a.Phase != "cycle" {
+		return errPayload("wait_session", fmt.Errorf("phase must be idle, working, or cycle; got %q", a.Phase)), true
+	}
+	timeout := defaultWaitTimeout
+	if a.TimeoutSeconds > 0 {
+		timeout = time.Duration(a.TimeoutSeconds) * time.Second
+	}
+	if timeout > maxWaitTimeout {
+		timeout = maxWaitTimeout
+	}
+
+	start := time.Now()
+	deadline := start.Add(timeout)
+	result := waitResult{Operation: "wait_session", Phase: a.Phase, Target: receipt.Target{SessionID: a.SessionID, ResolvedBy: receipt.ResolvedExplicit}}
+	sawWorking := false
+	everSeen := false
+	var lastObserved *receipt.ObservedState
+
+	for {
+		sessions, err := api.Sessions("")
+		if err != nil {
+			result.Outcome = "timeout"
+			result.WaitedMs = time.Since(start).Milliseconds()
+			result.Error = err.Error()
+			return result, true
+		}
+		var found *agent.Session
+		for i := range sessions {
+			if sessions[i].SessionID == a.SessionID {
+				found = &sessions[i]
+				break
+			}
+		}
+		switch {
+		case found != nil:
+			everSeen = true
+			result.Target.PaneID = found.PaneID
+			result.Target.DisplayName = found.DisplayName()
+			lastObserved = &receipt.ObservedState{
+				Status:    found.Status.String(),
+				IsWaiting: found.IsWaiting,
+				QueueLen:  len(found.QueuePending),
+				Alive:     true,
+			}
+			if waitPhaseReached(a.Phase, found.Status, &sawWorking) {
+				result.Outcome = "reached"
+				result.WaitedMs = time.Since(start).Milliseconds()
+				result.ObservedState = lastObserved
+				return result, false
+			}
+		case everSeen:
+			// The session was observed and is now gone — e.g. it was killed.
+			result.Outcome = "vanished"
+			result.WaitedMs = time.Since(start).Milliseconds()
+			result.ObservedState = &receipt.ObservedState{Alive: false}
+			return result, false
+		}
+
+		if !time.Now().Before(deadline) {
+			result.Outcome = "timeout"
+			result.WaitedMs = time.Since(start).Milliseconds()
+			if !everSeen {
+				result.Error = fmt.Sprintf("session %s was never observed in the fleet", a.SessionID)
+				result.ObservedState = &receipt.ObservedState{Alive: false}
+			} else {
+				result.Error = fmt.Sprintf("session %s did not reach phase %s within %s", a.SessionID, a.Phase, timeout)
+				result.ObservedState = lastObserved
+			}
+			return result, true
+		}
+		time.Sleep(waitPollInterval)
+	}
+}
+
+// waitPhaseReached mirrors the agent CLI / Lua phase semantics exactly
+// (idle=user-turn, working=agent-turn, cycle=working then idle). For "cycle"
+// it records the first working observation in *sawWorking so a later idle
+// counts as a completed round trip and a pre-work false-idle does not.
+func waitPhaseReached(phase string, status agent.Status, sawWorking *bool) bool {
+	switch phase {
+	case "idle":
+		return status == agent.StatusUserTurn
+	case "working":
+		return status == agent.StatusAgentTurn
+	case "cycle":
+		if status == agent.StatusAgentTurn {
+			*sawWorking = true
+		}
+		return status == agent.StatusUserTurn && *sawWorking
+	}
+	return false
 }
 
 // --- side-effect handlers (return ActionReceipt) ---

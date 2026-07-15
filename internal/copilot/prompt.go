@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/huylenq/spirit/internal/claude"
+	"github.com/huylenq/spirit/internal/laxicon"
 )
 
 // BuildSessionsPreamble constructs a lightweight preamble with just live session state.
@@ -43,7 +44,12 @@ const maxDossierMessage = 600
 //
 // view/lane/project are the originating client's local attention state; empty
 // strings are omitted.
-func BuildDossier(s claude.ClaudeSession, view, lane, project string) string {
+//
+// plans is the laxicon inventory of the session's project root (nil when the
+// project has none): the session's `plan:<slug>` tag is surfaced as the
+// correlation when present, and project adjacency as an explicit hint (spec
+// Decision 13 — Spirit hints, Lulu asserts via set_tags).
+func BuildDossier(s claude.ClaudeSession, view, lane, project string, plans *laxicon.ProjectPlans) string {
 	var b strings.Builder
 	b.WriteString("<selected-session id=\"")
 	b.WriteString(s.SessionID)
@@ -99,6 +105,12 @@ func BuildDossier(s claude.ClaudeSession, view, lane, project string) string {
 	}
 	line("note", s.Note)
 	line("last-user-intent", truncate(s.LastUserMessage, maxDossierMessage))
+
+	// Plan awareness: the intent altitude this session serves (Decision 13).
+	for _, planLine := range dossierPlanSection(s.Tags, s.GitBranch, plans) {
+		b.WriteString(planLine)
+		b.WriteString("\n")
+	}
 
 	// Local UI attention context from the originating client.
 	line("ui-view", view)
