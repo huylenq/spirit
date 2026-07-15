@@ -96,6 +96,15 @@ type Daemon struct {
 	ledgerBaselined bool
 	hadOverlaps     bool
 
+	// W7 reactive-attention state (daemon_reactive.go): the single-flight
+	// recommend slot, the immediate-notification throttle, and the triage
+	// digest batch.
+	reactiveRunning     atomic.Bool
+	reactiveMu          sync.Mutex // guards the three fields below
+	lastImmediateNotify time.Time
+	digestLines         []string
+	digestOldest        time.Time
+
 	copilotCancel      context.CancelFunc  // non-nil while a copilot prompt is in-flight
 	copilotCancelEpoch uint64              // turn epoch that owns copilotCancel (guarded by copilotMu)
 	copilotMu          sync.Mutex          // protects copilotCancel + copilotCancelEpoch

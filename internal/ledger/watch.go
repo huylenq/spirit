@@ -627,6 +627,29 @@ func (l *Ledger) ItemByID(id string) (AttentionItem, bool) {
 	return AttentionItem{}, false
 }
 
+// ItemSignals returns copies of the signals linked to an attention item (in
+// link order), for bounded evidence assembly.
+func (l *Ledger) ItemSignals(itemID string) []Signal {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, it := range l.items {
+		if it.ID != itemID {
+			continue
+		}
+		out := make([]Signal, 0, len(it.SignalIDs))
+		for _, sid := range it.SignalIDs {
+			if sig := l.byID[sid]; sig != nil {
+				out = append(out, *sig)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // DescribeItem renders the one-line human digest for an attention item (reused
 // by notifications and the inbox), e.g. "turn completed: fixed the tests".
 func (l *Ledger) DescribeItem(it *AttentionItem) string {
