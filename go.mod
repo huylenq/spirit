@@ -16,6 +16,7 @@ require (
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/sergi/go-diff v1.4.0
 	github.com/yuin/gopher-lua v1.1.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -36,6 +36,10 @@ func TestGenHermesSkillMDDeterministicAndComplete(t *testing.T) {
 		"### Reconciliation — a receipt is not proof",
 		"### Correlation — record what you infer",
 		"set_tags",
+		// global MCP promotion: tools-only scope, context bridge stays Copilot-only
+		"## Scope: tools only — the Copilot context bridge is not MCP",
+		"`spirit mcp install`",
+		"no implicit selected session and no injected fleet context",
 	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("generated skill missing %q", want)

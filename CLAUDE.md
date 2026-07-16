@@ -32,6 +32,9 @@ spirit setup              # Install Claude Code and Codex hooks
 spirit _hook <type>       # Handle a provider hook event
 spirit eval -e '<lua>'    # Evaluate inline Lua script against daemon
 spirit eval <file.lua>    # Evaluate Lua file
+spirit mcp                # Stdio JSON-RPC MCP server over the daemon (for Hermes)
+spirit mcp install        # Register mcp_servers.spirit globally in the Hermes config (--force replaces a differing entry)
+spirit mcp status         # Report whether the Hermes config has the expected registration
 spirit orchestrator register|unregister <id>
 spirit capture [COLSxROWS]  # Headless TUI screenshot (for debugging layout)
 spirit dev                # fzf worktree picker (dev workflow)

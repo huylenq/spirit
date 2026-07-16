@@ -89,7 +89,7 @@ func main() {
 			runAgent()
 			return
 		case "mcp":
-			runMcp()
+			runMcpCmd()
 			return
 		case "usage-dump":
 			refresh := len(os.Args) > 2 && os.Args[2] == "--refresh"
@@ -181,6 +181,8 @@ Usage:
   spirit orchestrator unregister <session-id>   Re-include session
   spirit agent <verb>  Machine-friendly session management (for AI agents)
   spirit mcp              MCP stdio server over the daemon (for Lulu/Hermes; typed tools)
+  spirit mcp install      Register Spirit globally in the Hermes config (--force replaces a differing entry)
+  spirit mcp status       Report whether the Hermes config has the expected registration
   spirit capture [CxR]    Capture a text snapshot to stdout (e.g. 160x40)
   spirit setup            Install Claude Code and Codex hooks
   spirit _hook <type>     Handle a coding-agent hook event (internal, called by hooks)
@@ -308,6 +310,10 @@ func runSetup() {
 	} else if changed {
 		fmt.Printf("Hermes skill installed in %s\n", hermesSkillDir())
 	}
+
+	// Discovery hint only — global MCP registration is a deliberate human act,
+	// never a setup side effect.
+	fmt.Println("Hint: `spirit mcp install` registers Spirit's MCP tools globally in the Hermes config (not done by setup).")
 }
 
 func installHooks(settingsPath, exe string, provider claude.Provider, regs []hookRegistration) (bool, error) {

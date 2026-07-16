@@ -34,11 +34,7 @@ func runMcp() {
 // (~/.hermes/skills/spirit). Installing here is Spirit-owned output; hermes-agent
 // source is never touched.
 func hermesSkillDir() string {
-	home := os.Getenv("HERMES_HOME")
-	if home == "" {
-		home = filepath.Join(os.Getenv("HOME"), ".hermes")
-	}
-	return filepath.Join(home, "skills", "spirit")
+	return filepath.Join(hermesHome(), "skills", "spirit")
 }
 
 // installHermesSkill writes the generated SKILL.md into ~/.hermes/skills/spirit so
@@ -88,7 +84,11 @@ metadata:
 
 Spirit is a TUI + daemon that monitors and orchestrates coding sessions (Claude Code, Codex) running in tmux panes. Its operation surface is exposed to you as **typed MCP tools** registered under the ` + "`spirit`" + ` server at session open. The tool schemas are the contract — call them directly; do not shell out to ` + "`spirit agent`" + `.
 
-**Every tool takes an explicit ` + "`session_id`" + `.** Get ids from ` + "`list_sessions`" + ` first. There is no implicit "selected session" yet — always name the target.
+**Every tool takes an explicit ` + "`session_id`" + `.** Get ids from ` + "`list_sessions`" + ` first. There is no implicit "selected session" — always name the target.
+
+## Scope: tools only — the Copilot context bridge is not MCP
+
+These typed tools are Spirit's ENTIRE MCP surface, identical whether the server was registered per-session (Lulu's ACP session open) or globally in the Hermes config (` + "`spirit mcp install`" + ` writes ` + "`mcp_servers.spirit`" + `; ` + "`spirit mcp status`" + ` verifies it). The Copilot context bridge — the ` + "`<selected-session>`" + ` dossier, the ` + "`<live-sessions>`" + ` fleet snapshot and its change-driven delta, the ` + "`<away-delta>`" + ` block, and per-client stream routing — is injected by Spirit's daemon into the Lulu conversation only. None of it is part of MCP semantics: a session reaching Spirit purely through these tools gets no implicit selected session and no injected fleet context. Fetch state with the read-only tools and name every target explicitly.
 
 ## Operation classes
 
