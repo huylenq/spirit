@@ -624,7 +624,8 @@ func (c *acpClient) newSession() error {
 
 // Prompt sends a message and streams CopilotStreamData events via onUpdate.
 // Blocks until the prompt turn completes, the context is cancelled, or the
-// subprocess dies. Returns the full accumulated text for history persistence.
+// subprocess dies. Returns the accumulated text for history persistence even
+// on cancel/error, so a partial reply is never discarded with the turn.
 func (c *acpClient) Prompt(ctx context.Context, text string, onUpdate func(CopilotStreamData)) (string, error) {
 	if err := c.ensureReady(); err != nil {
 		return "", err
@@ -678,10 +679,10 @@ func (c *acpClient) Prompt(ctx context.Context, text string, onUpdate func(Copil
 
 	msg := <-ch // fails fast with an error message if the reader dies
 	if ctx.Err() != nil {
-		return "", fmt.Errorf("cancelled")
+		return strings.TrimSpace(fullText.String()), fmt.Errorf("cancelled")
 	}
 	if msg.Error != nil {
-		return "", fmt.Errorf("prompt: %s", msg.Error.Message)
+		return strings.TrimSpace(fullText.String()), fmt.Errorf("prompt: %s", msg.Error.Message)
 	}
 	return strings.TrimSpace(fullText.String()), nil
 }

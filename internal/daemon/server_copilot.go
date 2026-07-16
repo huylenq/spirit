@@ -76,6 +76,48 @@ func (d *Daemon) isCurrentCopilotTurn(epoch uint64) bool {
 	return d.copilotActive != nil && d.copilotActive.Epoch == epoch
 }
 
+// claimCopilotReply reports whether the caller may persist the copilot half of
+// turn epoch. Exactly one claimant wins per turn, so the turn goroutine's own
+// teardown cannot double-append against the daemon shutdown flush.
+func (d *Daemon) claimCopilotReply(epoch uint64) bool {
+	d.copilotStateMu.Lock()
+	defer d.copilotStateMu.Unlock()
+	if d.copilotReplyDone == nil {
+		d.copilotReplyDone = make(map[uint64]bool)
+	}
+	if d.copilotReplyDone[epoch] {
+		return false
+	}
+	d.copilotReplyDone[epoch] = true
+	return true
+}
+
+// interruptedCopilotOutput renders a turn's reply for history when the turn did
+// not complete (cancelled, superseded, ACP death, daemon shutdown).
+func interruptedCopilotOutput(partial, reason string) string {
+	marker := "⚠ turn interrupted: " + reason
+	if strings.TrimSpace(partial) == "" {
+		return marker
+	}
+	return partial + "\n\n" + marker
+}
+
+// flushActiveCopilotTurn persists the in-flight turn's partial reply at daemon
+// shutdown. The turn goroutine is still parked in Prompt() at this point and
+// will never get to append (the process exits right after), so the flush claims
+// the reply on its behalf; the claim keeps a late-waking goroutine from
+// appending a duplicate.
+func (d *Daemon) flushActiveCopilotTurn() {
+	d.copilotStateMu.Lock()
+	active := d.copilotActive
+	d.copilotActive = nil
+	d.copilotStateMu.Unlock()
+	if active == nil || !d.claimCopilotReply(active.Epoch) {
+		return
+	}
+	d.appendCopilotHistory(CopilotHistoryMsg{Role: "copilot", Content: interruptedCopilotOutput(active.Output, "daemon shutdown"), Time: time.Now()})
+}
+
 func (d *Daemon) copilotSnapshot() CopilotSnapshotData {
 	d.copilotHistoryMu.RLock()
 	history := make([]CopilotHistoryMsg, len(d.copilotHistory))
@@ -161,6 +203,10 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 	// Run streaming in background; results push to the originating client.
 	go func() {
 		defer d.clearCopilotCancel(epoch)
+		// Persist the user message at submit, not at turn end: a daemon restart
+		// mid-turn or a cancelled/superseded/failed turn must not erase what the
+		// user said. The copilot half follows when the turn ends.
+		d.appendCopilotHistory(CopilotHistoryMsg{Role: "user", Content: req.Message, Time: time.Now()})
 		// Away-delta (W6 Track A): what happened while the user was away,
 		// pulled from the perception ledger at each user-initiated turn. The
 		// ACP session is ensured first so the Hermes session UUID — the
@@ -175,15 +221,16 @@ func (d *Daemon) handleCopilotChat(data json.RawMessage) *Response {
 			} // on error, Prompt() below surfaces it through the normal path
 		}
 		output, err := d.runCopilotPromptStreaming(ctx, epoch, req.RequestID, req.ClientID, prompt)
-		if err != nil {
-			return // error + done already sent by runCopilotPromptStreaming
+		if !d.claimCopilotReply(epoch) {
+			return // the shutdown flush already persisted this turn's reply
 		}
-		// Persist the exchange for TUI display across reopens and daemon restarts.
-		now := time.Now()
-		d.appendCopilotHistory(
-			CopilotHistoryMsg{Role: "user", Content: req.Message, Time: now},
-			CopilotHistoryMsg{Role: "copilot", Content: output, Time: now},
-		)
+		content := output
+		if err != nil {
+			// error + done already sent by runCopilotPromptStreaming; keep the
+			// partial reply so the exchange survives in display history.
+			content = interruptedCopilotOutput(output, err.Error())
+		}
+		d.appendCopilotHistory(CopilotHistoryMsg{Role: "copilot", Content: content, Time: time.Now()})
 	}()
 
 	r := resultResponse(map[string]string{"status": "streaming", "requestId": req.RequestID})

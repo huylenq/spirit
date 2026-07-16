@@ -141,7 +141,8 @@ type Daemon struct {
 	copilotHistoryMu   sync.RWMutex
 	copilotStateMu     sync.RWMutex
 	copilotActive      *copilotActiveState
-	copilotEpoch       uint64 // monotonic turn counter (guarded by copilotStateMu)
+	copilotEpoch       uint64          // monotonic turn counter (guarded by copilotStateMu)
+	copilotReplyDone   map[uint64]bool // turn epochs whose copilot half is persisted (guarded by copilotStateMu)
 
 	copilotFleetMu         sync.Mutex // guards the delta digest below
 	copilotLastFleetDigest string     // material fleet state last injected into Lulu's persistent session
@@ -276,6 +277,10 @@ func Run(info DaemonInfo) error {
 	log.Printf("daemon shutting down on %v", sig)
 
 	close(pollStop)
+	// Persist any in-flight copilot turn's partial reply before killing the ACP
+	// subprocess — a `make` restart mid-turn must not erase the exchange (the
+	// user half is already durable from submit time).
+	d.flushActiveCopilotTurn()
 	d.acpClient.Stop()
 	d.listener.Close()
 	os.Remove(d.socketPath)
