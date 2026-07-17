@@ -15,7 +15,7 @@ type Ops interface {
 	// the step's action id for ledger linkage.
 	Queue(paneID, sessionID, message, actionID string) (itemID string, err error)
 	// Spawn starts a new session and returns its id and pane.
-	Spawn(provider agent.ProviderID, cwd, tmuxSession, message string) (sessionID, paneID string, err error)
+	Spawn(provider agent.ProviderID, cwd, tmuxSession, message string, remoteControl bool) (sessionID, paneID string, err error)
 	Kill(sessionID string) error
 	SetTags(sessionID string, tags []string) error
 	SetNote(sessionID, note string) error

@@ -149,6 +149,33 @@ func (d *Daemon) handleKill(data json.RawMessage) *Response {
 	return &r
 }
 
+func (d *Daemon) handleEnableRemoteControl(data json.RawMessage) *Response {
+	var req SessionIDData
+	if err := json.Unmarshal(data, &req); err != nil {
+		r := errResponse("bad data: " + err.Error())
+		return &r
+	}
+	if req.SessionID == "" {
+		r := errResponse("session ID is required")
+		return &r
+	}
+	session, ok := d.sessionByID(req.SessionID)
+	if !ok {
+		r := errResponse("session not found: " + req.SessionID)
+		return &r
+	}
+	if session.Status != agent.StatusUserTurn {
+		r := errResponse("session must be idle to enable remote control")
+		return &r
+	}
+	if err := d.enableRemoteControl(session); err != nil {
+		r := errResponse("enable remote control: " + err.Error())
+		return &r
+	}
+	r := resultResponse("ok")
+	return &r
+}
+
 func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 	var req SpawnData
 	if err := json.Unmarshal(data, &req); err != nil {
@@ -173,7 +200,14 @@ func (d *Daemon) handleSpawn(data json.RawMessage) *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
-	launchCmd, err := provider.Lifecycle(seed).LaunchCommand(seed, agent.LaunchOptions{Message: req.Message})
+	launchOptions := agent.LaunchOptions{Message: req.Message, RemoteControl: req.RemoteControl}
+	if req.RemoteControl {
+		if err := d.require(seed, agent.CapabilityRemoteControl); err != nil {
+			r := errResponse(err.Error())
+			return &r
+		}
+	}
+	launchCmd, err := provider.Lifecycle(seed).LaunchCommand(seed, launchOptions)
 	if err != nil {
 		r := errResponse("launch command: " + err.Error())
 		return &r

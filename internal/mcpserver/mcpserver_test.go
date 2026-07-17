@@ -17,16 +17,19 @@ import (
 // fakeDaemon is an in-process daemonAPI double. It records side-effect calls and can
 // be told to reject a Send so error mapping is exercised.
 type fakeDaemon struct {
-	sessions        []agent.Session
-	sendErr         error
-	sent            []string // "sessionID|message" for each Send
-	queued          []string
-	queuedActionIDs []string
-	killed          []string
-	tagsSet         map[string][]string
-	spawnID         string
-	spawnPane       string
-	actionReports   []string // "actionID|operation|sessionID|error" per failed-receipt report
+	sessions           []agent.Session
+	sendErr            error
+	sent               []string // "sessionID|message" for each Send
+	queued             []string
+	queuedActionIDs    []string
+	remoteControlled   []string
+	remoteControlErr   error
+	killed             []string
+	tagsSet            map[string][]string
+	spawnID            string
+	spawnPane          string
+	spawnRemoteControl bool
+	actionReports      []string // "actionID|operation|sessionID|error" per failed-receipt report
 
 	watches        []ledger.Watch
 	watchErr       error
@@ -59,6 +62,14 @@ func (f *fakeDaemon) Send(sessionID, message string) error {
 	return nil
 }
 
+func (f *fakeDaemon) EnableRemoteControl(sessionID string) error {
+	if f.remoteControlErr != nil {
+		return f.remoteControlErr
+	}
+	f.remoteControlled = append(f.remoteControlled, sessionID)
+	return nil
+}
+
 func (f *fakeDaemon) Queue(paneID, sessionID, message string) error {
 	f.queued = append(f.queued, sessionID+"|"+message)
 	return nil
@@ -70,9 +81,10 @@ func (f *fakeDaemon) QueueMessage(paneID, sessionID, message, actionID string) (
 	return "qi_fake", nil
 }
 
-func (f *fakeDaemon) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (daemon.SpawnResultData, error) {
+func (f *fakeDaemon) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string, remoteControl bool) (daemon.SpawnResultData, error) {
 	f.spawnID = "new-session"
 	f.spawnPane = "%99"
+	f.spawnRemoteControl = remoteControl
 	f.sessions = append(f.sessions, agent.Session{SessionID: f.spawnID, PaneID: f.spawnPane})
 	return daemon.SpawnResultData{SessionID: f.spawnID, PaneID: f.spawnPane}, nil
 }
@@ -325,6 +337,93 @@ func TestSideEffectToolReturnsReceipt(t *testing.T) {
 	}
 	if len(fd.sent) != 1 {
 		t.Errorf("Send called %d times, want 1", len(fd.sent))
+	}
+}
+
+func TestSpawnSessionPropagatesNativeRemoteControl(t *testing.T) {
+	fd := &fakeDaemon{sessions: fixtureSessions()}
+	pc := newPipeClient(t, fd)
+	defer pc.close()
+
+	res, body := pc.callTool(t, "spawn_session", map[string]any{
+		"cwd":            "/tmp/project",
+		"provider":       "claude",
+		"remote_control": true,
+	})
+	if res.IsError {
+		t.Fatalf("spawn_session marked as error: %s", body)
+	}
+	if !fd.spawnRemoteControl {
+		t.Fatal("spawn_session did not propagate remote_control=true")
+	}
+	var rc struct {
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(body, &rc); err != nil {
+		t.Fatalf("decode receipt: %v (%s)", err, body)
+	}
+	if got, ok := rc.Params["remote_control"].(bool); !ok || !got {
+		t.Fatalf("receipt remote_control = %#v", rc.Params["remote_control"])
+	}
+}
+
+func TestEnableRemoteControlReturnsSemanticReceipt(t *testing.T) {
+	fd := &fakeDaemon{sessions: fixtureSessions()}
+	pc := newPipeClient(t, fd)
+	defer pc.close()
+
+	res, body := pc.callTool(t, "enable_remote_control", map[string]any{"session_id": "sess-1"})
+	if res.IsError {
+		t.Fatalf("enable_remote_control marked as error: %s", body)
+	}
+	var rc struct {
+		Operation       string `json:"operation"`
+		DeliveryOutcome string `json:"delivery_outcome"`
+		Target          struct {
+			SessionID string `json:"session_id"`
+		} `json:"target"`
+	}
+	if err := json.Unmarshal(body, &rc); err != nil {
+		t.Fatalf("decode receipt: %v (%s)", err, body)
+	}
+	if rc.Operation != "enable_remote_control" || rc.DeliveryOutcome != "delivered" {
+		t.Fatalf("operation/outcome = %q/%q", rc.Operation, rc.DeliveryOutcome)
+	}
+	if rc.Target.SessionID != "sess-1" {
+		t.Fatalf("target = %+v", rc.Target)
+	}
+	if len(fd.remoteControlled) != 1 || fd.remoteControlled[0] != "sess-1" {
+		t.Fatalf("remote control calls = %#v", fd.remoteControlled)
+	}
+}
+
+func TestEnableRemoteControlFailureReturnsFailedReceipt(t *testing.T) {
+	fd := &fakeDaemon{
+		sessions:         fixtureSessions(),
+		remoteControlErr: fmt.Errorf("remote control is only available for Claude sessions"),
+	}
+	pc := newPipeClient(t, fd)
+	defer pc.close()
+
+	res, body := pc.callTool(t, "enable_remote_control", map[string]any{"session_id": "sess-1"})
+	if !res.IsError {
+		t.Fatalf("expected isError=true, got: %s", body)
+	}
+	var rc struct {
+		DeliveryOutcome string `json:"delivery_outcome"`
+		Error           string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &rc); err != nil {
+		t.Fatalf("decode receipt: %v (%s)", err, body)
+	}
+	if rc.DeliveryOutcome != "failed" || !strings.Contains(rc.Error, "only available for Claude") {
+		t.Fatalf("failed receipt = %+v", rc)
+	}
+	if len(fd.remoteControlled) != 0 {
+		t.Fatalf("failed call recorded delivery: %#v", fd.remoteControlled)
+	}
+	if len(fd.actionReports) != 1 || !strings.Contains(fd.actionReports[0], "enable_remote_control|sess-1|") {
+		t.Fatalf("action report = %v", fd.actionReports)
 	}
 }
 

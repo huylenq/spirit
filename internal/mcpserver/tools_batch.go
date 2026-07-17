@@ -29,8 +29,8 @@ func (o apiOps) Send(sessionID, message string) error {
 func (o apiOps) Queue(paneID, sessionID, message, actionID string) (string, error) {
 	return o.api.QueueMessage(paneID, sessionID, message, actionID)
 }
-func (o apiOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string) (string, string, error) {
-	result, err := o.api.SpawnProvider(provider, cwd, tmuxSession, message, "")
+func (o apiOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string, remoteControl bool) (string, string, error) {
+	result, err := o.api.SpawnProvider(provider, cwd, tmuxSession, message, "", remoteControl)
 	if err != nil {
 		return "", "", err
 	}

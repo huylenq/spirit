@@ -376,16 +376,21 @@ func (c *Client) Relay(paneID, message string, capability agent.Capability) erro
 	return c.rpcInto(Request{Type: ReqRelay, Data: marshalData(RelayData{PaneID: paneID, Message: message, Capability: capability})}, nil)
 }
 
+// EnableRemoteControl asks the target provider to expose its native remote-control surface.
+func (c *Client) EnableRemoteControl(sessionID string) error {
+	return c.rpcInto(Request{Type: ReqEnableRemoteControl, Data: marshalData(SessionIDData{SessionID: sessionID})}, nil)
+}
+
 // Spawn launches a new claude session and waits for it to register.
 // If splitFromPane is non-empty (e.g. "%145"), the new pane is split next to
 // that pane in the same tmux window. Otherwise a new window is created in
 // tmuxSession (or the first available session if tmuxSession is empty).
 func (c *Client) Spawn(cwd, tmuxSession, message, splitFromPane string) (SpawnResultData, error) {
-	return c.SpawnProvider(agent.ProviderClaude, cwd, tmuxSession, message, splitFromPane)
+	return c.SpawnProvider(agent.ProviderClaude, cwd, tmuxSession, message, splitFromPane, false)
 }
 
 // SpawnProvider launches a session using the selected provider lifecycle.
-func (c *Client) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (SpawnResultData, error) {
+func (c *Client) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string, remoteControl bool) (SpawnResultData, error) {
 	var data SpawnResultData
 	err := c.rpcInto(Request{
 		Type: ReqSpawn,
@@ -395,6 +400,7 @@ func (c *Client) SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, mess
 			TmuxSession:   tmuxSession,
 			Message:       message,
 			SplitFromPane: splitFromPane,
+			RemoteControl: remoteControl,
 		}),
 	}, &data)
 	return data, err

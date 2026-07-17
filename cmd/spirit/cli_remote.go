@@ -522,12 +522,13 @@ func runQueue() {
 
 func runSpawn() {
 	if len(os.Args) < 3 {
-		dieUsage("usage: spirit agent spawn <cwd> [-m <msg>] [--new-window | --tmux-session <name>]")
+		dieUsage("usage: spirit agent spawn <cwd> [-m <msg>] [--provider <claude|codex>] [--remote-control] [--new-window | --tmux-session <name>]")
 	}
 	cwd := os.Args[2]
 	message := ""
 	tmuxSession := ""
 	provider := ""
+	remoteControl := false
 	forceNewWindow := false
 
 	for i := 3; i < len(os.Args); i++ {
@@ -547,6 +548,8 @@ func runSpawn() {
 				tmuxSession = os.Args[i+1]
 				i++
 			}
+		case "--remote-control":
+			remoteControl = true
 		case "--new-window":
 			forceNewWindow = true
 		}
@@ -570,7 +573,7 @@ func runSpawn() {
 		providerID = agent.ProviderID(provider)
 	}
 
-	result, err := client.SpawnProvider(providerID, cwd, tmuxSession, message, splitFromPane)
+	result, err := client.SpawnProvider(providerID, cwd, tmuxSession, message, splitFromPane, remoteControl)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "spawn: %v\n", err)
 		os.Exit(1)

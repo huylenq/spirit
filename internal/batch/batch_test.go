@@ -61,8 +61,8 @@ func (f *fakeOps) Queue(paneID, sessionID, message, actionID string) (string, er
 	return "qi_fake", nil
 }
 
-func (f *fakeOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string) (string, string, error) {
-	if err := f.record("spawn:" + cwd); err != nil {
+func (f *fakeOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string, remoteControl bool) (string, string, error) {
+	if err := f.record(fmt.Sprintf("spawn:%s:remote=%t", cwd, remoteControl)); err != nil {
 		return "", "", err
 	}
 	return "spawned-1", "%9", nil
@@ -203,6 +203,7 @@ func TestBuildPlanFailFast(t *testing.T) {
 		{"bad wait phase", Batch{Actions: []Step{{Op: OpWait, SessionID: "s1", Phase: "done"}}}, "phase must be"},
 		{"spawn without cwd", Batch{Actions: []Step{{Op: OpSpawn}}}, "cwd is required"},
 		{"unknown provider", Batch{Actions: []Step{{Op: OpSpawn, CWD: "/tmp", Provider: "gpt"}}}, "unknown agent provider"},
+		{"codex remote control", Batch{Actions: []Step{{Op: OpSpawn, CWD: "/tmp", Provider: "codex", RemoteControl: true}}}, "only available for Claude"},
 		{"empty", Batch{}, "no actions"},
 	}
 	for _, c := range cases {
@@ -230,6 +231,22 @@ func TestBuildPlanCapabilityGate(t *testing.T) {
 }
 
 // --- execute ---
+
+func TestExecuteSpawnPropagatesRemoteControl(t *testing.T) {
+	ops := newFakeOps()
+	res, err := Execute(ops, Batch{Actions: []Step{{
+		Op: OpSpawn, CWD: "/tmp/project", Provider: "claude", RemoteControl: true,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ops.calls) != 1 || ops.calls[0] != "spawn:/tmp/project:remote=true" {
+		t.Fatalf("spawn calls = %v", ops.calls)
+	}
+	if len(res.Receipts) != 1 || res.Receipts[0].Params["remote_control"] != true {
+		t.Fatalf("spawn receipt = %+v", res.Receipts)
+	}
+}
 
 func TestExecuteHappyPathReceipts(t *testing.T) {
 	ops := newFakeOps(idle("s1", "%1"), idle("s2", "%2"))

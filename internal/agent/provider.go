@@ -27,6 +27,7 @@ const (
 	CapabilityApprovalObserve   Capability = "approval.observe"
 	CapabilityApprovalRespond   Capability = "approval.respond"
 	CapabilityUsage             Capability = "usage"
+	CapabilityRemoteControl     Capability = "remote_control"
 	CapabilityWorktreeNative    Capability = "worktree.native"
 	CapabilityWorktreeGit       Capability = "worktree.git"
 )
@@ -68,12 +69,14 @@ type InputDriver interface {
 type LifecycleDriver interface {
 	LaunchCommand(Session, LaunchOptions) (string, error)
 	ResumeCommand(Session) (string, error)
+	RemoteControlCommand(Session) (string, error)
 }
 
 type LaunchOptions struct {
-	Message  string
-	Model    string
-	Worktree string
+	Message       string
+	Model         string
+	Worktree      string
+	RemoteControl bool
 }
 
 // TerminalProfile describes provider-specific prompt rendering in a captured

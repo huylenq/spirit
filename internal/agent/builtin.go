@@ -106,8 +106,16 @@ func (d builtinLifecycle) LaunchCommand(_ Session, options LaunchOptions) (strin
 		if options.Message != "" {
 			command += " " + shellQuote(options.Message)
 		}
+		// --remote-control accepts an optional name. Put the flag after the positional
+		// prompt so Claude's parser cannot consume the prompt as that optional name.
+		if options.RemoteControl {
+			command += " --remote-control"
+		}
 		return command, nil
 	case ProviderCodex:
+		if options.RemoteControl {
+			return "", fmt.Errorf("remote control is only available for Claude sessions")
+		}
 		if options.Worktree != "" {
 			return "", fmt.Errorf("Codex does not support Claude worktree launch options")
 		}
@@ -138,6 +146,17 @@ func (d builtinLifecycle) ResumeCommand(session Session) (string, error) {
 	}
 }
 
+func (d builtinLifecycle) RemoteControlCommand(Session) (string, error) {
+	switch d.id {
+	case ProviderClaude:
+		return "/rc", nil
+	case ProviderCodex:
+		return "", fmt.Errorf("remote control is only available for Claude sessions")
+	default:
+		return "", fmt.Errorf("unknown provider %q", d.id)
+	}
+}
+
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 func NewDefaultRegistry() *Registry {
@@ -150,13 +169,14 @@ func NewDefaultRegistry() *Registry {
 	claudeCaps := NewCapabilitySet(append(shared,
 		CapabilityRelayBang, CapabilityLater, CapabilityResume, CapabilitySpawn,
 		CapabilityRenameNative, CapabilityCommit, CapabilityApprovalObserve,
-		CapabilityUsage, CapabilityWorktreeNative, CapabilityWorktreeGit,
+		CapabilityUsage, CapabilityRemoteControl, CapabilityWorktreeNative, CapabilityWorktreeGit,
 	)...)
 	codexCaps := NewCapabilitySet(append(shared, CapabilityResume, CapabilitySpawn)...)
 	codexCaps.WithUnsupported(CapabilityRelayBang, "bang mode is only available for Claude sessions")
 	codexCaps.WithUnsupported(CapabilityLater, "Later is not yet available for Codex sessions")
 	codexCaps.WithUnsupported(CapabilityRenameNative, "native rename is not available for Codex sessions")
 	codexCaps.WithUnsupported(CapabilityCommit, "commit automation is not available for Codex sessions")
+	codexCaps.WithUnsupported(CapabilityRemoteControl, "remote control is only available for Claude sessions")
 
 	return NewRegistry(
 		builtinProvider{

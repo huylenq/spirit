@@ -55,9 +55,10 @@ type Step struct {
 	// commit: auto-kill after the commit completes
 	Done bool `json:"done,omitempty"`
 	// spawn
-	CWD         string `json:"cwd,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	TmuxSession string `json:"tmux_session,omitempty"`
+	CWD           string `json:"cwd,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	TmuxSession   string `json:"tmux_session,omitempty"`
+	RemoteControl bool   `json:"remote_control,omitempty"`
 	// wait
 	Phase          string `json:"phase,omitempty"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
@@ -171,6 +172,9 @@ func (s Step) Detail() string {
 			provider = string(agent.ProviderClaude)
 		}
 		d := fmt.Sprintf("spawn %s session in %s", provider, s.CWD)
+		if s.RemoteControl {
+			d += " with native remote control"
+		}
 		if s.Message != "" {
 			d += fmt.Sprintf(" with prompt %q", truncate(s.Message, 40))
 		}

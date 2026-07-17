@@ -60,6 +60,7 @@ const (
 	ReqSessions               = "sessions"
 	ReqSend                   = "send"
 	ReqRelay                  = "relay"
+	ReqEnableRemoteControl    = "enable_remote_control"
 	ReqSpawn                  = "spawn"
 	ReqKill                   = "kill"
 	ReqPulse                  = "pulse"
@@ -104,11 +105,11 @@ const (
 
 // Response type constants.
 const (
-	RespPong          = "pong"
-	RespSessions      = "sessions"
-	RespResult        = "result"
-	RespError         = "error"
-	RespCopilotStream = "copilot_stream"
+	RespPong            = "pong"
+	RespSessions        = "sessions"
+	RespResult          = "result"
+	RespError           = "error"
+	RespCopilotStream   = "copilot_stream"
 	RespCopilotSnapshot = "copilot_snapshot"
 )
 
@@ -280,10 +281,11 @@ type SendData struct {
 }
 
 type SpawnData struct {
-	Provider    agent.ProviderID `json:"provider,omitempty"`
-	CWD         string           `json:"cwd"`
-	TmuxSession string           `json:"tmuxSession"`
-	Message     string           `json:"message,omitempty"`
+	Provider      agent.ProviderID `json:"provider,omitempty"`
+	CWD           string           `json:"cwd"`
+	TmuxSession   string           `json:"tmuxSession"`
+	Message       string           `json:"message,omitempty"`
+	RemoteControl bool             `json:"remoteControl,omitempty"`
 	// SplitFromPane, if set, makes spawn split a new pane in the same window
 	// as the given pane (e.g. "%145") instead of opening a new tmux window.
 	// Takes precedence over TmuxSession when both are set.

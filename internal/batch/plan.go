@@ -131,6 +131,11 @@ func planStep(registry *agent.Registry, byID map[string]*agent.Session, index in
 		if err := registry.Require(seed, agent.CapabilitySpawn); err != nil {
 			return ps, fmt.Errorf("provider %q: %v", step.Provider, err)
 		}
+		if step.RemoteControl {
+			if err := registry.Require(seed, agent.CapabilityRemoteControl); err != nil {
+				return ps, fmt.Errorf("provider %q: %v", provider, err)
+			}
+		}
 		ps.Target = receipt.Target{ResolvedBy: receipt.ResolvedExplicit}
 		return ps, nil
 	default:

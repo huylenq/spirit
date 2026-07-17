@@ -20,10 +20,10 @@ func (o ClientOps) Queue(paneID, sessionID, message, actionID string) (string, e
 	return o.Client.QueueMessage(paneID, sessionID, message, actionID)
 }
 
-func (o ClientOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string) (string, string, error) {
+func (o ClientOps) Spawn(provider agent.ProviderID, cwd, tmuxSession, message string, remoteControl bool) (string, string, error) {
 	// No splitFromPane: batches have no caller pane context; open a new window
 	// (matching the MCP spawn_session behavior).
-	result, err := o.Client.SpawnProvider(provider, cwd, tmuxSession, message, "")
+	result, err := o.Client.SpawnProvider(provider, cwd, tmuxSession, message, "", remoteControl)
 	if err != nil {
 		return "", "", err
 	}

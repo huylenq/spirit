@@ -41,11 +41,13 @@ send(id, msg, [{wait, timeout}]) -> {ok, operation, target, [session]}
 kill(id) -> {ok, operation, target}
   Send SIGTERM to session and clean up.
 
-spawn(cwd, [{provider, tmux_session, message, split_from_pane}]) -> {ok, operation, session_id, pane_id}
+spawn(cwd, [{provider, tmux_session, message, split_from_pane, remote_control}]) -> {ok, operation, session_id, pane_id}
   Spawn a new session in the given directory. Blocks up to 30s. provider selects
   the agent ("claude" default, "codex", …); unknown providers are rejected by the
-  daemon's provider registry. If split_from_pane is set (e.g. "%145"), the new
-  pane is split next to it in the same tmux window; otherwise a new window is created.
+  daemon's provider registry. remote_control=true launches Claude with the native
+  --remote-control flag and fails explicitly for unsupported providers. If
+  split_from_pane is set (e.g. "%145"), the new pane is split next to it in the
+  same tmux window; otherwise a new window is created.
 
 ### Orchestrator
 

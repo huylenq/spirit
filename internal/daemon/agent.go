@@ -68,3 +68,20 @@ func (d *Daemon) sendCommand(session agent.Session, command string) error {
 	defer cancel()
 	return provider.Input(session).SendCommand(ctx, session.PaneID, command)
 }
+
+func (d *Daemon) enableRemoteControl(session agent.Session) error {
+	if err := d.require(session, agent.CapabilityRemoteControl); err != nil {
+		return err
+	}
+	provider, err := d.providers.Resolve(session.Provider)
+	if err != nil {
+		return err
+	}
+	command, err := provider.Lifecycle(session).RemoteControlCommand(session)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return provider.Input(session).SendCommand(ctx, session.PaneID, command)
+}

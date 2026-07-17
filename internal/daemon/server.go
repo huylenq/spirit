@@ -133,6 +133,8 @@ func (d *Daemon) dispatch(req Request, conn net.Conn, enc *json.Encoder) *Respon
 		return d.handleSend(req.Data)
 	case ReqRelay:
 		return d.handleRelay(req.Data)
+	case ReqEnableRemoteControl:
+		return d.handleEnableRemoteControl(req.Data)
 
 	case ReqSpawn:
 		return d.handleSpawn(req.Data)

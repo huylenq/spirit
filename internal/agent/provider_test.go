@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,6 +64,59 @@ func TestDefaultProviderTerminalProfiles(t *testing.T) {
 				t.Fatalf("PromptMarkers = %#v, want %#v", profile.PromptMarkers, []string{test.marker})
 			}
 		})
+	}
+}
+
+func TestDefaultProviderRemoteControlContracts(t *testing.T) {
+	registry := NewDefaultRegistry()
+	claudeSession := Session{Provider: ProviderClaude}
+	claudeProvider, err := registry.Resolve(ProviderClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := registry.Availability(claudeSession, CapabilityRemoteControl); !got.Supported {
+		t.Fatalf("Claude remote control should be supported: %+v", got)
+	}
+	command, err := claudeProvider.Lifecycle(claudeSession).RemoteControlCommand(claudeSession)
+	if err != nil || command != "/rc" {
+		t.Fatalf("Claude remote control command = %q, %v; want /rc", command, err)
+	}
+
+	codexSession := Session{Provider: ProviderCodex}
+	if got := registry.Availability(codexSession, CapabilityRemoteControl); got.Supported || got.Reason == "" {
+		t.Fatalf("Codex remote control should be explicitly unsupported: %+v", got)
+	}
+}
+
+func TestDefaultProviderLaunchRemoteControlContracts(t *testing.T) {
+	registry := NewDefaultRegistry()
+	claudeSession := Session{Provider: ProviderClaude}
+	claudeProvider, err := registry.Resolve(ProviderClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := claudeProvider.Lifecycle(claudeSession).LaunchCommand(
+		claudeSession,
+		LaunchOptions{Message: "investigate", RemoteControl: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "claude --dangerously-skip-permissions 'investigate' --remote-control"
+	if command != want {
+		t.Fatalf("Claude launch command = %q, want %q", command, want)
+	}
+
+	codexSession := Session{Provider: ProviderCodex}
+	codexProvider, err := registry.Resolve(ProviderCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codexProvider.Lifecycle(codexSession).LaunchCommand(
+		codexSession,
+		LaunchOptions{RemoteControl: true},
+	); err == nil || !strings.Contains(err.Error(), "only available for Claude") {
+		t.Fatalf("Codex remote-control launch error = %v", err)
 	}
 }
 

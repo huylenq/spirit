@@ -192,11 +192,11 @@ func executeStep(ops Ops, ps PlannedStep) *receipt.ActionReceipt {
 		if step.Provider == "" {
 			provider = agent.ProviderClaude
 		}
-		rcpt.Params = map[string]any{"cwd": step.CWD, "provider": string(provider)}
+		rcpt.Params = map[string]any{"cwd": step.CWD, "provider": string(provider), "remote_control": step.RemoteControl}
 		if step.Message != "" {
 			rcpt.Params["message"] = step.Message
 		}
-		sessionID, paneID, err := ops.Spawn(provider, step.CWD, step.TmuxSession, step.Message)
+		sessionID, paneID, err := ops.Spawn(provider, step.CWD, step.TmuxSession, step.Message, step.RemoteControl)
 		if err != nil {
 			return rcpt.Fail(err)
 		}

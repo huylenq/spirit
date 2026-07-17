@@ -53,13 +53,19 @@ Use named capabilities rather than accumulating provider booleans:
 - `queue`, `later`, `resume`, `spawn`, `kill`
 - `rename.native`, `title.local`, `commit`
 - `transcript.messages`, `transcript.tools`, `diff.attribution`
-- `approval.observe`, `approval.respond`, `usage`
+- `approval.observe`, `approval.respond`, `usage`, `remote_control`
 - `worktree.native`, `worktree.git`
 
 Every command has one centralized availability check. The command palette, key
 handlers, daemon RPC, Lua API, and future external clients use the same result and
 same unsupported reason. Provider-specific checks must not live in individual TUI
 handlers.
+
+Remote control is lifecycle policy, not a generic prompt macro. Spawn paths should
+request it through `LaunchOptions.RemoteControl`; the Claude provider emits the native
+`--remote-control` launch flag, while unsupported providers fail before a pane is
+created. The post-spawn semantic action (`/rc` for Claude) exists only as a fallback
+for sessions that are already running.
 
 ## Provider-Controlled Input
 

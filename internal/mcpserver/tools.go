@@ -23,9 +23,10 @@ type daemonAPI interface {
 	HookEvents(sessionID string) ([]claude.HookEvent, error)
 	Summary(sessionID string) (*claude.SessionSummary, error)
 	Send(sessionID, message string) error
+	EnableRemoteControl(sessionID string) error
 	Queue(paneID, sessionID, message string) error
 	QueueMessage(paneID, sessionID, message, actionID string) (string, error)
-	SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string) (daemon.SpawnResultData, error)
+	SpawnProvider(provider agent.ProviderID, cwd, tmuxSession, message, splitFromPane string, remoteControl bool) (daemon.SpawnResultData, error)
 	Kill(sessionID string) error
 	SetTags(sessionID string, tags []string) error
 	SetNote(sessionID, note string) error
@@ -90,6 +91,7 @@ const batchInputSchema = `{"type":"object","properties":{
 "cwd":{"type":"string","description":"spawn: working directory."},
 "provider":{"type":"string","enum":["claude","codex"],"description":"spawn: agent provider (default claude)."},
 "tmux_session":{"type":"string","description":"spawn: tmux session to open a window in."},
+"remote_control":{"type":"boolean","description":"spawn: launch with provider-native Remote Control (Claude only)."},
 "phase":{"type":"string","enum":["idle","working","cycle"],"description":"wait: target lifecycle phase."},
 "timeout_seconds":{"type":"integer","description":"wait: max seconds (default 60, cap 600)."}
 },"required":["op"]}},
@@ -210,6 +212,13 @@ func buildTools() []tool {
 			Handler:     handleSendMessage,
 		},
 		{
+			Name:        "enable_remote_control",
+			Description: "Enable the target session's provider-native remote-control surface. Supported for Claude sessions; unsupported providers fail explicitly. Returns an ActionReceipt.",
+			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string","description":"Target session UUID."}},"required":["session_id"]}`),
+			SideEffect:  true,
+			Handler:     handleEnableRemoteControl,
+		},
+		{
 			Name:        "queue_message",
 			Description: "Queue a message for delivery when the session next becomes idle (fire-and-forget; safe when the session is busy). Returns an ActionReceipt.",
 			InputSchema: schema(`{"type":"object","properties":{"session_id":{"type":"string"},"message":{"type":"string"}},"required":["session_id","message"]}`),
@@ -218,8 +227,8 @@ func buildTools() []tool {
 		},
 		{
 			Name:        "spawn_session",
-			Description: "Spawn a new coding session in the given directory. provider defaults to claude. Splits a new tmux window unless tmux_session is given. Returns an ActionReceipt with the new session id.",
-			InputSchema: schema(`{"type":"object","properties":{"cwd":{"type":"string","description":"Working directory for the new session."},"provider":{"type":"string","enum":["claude","codex"]},"message":{"type":"string","description":"Optional initial prompt."},"tmux_session":{"type":"string","description":"Optional tmux session name to open a new window in."}},"required":["cwd"]}`),
+			Description: "Spawn a new coding session in the given directory. provider defaults to claude. Set remote_control=true to launch Claude with its native --remote-control flag; unsupported providers fail explicitly. Splits a new tmux window unless tmux_session is given. Returns an ActionReceipt with the new session id.",
+			InputSchema: schema(`{"type":"object","properties":{"cwd":{"type":"string","description":"Working directory for the new session."},"provider":{"type":"string","enum":["claude","codex"]},"message":{"type":"string","description":"Optional initial prompt."},"tmux_session":{"type":"string","description":"Optional tmux session name to open a new window in."},"remote_control":{"type":"boolean","description":"Launch with provider-native Remote Control. Supported for Claude via --remote-control."}},"required":["cwd"]}`),
 			SideEffect:  true,
 			Handler:     handleSpawnSession,
 		},
@@ -539,6 +548,25 @@ func handleSendMessage(api daemonAPI, args json.RawMessage) (any, bool) {
 	return rcpt, false
 }
 
+func handleEnableRemoteControl(api daemonAPI, args json.RawMessage) (any, bool) {
+	var a idArgs
+	if err := json.Unmarshal(args, &a); err != nil || a.SessionID == "" {
+		return receipt.New("enable_remote_control", receipt.Target{SessionID: a.SessionID, ResolvedBy: receipt.ResolvedExplicit}).
+			Fail(fmt.Errorf("session_id is required")), true
+	}
+	s, ok := resolveSession(api, a.SessionID)
+	rcpt := receipt.New("enable_remote_control", targetOf(a.SessionID, s, ok))
+	if !ok {
+		return rcpt.Fail(fmt.Errorf("session not found: %s", a.SessionID)), true
+	}
+	if err := api.EnableRemoteControl(a.SessionID); err != nil {
+		return rcpt.Fail(err), true
+	}
+	rcpt.DeliveryOutcome = receipt.OutcomeDelivered
+	rcpt.ObservedState = observe(api, a.SessionID)
+	return rcpt, false
+}
+
 func handleQueueMessage(api daemonAPI, args json.RawMessage) (any, bool) {
 	var a struct {
 		SessionID string `json:"session_id"`
@@ -571,19 +599,20 @@ func handleQueueMessage(api daemonAPI, args json.RawMessage) (any, bool) {
 
 func handleSpawnSession(api daemonAPI, args json.RawMessage) (any, bool) {
 	var a struct {
-		CWD         string `json:"cwd"`
-		Provider    string `json:"provider"`
-		Message     string `json:"message"`
-		TmuxSession string `json:"tmux_session"`
+		CWD           string `json:"cwd"`
+		Provider      string `json:"provider"`
+		Message       string `json:"message"`
+		TmuxSession   string `json:"tmux_session"`
+		RemoteControl bool   `json:"remote_control"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil || a.CWD == "" {
 		return receipt.New("spawn_session", receipt.Target{}).Fail(fmt.Errorf("cwd is required")), true
 	}
 	provider := agent.ParseProviderID(a.Provider)
 	rcpt := receipt.New("spawn_session", receipt.Target{ResolvedBy: receipt.ResolvedExplicit})
-	rcpt.Params = map[string]any{"cwd": a.CWD, "provider": string(provider), "message": a.Message, "tmux_session": a.TmuxSession}
+	rcpt.Params = map[string]any{"cwd": a.CWD, "provider": string(provider), "message": a.Message, "tmux_session": a.TmuxSession, "remote_control": a.RemoteControl}
 	// No splitFromPane: the daemon has no caller pane context; open a new window.
-	result, err := api.SpawnProvider(provider, a.CWD, a.TmuxSession, a.Message, "")
+	result, err := api.SpawnProvider(provider, a.CWD, a.TmuxSession, a.Message, "", a.RemoteControl)
 	if err != nil {
 		return rcpt.Fail(err), true
 	}
