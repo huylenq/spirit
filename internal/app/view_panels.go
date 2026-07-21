@@ -98,8 +98,9 @@ func (m Model) renderUsageDebugPanel() string {
 			lines = append(lines, line("SessionResets", s.SessionResets))
 			lines = append(lines, line("WeekAllPct", fmt.Sprintf("%d%%", s.WeekAllPct)))
 			lines = append(lines, line("WeekAllResets", s.WeekAllResets))
-			lines = append(lines, line("WeekSonnetPct", fmt.Sprintf("%d%%", s.WeekSonnetPct)))
-			lines = append(lines, line("WeekSonnetResets", s.WeekSonnetResets))
+			lines = append(lines, line("WeekModelName", s.WeekModelName))
+			lines = append(lines, line("WeekModelPct", fmt.Sprintf("%d%%", s.WeekModelPct)))
+			lines = append(lines, line("WeekModelResets", s.WeekModelResets))
 		}
 	} else {
 		lines = append(lines, ui.ItemDetailStyle.Render("(no usage data yet)"))

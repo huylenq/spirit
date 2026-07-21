@@ -63,8 +63,11 @@ func TestParseUsageDialog_SectionsOnOneLine(t *testing.T) {
 	if stats.WeekAllPct != 5 {
 		t.Errorf("WeekAllPct = %d, want 5", stats.WeekAllPct)
 	}
-	if stats.WeekSonnetPct != 10 {
-		t.Errorf("WeekSonnetPct = %d, want 10", stats.WeekSonnetPct)
+	if stats.WeekModelPct != 10 {
+		t.Errorf("WeekModelPct = %d, want 10", stats.WeekModelPct)
+	}
+	if stats.WeekModelName != "Sonnet" {
+		t.Errorf("WeekModelName = %q, want %q", stats.WeekModelName, "Sonnet")
 	}
 }
 
@@ -93,8 +96,50 @@ Resets Mon 6pm (Asia/Saigon)
 	if stats.WeekAllPct != 5 {
 		t.Errorf("WeekAllPct = %d, want 5", stats.WeekAllPct)
 	}
-	if stats.WeekSonnetPct != 10 {
-		t.Errorf("WeekSonnetPct = %d, want 10", stats.WeekSonnetPct)
+	if stats.WeekModelPct != 10 {
+		t.Errorf("WeekModelPct = %d, want 10", stats.WeekModelPct)
+	}
+}
+
+// TestParseUsageDialog_ModelSpecificWeek covers the Claude Code v2.1.216 format
+// where the second weekly bar is labelled with the active model ("Current week
+// (Fable)") instead of the fixed "Current week (Sonnet only)". Text is the real
+// ANSI-stripped dialog (leading whitespace from cursor-addressed layout kept).
+func TestParseUsageDialog_ModelSpecificWeek(t *testing.T) {
+	input := `                    Current session
+                    ████
+                    8% used
+                    Resets 7:39pm (Asia/Saigon)
+
+                    Current week (all models)
+                    ██████████████        28% used
+                    Resets Jul 26 at 3:59am (Asia/Saigon)
+
+                    Current week (Fable)
+                    ███████████████       30% used
+                    Resets Jul 26 at 3:59am (Asia/Saigon)`
+
+	stats, err := parseUsageDialog(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.SessionPct != 8 {
+		t.Errorf("SessionPct = %d, want 8", stats.SessionPct)
+	}
+	if stats.SessionResets != "7:39pm (Asia/Saigon)" {
+		t.Errorf("SessionResets = %q, want %q", stats.SessionResets, "7:39pm (Asia/Saigon)")
+	}
+	if stats.WeekAllPct != 28 {
+		t.Errorf("WeekAllPct = %d, want 28", stats.WeekAllPct)
+	}
+	if stats.WeekModelPct != 30 {
+		t.Errorf("WeekModelPct = %d, want 30", stats.WeekModelPct)
+	}
+	if stats.WeekModelName != "Fable" {
+		t.Errorf("WeekModelName = %q, want %q", stats.WeekModelName, "Fable")
+	}
+	if stats.WeekModelResets != "Jul 26 at 3:59am (Asia/Saigon)" {
+		t.Errorf("WeekModelResets = %q, want %q", stats.WeekModelResets, "Jul 26 at 3:59am (Asia/Saigon)")
 	}
 }
 

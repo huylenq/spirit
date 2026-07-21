@@ -56,15 +56,37 @@ type UsageStats struct {
 	SessionResets    string // human-readable reset time, e.g. "6pm (Asia/Saigon)"
 	WeekAllPct       int    // current week usage % (all models)
 	WeekAllResets    string
-	WeekSonnetPct    int // current week usage % (Sonnet only)
-	WeekSonnetResets string
+	WeekModelPct     int    // current week usage % for the active model
+	WeekModelResets  string
+	WeekModelName    string // model the weekly bar is scoped to, e.g. "Fable", "Sonnet", "Opus"
 }
 
 var (
 	rePct = regexp.MustCompile(`(\d+)%(?:\s+used)?`)
 	// Tolerates cursor-right ANSI mangling "Resets" → "Rese s" or "Rese ts"
 	reResets = regexp.MustCompile(`Rese\s*t?s\s+(.+)`)
+	// Matches "Current week (<label>)". The all-models bar uses "all models";
+	// the model-specific bar is labelled with the active model, e.g. "Fable",
+	// "Sonnet", "Opus" (older Claude Code used "Sonnet only").
+	reWeekLabel = regexp.MustCompile(`Current week \(([^)]+)\)`)
 )
+
+// detectModelWeekMarker scans the dialog for the model-specific weekly bar
+// ("Current week (<model>)", anything other than the all-models bar) and
+// returns its full marker string plus the cleaned model name. Returns empty
+// strings when only the all-models bar is present.
+func detectModelWeekMarker(text string) (marker, name string) {
+	for _, m := range reWeekLabel.FindAllStringSubmatch(text, -1) {
+		label := strings.TrimSpace(m[1])
+		if strings.EqualFold(label, "all models") {
+			continue
+		}
+		// Normalize legacy "Sonnet only" → "Sonnet".
+		clean := strings.TrimSpace(strings.TrimSuffix(label, " only"))
+		return "Current week (" + label + ")", clean
+	}
+	return "", ""
+}
 
 // FetchUsageRaw returns the raw ANSI-stripped dialog text for debugging.
 // It doesn't require any specific text to be present — useful for diagnosing format changes.
@@ -393,7 +415,10 @@ func parseUsageDialog(text string) (*UsageStats, error) {
 	sections := []section{
 		{"Current session", &stats.SessionPct, &stats.SessionResets},
 		{"Current week (all models)", &stats.WeekAllPct, &stats.WeekAllResets},
-		{"Current week (Sonnet only)", &stats.WeekSonnetPct, &stats.WeekSonnetResets},
+	}
+	if marker, name := detectModelWeekMarker(text); marker != "" {
+		stats.WeekModelName = name
+		sections = append(sections, section{marker, &stats.WeekModelPct, &stats.WeekModelResets})
 	}
 
 	// Collect markers for boundary detection (stops section scanning from bleeding into the next)

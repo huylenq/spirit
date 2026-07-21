@@ -255,14 +255,18 @@ func (m *UsageBarModel) LabelView() string {
 	}
 	if s.WeekAllPct > 0 || s.WeekAllResets != "" {
 		seg := fmt.Sprintf("week %d%%", s.WeekAllPct)
-		if s.WeekSonnetPct > 0 {
-			seg += fmt.Sprintf(" (sonnet %d%%)", s.WeekSonnetPct)
+		modelLabel := strings.ToLower(s.WeekModelName)
+		if modelLabel == "" {
+			modelLabel = "model"
+		}
+		if s.WeekModelPct > 0 {
+			seg += fmt.Sprintf(" (%s %d%%)", modelLabel, s.WeekModelPct)
 		}
 		if s.WeekAllResets != "" {
 			seg += " " + formatUntil(s.WeekAllResets)
 		}
-		if s.WeekSonnetResets != "" && s.WeekSonnetResets != s.WeekAllResets {
-			seg += " · sonnet " + formatUntil(s.WeekSonnetResets)
+		if s.WeekModelResets != "" && s.WeekModelResets != s.WeekAllResets {
+			seg += " · " + modelLabel + " " + formatUntil(s.WeekModelResets)
 		}
 		parts = append(parts, seg)
 	}

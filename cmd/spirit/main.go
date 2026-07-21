@@ -118,7 +118,7 @@ func main() {
 				}
 				fmt.Printf("session=%d%% resets=%q\n", usage.SessionPct, usage.SessionResets)
 				fmt.Printf("week_all=%d%% resets=%q\n", usage.WeekAllPct, usage.WeekAllResets)
-				fmt.Printf("week_sonnet=%d%% resets=%q\n", usage.WeekSonnetPct, usage.WeekSonnetResets)
+				fmt.Printf("week_model=%s %d%% resets=%q\n", usage.WeekModelName, usage.WeekModelPct, usage.WeekModelResets)
 			}
 			return
 		case "_gen-skill":
