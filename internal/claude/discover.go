@@ -14,21 +14,22 @@ import (
 
 type processInfo struct {
 	PID  int
-	Comm string
+	Comm string // basename, for display (e.g. window renaming)
+	Raw  string // untruncated ps comm, for provider matching
 }
 
 // buildProcessTree runs a single `ps` command and returns a map of PPID →
-// children plus a map of PID → comm. Replaces per-pane pgrep+ps calls with one
-// subprocess. The comm map lets callers identify a process by its own PID
-// (e.g. a pane whose root process is claude itself, not a child).
-func buildProcessTree() (map[int][]processInfo, map[int]string) {
+// children plus a map of PID → processInfo. Replaces per-pane pgrep+ps calls
+// with one subprocess. The by-PID map lets callers identify a process by its
+// own PID (e.g. a pane whose root process is claude itself, not a child).
+func buildProcessTree() (map[int][]processInfo, map[int]processInfo) {
 	out, err := exec.Command("ps", "-eo", "pid,ppid,comm").Output()
 	if err != nil {
 		return nil, nil
 	}
 
 	tree := make(map[int][]processInfo)
-	comm := make(map[int]string)
+	byPID := make(map[int]processInfo)
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
@@ -39,11 +40,12 @@ func buildProcessTree() (map[int][]processInfo, map[int]string) {
 		if err1 != nil || err2 != nil {
 			continue // skip header and malformed lines
 		}
-		c := filepath.Base(strings.Join(fields[2:], " "))
-		tree[ppid] = append(tree[ppid], processInfo{PID: pid, Comm: c})
-		comm[pid] = c
+		raw := strings.Join(fields[2:], " ")
+		info := processInfo{PID: pid, Comm: filepath.Base(raw), Raw: raw}
+		tree[ppid] = append(tree[ppid], info)
+		byPID[pid] = info
 	}
-	return tree, comm
+	return tree, byPID
 }
 
 // findClaudeInTree locates the claude process owned by a tmux pane. It matches
@@ -51,25 +53,39 @@ func buildProcessTree() (map[int][]processInfo, map[int]string) {
 // runs claude), and also the pane's root process itself — when claude is exec'd
 // as the pane command (e.g. `cd dir && claude`), pane_pid IS the claude PID and
 // has no shell parent, so it would otherwise be invisible.
-func findClaudeInTree(tree map[int][]processInfo, comm map[int]string, parentPID int) int {
-	return findProviderInTree(tree, comm, parentPID, ProviderClaude)
+func findClaudeInTree(tree map[int][]processInfo, byPID map[int]processInfo, parentPID int) int {
+	return findProviderInTree(tree, byPID, parentPID, ProviderClaude)
 }
 
-func findProviderInTree(tree map[int][]processInfo, comm map[int]string, parentPID int, provider Provider) int {
-	target := string(provider)
-	if comm[parentPID] == target {
+func findProviderInTree(tree map[int][]processInfo, byPID map[int]processInfo, parentPID int, provider Provider) int {
+	if matchesProvider(byPID[parentPID], provider) {
 		return parentPID
 	}
 	queue := append([]processInfo(nil), tree[parentPID]...)
 	for len(queue) > 0 {
 		child := queue[0]
 		queue = queue[1:]
-		if child.Comm == target {
+		if matchesProvider(child, provider) {
 			return child.PID
 		}
 		queue = append(queue, tree[child.PID]...)
 	}
 	return 0
+}
+
+// matchesProvider reports whether a process belongs to the given provider.
+// The common case is an exact comm match ("claude", "codex"). But a CLI
+// self-update re-execs the running process into its versioned install path
+// (e.g. ~/.local/share/claude/versions/2.1.226) — the OS then reports that
+// full path as comm, with a bare version number as its basename, so neither
+// matches the provider name directly. Recognize that layout too, so a
+// self-update mid-session doesn't make discovery think the session died.
+func matchesProvider(p processInfo, provider Provider) bool {
+	target := string(provider)
+	if p.Comm == target {
+		return true
+	}
+	return strings.Contains(p.Raw, "/"+target+"/versions/")
 }
 
 var (

@@ -50,13 +50,35 @@ func TestSessionMetaRoundTripAndMerge(t *testing.T) {
 }
 
 func TestFindProviderInNestedProcessTree(t *testing.T) {
-	tree := map[int][]processInfo{10: {{PID: 11, Comm: "zsh"}}, 11: {{PID: 12, Comm: "codex"}, {PID: 13, Comm: "claude"}}}
-	comm := map[int]string{10: "tmux", 11: "zsh", 12: "codex", 13: "claude"}
-	if got := findProviderInTree(tree, comm, 10, ProviderCodex); got != 12 {
+	tree := map[int][]processInfo{10: {{PID: 11, Comm: "zsh", Raw: "zsh"}}, 11: {{PID: 12, Comm: "codex", Raw: "codex"}, {PID: 13, Comm: "claude", Raw: "claude"}}}
+	byPID := map[int]processInfo{
+		10: {PID: 10, Comm: "tmux", Raw: "tmux"},
+		11: {PID: 11, Comm: "zsh", Raw: "zsh"},
+		12: {PID: 12, Comm: "codex", Raw: "codex"},
+		13: {PID: 13, Comm: "claude", Raw: "claude"},
+	}
+	if got := findProviderInTree(tree, byPID, 10, ProviderCodex); got != 12 {
 		t.Fatalf("codex pid = %d, want 12", got)
 	}
-	if got := findProviderInTree(tree, comm, 10, ProviderClaude); got != 13 {
+	if got := findProviderInTree(tree, byPID, 10, ProviderClaude); got != 13 {
 		t.Fatalf("claude pid = %d, want 13", got)
+	}
+}
+
+func TestFindProviderMatchesSelfUpdatedVersionedBinary(t *testing.T) {
+	// A CLI self-update re-execs the process into its versioned install path
+	// (e.g. ~/.local/share/claude/versions/2.1.226); ps then reports that full
+	// path as comm, with a bare version number as its basename.
+	raw := "/Users/huy/.local/share/claude/versions/2.1.226"
+	tree := map[int][]processInfo{}
+	byPID := map[int]processInfo{
+		20: {PID: 20, Comm: filepath.Base(raw), Raw: raw},
+	}
+	if got := findProviderInTree(tree, byPID, 20, ProviderClaude); got != 20 {
+		t.Fatalf("claude pid = %d, want 20 (self-updated versioned binary should still match)", got)
+	}
+	if got := findProviderInTree(tree, byPID, 20, ProviderCodex); got != 0 {
+		t.Fatalf("codex pid = %d, want 0 (must not cross-match another provider's versions dir)", got)
 	}
 }
 
