@@ -52,8 +52,9 @@ type WindowPaneInfo struct {
 
 // GatherAllClaudeWindowPanes collects pane info for every tmux window that
 // contains at least one tracked Claude session. It also returns the pane IDs
-// of single-pane idle windows in idleSessionName (empty string disables that
-// scan) — folded in here so both consumers share one tmux + ps pass.
+// of idle windows in idleSessionName (empty string disables that scan) —
+// windows whose panes are all blank shells, whether one pane or several —
+// folded in here so both consumers share one tmux + ps pass.
 func GatherAllClaudeWindowPanes(sessions []ClaudeSession, idleSessionName string) (map[WindowKey][]WindowPaneInfo, []string, error) {
 	allPanes, err := tmux.ListAllPanes()
 	if err != nil {
@@ -105,13 +106,19 @@ func GatherAllClaudeWindowPanes(sessions []ClaudeSession, idleSessionName string
 
 	var idle []string
 	for _, panes := range idleGroups {
-		if len(panes) != 1 {
+		allBlank := true
+		for _, p := range panes {
+			if findDeepestProcess(procTree, p.PanePID) != "" {
+				allBlank = false
+				break
+			}
+		}
+		if !allBlank {
 			continue
 		}
-		if findDeepestProcess(procTree, panes[0].PanePID) != "" {
-			continue
+		for _, p := range panes {
+			idle = append(idle, p.PaneID)
 		}
-		idle = append(idle, panes[0].PaneID)
 	}
 	return result, idle, nil
 }

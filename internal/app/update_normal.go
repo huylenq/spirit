@@ -594,7 +594,7 @@ func (m Model) handleKeyNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, Keys.Rename):
 		if !m.renaming {
 			m.renaming = true
-			m.pinnedToast("rename-all", "renaming windows…", false)
+			m.pinnedToast("rename-all", "rearranging tmux windows…", false)
 			return m, m.fetchRenameAllWindows()
 		}
 		return m, nil
