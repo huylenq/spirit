@@ -51,19 +51,11 @@ func ReadFirstUserMessage(sessionID string) string {
 	}
 	defer f.Close()
 
-	const headSize = 32 * 1024
-	buf := make([]byte, headSize)
-	n, _ := f.Read(buf)
-	if n == 0 {
-		return ""
-	}
-
 	var result string
-	for _, line := range strings.Split(string(buf[:n]), "\n") {
-		if line == "" {
-			continue
-		}
-		if text := extractUserText([]byte(line)); text != "" {
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	for scanner.Scan() {
+		if text := extractUserText(scanner.Bytes()); text != "" {
 			result = text
 			break
 		}

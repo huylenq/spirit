@@ -3,6 +3,7 @@ package claude
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -128,5 +129,37 @@ func TestCodexTranscriptAdapter(t *testing.T) {
 	}
 	if entries[0].Type != "assistant" || entries[0].ContentType != "final" {
 		t.Fatalf("newest entry = %#v", entries[0])
+	}
+}
+
+func TestCodexCompletedItemTranscriptAdapterFindsPromptAfterLargePreamble(t *testing.T) {
+	useTempStatusDir(t)
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	data := `{"type":"session_meta","payload":{"id":"codex-modern","instructions":"` + strings.Repeat("x", 40*1024) + `"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"injected context"}]}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"Fix the modern parser"}]}}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","phase":"final","content":[{"type":"Text","text":"Modern parser fixed."}]}}}` + "\n"
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSessionMeta(SessionMeta{Provider: ProviderCodex, SessionID: "codex-modern", TranscriptPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadFirstUserMessage("codex-modern"); got != "Fix the modern parser" {
+		t.Fatalf("first user message = %q", got)
+	}
+	msgs, err := ReadUserMessages("codex-modern")
+	if err != nil || len(msgs) != 1 || msgs[0] != "Fix the modern parser" {
+		t.Fatalf("user messages = %#v, err=%v", msgs, err)
+	}
+	if got := ReadLastAssistantInfo("codex-modern").Message; got != "Modern parser fixed." {
+		t.Fatalf("last assistant message = %q", got)
+	}
+	entries, err := ReadTranscriptEntries("codex-modern")
+	if err != nil || len(entries) != 4 {
+		t.Fatalf("entries=%d err=%v", len(entries), err)
+	}
+	if entries[0].Type != "assistant" || entries[0].ContentType != "final" || entries[1].Type != "user" {
+		t.Fatalf("newest entries = %#v", entries[:2])
 	}
 }

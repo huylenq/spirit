@@ -614,6 +614,8 @@ func extractUserText(line []byte) string {
 
 // extractCodexMessage reads the concise event_msg records from a Codex rollout.
 // These records avoid duplicating the richer response_item entries in the same file.
+// Codex 0.147+ wraps messages as item_completed events; older versions emitted
+// user_message and agent_message directly.
 func extractCodexMessage(line []byte) (text, role string) {
 	var outer struct {
 		Type    string          `json:"type"`
@@ -626,8 +628,15 @@ func extractCodexMessage(line []byte) (text, role string) {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 		Phase   string `json:"phase"`
+		Item    struct {
+			Type    string `json:"type"`
+			Phase   string `json:"phase"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"item"`
 	}
-	if json.Unmarshal(outer.Payload, &event) != nil || event.Message == "" {
+	if json.Unmarshal(outer.Payload, &event) != nil {
 		return "", ""
 	}
 	switch event.Type {
@@ -635,6 +644,21 @@ func extractCodexMessage(line []byte) (text, role string) {
 		return strings.TrimSpace(event.Message), "user"
 	case "agent_message":
 		return strings.TrimSpace(event.Message), "assistant"
+	case "item_completed":
+		var texts []string
+		for _, content := range event.Item.Content {
+			if content.Text != "" {
+				texts = append(texts, content.Text)
+			}
+		}
+		text := strings.TrimSpace(strings.Join(texts, " "))
+		switch event.Item.Type {
+		case "UserMessage":
+			return text, "user"
+		case "AgentMessage":
+			return text, "assistant"
+		}
+		return "", ""
 	default:
 		return "", ""
 	}
@@ -647,6 +671,13 @@ func buildCodexEntry(raw map[string]json.RawMessage) (typ, contentType, summary 
 			Type    string `json:"type"`
 			Message string `json:"message"`
 			Phase   string `json:"phase"`
+			Item    struct {
+				Type    string `json:"type"`
+				Phase   string `json:"phase"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"item"`
 		}
 		if json.Unmarshal(raw["payload"], &event) == nil {
 			switch event.Type {
@@ -658,6 +689,26 @@ func buildCodexEntry(raw map[string]json.RawMessage) (typ, contentType, summary 
 					ct = "text"
 				}
 				return "assistant", ct, truncStr(flattenText(event.Message), 60)
+			case "item_completed":
+				var texts []string
+				for _, content := range event.Item.Content {
+					if content.Text != "" {
+						texts = append(texts, content.Text)
+					}
+				}
+				summary := truncStr(flattenText(strings.Join(texts, " ")), 60)
+				switch event.Item.Type {
+				case "UserMessage":
+					return "user", "text", summary
+				case "AgentMessage":
+					ct := event.Item.Phase
+					if ct == "" {
+						ct = "text"
+					}
+					return "assistant", ct, summary
+				default:
+					return "item", event.Item.Type, summary
+				}
 			case "task_started", "task_complete", "turn_aborted":
 				return "system", event.Type, ""
 			default:
