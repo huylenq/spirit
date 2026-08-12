@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/huylenq/spirit/internal/claude"
 )
 
@@ -44,6 +45,77 @@ func TestInjectAfterPromptRequiresMarkerAtLineStart(t *testing.T) {
 	viewport := "assistant mentioned › in output\nstatus"
 	if got := injectAfterPrompt(viewport, "RELAY INPUT", []string{"›"}); got != viewport {
 		t.Fatalf("injectAfterPrompt() = %q, want unchanged viewport", got)
+	}
+}
+
+func TestWrapLinesExtendsPromptBackgroundToViewportWidth(t *testing.T) {
+	const (
+		fill  = "\033[48;2;58;56;75m"
+		reset = "\033[0m"
+	)
+	line := fill + "› Use /skills" + reset
+	continued := fill + "continued" + reset
+	blank := fill + reset
+	got := wrapLines(line+"\n"+continued+"\n"+blank, 24, 24, []string{"›"})
+
+	lines := strings.Split(got, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("wrapped prompt lines = %d, want 3: %q", len(lines), got)
+	}
+	for i, gotLine := range lines {
+		if width := ansi.StringWidth(gotLine); width != 24 {
+			t.Fatalf("wrapped prompt line %d width = %d, want 24: %q", i, width, gotLine)
+		}
+	}
+	resetAt := strings.Index(lines[0], reset)
+	if resetAt < 0 || !strings.Contains(lines[0][:resetAt], "   ") {
+		t.Fatalf("prompt fill was not inserted before reset: %q", lines[0])
+	}
+}
+
+func TestWrapLinesDoesNotStylePlainPromptPadding(t *testing.T) {
+	line := "› Use /skills"
+	got := wrapLines(line, 24, 24, []string{"›"})
+	if got != line {
+		t.Fatalf("plain prompt changed without a captured fill: %q", got)
+	}
+}
+
+func TestWrapLinesNormalizesPromptCursorBackground(t *testing.T) {
+	const (
+		cursor = "\033[48;2;25;24;38m"
+		fill   = "\033[48;2;58;56;75m"
+		reset  = "\033[0m"
+	)
+	line := cursor + "›" + reset + fill + " Use /skills" + reset
+	got := wrapLines(line, 24, 24, []string{"›"})
+
+	marker := strings.Index(ansi.Strip(got), "›")
+	if marker < 0 {
+		t.Fatalf("normalized prompt lost marker: %q", got)
+	}
+	fillAt := strings.Index(got, fill)
+	if fillAt < 0 {
+		t.Fatalf("normalized prompt lost editor fill: %q", got)
+	}
+	rawMarker := strings.Index(got, "›")
+	if rawMarker < 0 || !strings.Contains(got[:rawMarker], reset+fill) {
+		t.Fatalf("cursor background still controls marker: %q", got)
+	}
+}
+
+func TestTrimTrailingBlanksKeepsFilledPromptRows(t *testing.T) {
+	const fill = "\033[48;2;58;56;75m"
+	const reset = "\033[0m"
+	content := "output\n" + fill + "› prompt" + reset + "\n" + fill + reset + "\n"
+	got := trimTrailingBlanks(content, []string{"›"})
+	if !strings.HasSuffix(got, fill+reset) {
+		t.Fatalf("filled prompt row was trimmed: %q", got)
+	}
+
+	plain := trimTrailingBlanks(content, nil)
+	if strings.HasSuffix(plain, fill+reset) {
+		t.Fatalf("unmarked filled row was preserved: %q", plain)
 	}
 }
 

@@ -1287,10 +1287,17 @@ func firstNRunes(s string, n int) string {
 // (whitespace-only after stripping ANSI escape sequences).
 // This prevents GotoBottom() from scrolling past all content into empty space
 // when tmux captures include trailing blank lines for the full pane height.
-func trimTrailingBlanks(content string) string {
+func trimTrailingBlanks(content string, promptMarkers []string) string {
 	lines := strings.Split(content, "\n")
+	hasPrompt := false
+	for _, line := range lines {
+		if matchesPromptLine(ansi.Strip(line), promptMarkers) {
+			hasPrompt = true
+			break
+		}
+	}
 	end := len(lines)
-	for end > 0 && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" {
+	for end > 0 && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" && !(hasPrompt && hasPromptFill(lines[end-1])) {
 		end--
 	}
 	if end == len(lines) {
@@ -1316,12 +1323,25 @@ func truncateLines(content string, maxWidth int) string {
 // ANSI state continuity). Lines that should not wrap (box-drawing, dividers,
 // trailing-padding) are pre-truncated. divMaxWidth controls the width used for
 // reconstructing horizontal-rule labels (to keep them visible alongside overlays).
-func wrapLines(content string, maxWidth, divMaxWidth int) string {
+func wrapLines(content string, maxWidth, divMaxWidth int, promptMarkers []string) string {
 	if maxWidth <= 0 {
 		return content
 	}
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
+		lines[i] = normalizePromptMarker(line, promptMarkers)
+	}
+	promptFillRows := promptFillRows(lines, promptMarkers)
+	for i, line := range lines {
+		// Codex renders its active input as a background-filled row. tmux may
+		// omit the otherwise-empty cells at the end of that row, and the
+		// viewport's later lipgloss padding is unstyled. Extend the contiguous
+		// prompt block while its fill SGR is still active so the preview has the
+		// same full-width, multi-row prompt area as the provider terminal.
+		if promptFillRows[i] {
+			lines[i] = padPromptFill(line, maxWidth)
+			line = lines[i]
+		}
 		if ansi.StringWidth(line) <= maxWidth {
 			continue // fits — no action needed
 		}
@@ -1340,6 +1360,252 @@ func wrapLines(content string, maxWidth, divMaxWidth int) string {
 		}
 	}
 	return ansi.Hardwrap(strings.Join(lines, "\n"), maxWidth, false)
+}
+
+// normalizePromptMarker removes the provider cursor-cell styling from the
+// leading prompt marker and gives it the same fill as the prompt editor. Codex
+// renders the cursor as an inverse/different-background cell, while its true
+// prompt surface has one continuous background rectangle.
+func normalizePromptMarker(line string, promptMarkers []string) string {
+	plain := ansi.Strip(line)
+	trimmed := strings.TrimLeft(plain, " \t")
+	var marker string
+	for _, candidate := range promptMarkers {
+		if strings.HasPrefix(trimmed, candidate) {
+			marker = candidate
+			break
+		}
+	}
+	if marker == "" {
+		return line
+	}
+
+	markerStart := len(plain) - len(trimmed)
+	startCell := ansi.StringWidth(plain[:markerStart])
+	endCell := startCell + ansi.StringWidth(marker)
+	rawStart := rawOffsetAtCell(line, startCell)
+	rawEnd := rawOffsetAtCell(line, endCell)
+	if rawEnd <= rawStart {
+		return line
+	}
+
+	fill := firstFillCSI(line[rawEnd:])
+	if fill == "" {
+		return line
+	}
+
+	return line[:rawStart] + "\033[0m" + fill + marker + "\033[0m" + line[rawEnd:]
+}
+
+// rawOffsetAtCell maps a visible cell offset to a byte offset without
+// splitting ANSI sequences or UTF-8 characters.
+func rawOffsetAtCell(s string, target int) int {
+	width := 0
+	seenText := false
+	for i := 0; i < len(s); {
+		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
+			if seenText && width >= target {
+				return i
+			}
+			j := i + 2
+			for j < len(s) {
+				b := s[j]
+				j++
+				if b >= 0x40 && b <= 0x7e {
+					break
+				}
+			}
+			i = j
+			continue
+		}
+		if width >= target {
+			return i
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size == 0 {
+			return i
+		}
+		width += ansi.StringWidth(string(r))
+		seenText = true
+		i += size
+	}
+	return len(s)
+}
+
+func firstFillCSI(s string) string {
+	for i := 0; i+1 < len(s); {
+		if s[i] != '\033' || s[i+1] != '[' {
+			i++
+			continue
+		}
+		j := i + 2
+		for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
+			j++
+		}
+		if j < len(s) && s[j] == 'm' && isFillCSI(s[i:j+1]) {
+			return s[i : j+1]
+		}
+		i = j
+	}
+	return ""
+}
+
+func isFillCSI(seq string) bool {
+	if len(seq) < 3 || seq[0] != '\033' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
+		return false
+	}
+	for _, param := range strings.Split(seq[2:len(seq)-1], ";") {
+		if param == "7" || param == "48" {
+			return true
+		}
+	}
+	return false
+}
+
+// promptFillRows identifies the prompt editor's contiguous filled block. The
+// block can include blank rows and continuation text without a prompt marker;
+// stop at the first ordinary non-empty, unfilled line on either side.
+func promptFillRows(lines, promptMarkers []string) []bool {
+	rows := make([]bool, len(lines))
+	for i, line := range lines {
+		if !matchesPromptLine(ansi.Strip(line), promptMarkers) {
+			continue
+		}
+		rows[i] = true
+		for _, step := range []int{-1, 1} {
+			for j := i + step; j >= 0 && j < len(lines); j += step {
+				stripped := ansi.Strip(lines[j])
+				if hasPromptFill(lines[j]) || strings.TrimSpace(stripped) == "" {
+					rows[j] = true
+					continue
+				}
+				break
+			}
+		}
+	}
+	return rows
+}
+
+// padPromptFill extends a prompt line to width when its captured ANSI state
+// contains an active background/reverse-video fill. The padding must be placed
+// before the line's trailing reset sequence; padding added by a later layout
+// component would inherit the default terminal background instead.
+func padPromptFill(line string, width int) string {
+	missing := width - ansi.StringWidth(line)
+	if missing <= 0 {
+		return line
+	}
+
+	baseEnd := trailingCSIStart(line)
+	base := line[:baseEnd]
+	if !hasActivePromptFill(base) {
+		return line
+	}
+
+	fill := strings.Repeat(" ", missing)
+	if baseEnd == len(line) {
+		return base + fill + "\033[0m"
+	}
+	return base + fill + line[baseEnd:]
+}
+
+// hasPromptFill reports whether the final visible cell run is rendered with a
+// background or reverse-video attribute. It intentionally ignores a trailing
+// reset, which is exactly where padding must be inserted.
+func hasPromptFill(line string) bool {
+	return hasActivePromptFill(line[:trailingCSIStart(line)])
+}
+
+// trailingCSIStart returns the byte offset where the final run of ANSI CSI
+// sequences begins. Prompt renderers normally put their reset there.
+func trailingCSIStart(s string) int {
+	lastTextEnd := 0
+	lastNonResetCSIEnd := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) {
+				b := s[j]
+				j++
+				if b >= 0x40 && b <= 0x7e {
+					break
+				}
+			}
+			if j > len(s) {
+				return lastTextEnd
+			}
+			if !isResetCSI(s[i:j]) {
+				lastNonResetCSIEnd = j
+			}
+			i = j
+			continue
+		}
+		lastTextEnd = i + 1
+		i++
+	}
+	if lastTextEnd == 0 {
+		return lastNonResetCSIEnd
+	}
+	return lastTextEnd
+}
+
+// isResetCSI reports whether a CSI sequence only clears terminal attributes.
+// This lets blank, background-filled capture rows keep their fill sequence
+// before the reset when padding is inserted.
+func isResetCSI(seq string) bool {
+	if len(seq) < 3 || seq[0] != '\033' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
+		return false
+	}
+	params := seq[2 : len(seq)-1]
+	if params == "" {
+		return true
+	}
+	for _, param := range strings.Split(params, ";") {
+		switch param {
+		case "0", "22", "23", "24", "25", "27", "28", "29", "39", "49":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// hasActivePromptFill reports whether the captured prefix leaves a background
+// or reverse-video attribute active at its end. It intentionally handles the
+// common SGR forms emitted by terminal UIs (48/49 and 7/27), including resets.
+func hasActivePromptFill(s string) bool {
+	active := false
+	for i := 0; i < len(s); {
+		if s[i] != '\033' || i+1 >= len(s) || s[i+1] != '[' {
+			i++
+			continue
+		}
+		j := i + 2
+		for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
+			j++
+		}
+		if j >= len(s) || s[j] != 'm' {
+			i = j
+			continue
+		}
+		params := s[i+2 : j]
+		if params == "" {
+			active = false
+		} else {
+			for _, param := range strings.Split(params, ";") {
+				switch param {
+				case "0", "27", "49":
+					active = false
+				case "7":
+					active = true
+				case "48":
+					active = true
+				}
+			}
+		}
+		i = j + 1
+	}
+	return active
 }
 
 // isDividerRune reports whether r is a horizontal rule character.

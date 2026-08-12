@@ -167,7 +167,7 @@ func (m *DetailModel) wrapForViewport() string {
 	if m.wrappedContentSrc == m.content && m.wrappedContentWidth == m.viewport.Width {
 		return m.wrappedContent
 	}
-	wrapped := wrapLines(trimTrailingBlanks(m.content), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width))
+	wrapped := wrapLines(trimTrailingBlanks(m.content, m.promptMarkers), m.viewport.Width, m.effectiveDividerWidth(m.viewport.Width), m.promptMarkers)
 	m.wrappedContent = wrapped
 	m.wrappedContentLines = strings.Split(wrapped, "\n")
 	m.wrappedContentSrc = m.content
