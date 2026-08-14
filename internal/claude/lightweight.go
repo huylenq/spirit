@@ -7,15 +7,18 @@ import (
 )
 
 const (
-	defaultLocalURL    = "http://localhost:11434"
-	defaultLocalModel  = "qwen3.5:9b"
-	lightweightCfgTTL  = 30 * time.Second
+	defaultLocalURL   = "http://localhost:11434"
+	defaultLocalModel = "qwen3.5:9b"
+	lightweightCfgTTL = 30 * time.Second
 )
 
 type lightweightConfig struct {
-	Backend    string // "auto" | "local" | "claude"
-	LocalURL   string
-	LocalModel string
+	Backend     string // "auto" | "openai" | "local" | "claude"
+	LocalURL    string
+	LocalModel  string
+	OpenAIURL   string
+	OpenAIModel string
+	OpenAIKey   string
 }
 
 var (
@@ -31,7 +34,14 @@ func readLightweightConfig() lightweightConfig {
 		return lwCfg
 	}
 	prefs := LoadPrefs()
-	cfg := lightweightConfig{Backend: "auto", LocalURL: defaultLocalURL, LocalModel: defaultLocalModel}
+	cfg := lightweightConfig{
+		Backend:     "auto",
+		LocalURL:    defaultLocalURL,
+		LocalModel:  defaultLocalModel,
+		OpenAIURL:   defaultOpenAIURL,
+		OpenAIModel: defaultOpenAIModel,
+		OpenAIKey:   defaultOpenAIKey,
+	}
 	if v := prefs["lightweightBackend"]; v != "" {
 		cfg.Backend = v
 	}
@@ -41,31 +51,60 @@ func readLightweightConfig() lightweightConfig {
 	if v := prefs["lightweightLocalModel"]; v != "" {
 		cfg.LocalModel = v
 	}
+	if v := prefs["lightweightOpenAIURL"]; v != "" {
+		cfg.OpenAIURL = v
+	}
+	if v := prefs["lightweightOpenAIModel"]; v != "" {
+		cfg.OpenAIModel = v
+	}
+	if v := prefs["lightweightOpenAIKey"]; v != "" {
+		cfg.OpenAIKey = v
+	}
 	lwCfg = cfg
 	lwCfgUntil = time.Now().Add(lightweightCfgTTL)
 	return cfg
 }
 
 // LightweightJSON runs a JSON-output prompt through the configured lightweight
-// backend (local Ollama or claude CLI). In "auto" mode, prefers local when
-// reachable and silently falls through to claude on any local error.
+// backend. auto = Hermes OpenAI-compat proxy if reachable, else claude CLI.
+// openai / local / claude pin one backend with no fallback.
 func LightweightJSON(systemPrompt, userPrompt string) (string, error) {
 	return lightweightCall(systemPrompt, userPrompt, true)
 }
 
 // LightweightText is the plaintext counterpart of LightweightJSON. The local
-// backend skips Ollama's format:"json" constraint; the claude CLI fallback is
-// unchanged (the system prompt alone steers output shape there).
+// backend skips Ollama's format:"json" constraint; the OpenAI-compat and
+// claude CLI paths are unchanged (the system prompt alone steers output shape
+// there, except OpenAI JSON mode which sets response_format).
 func LightweightText(systemPrompt, userPrompt string) (string, error) {
 	return lightweightCall(systemPrompt, userPrompt, false)
 }
 
 func lightweightCall(systemPrompt, userPrompt string, jsonMode bool) (string, error) {
-	cfg := readLightweightConfig()
-	useLocal := cfg.Backend == "local" ||
-		(cfg.Backend != "claude" && localBackendReachable(cfg.LocalURL))
+	return runLightweight(readLightweightConfig(), systemPrompt, userPrompt, jsonMode)
+}
 
-	if useLocal {
+func runLightweight(cfg lightweightConfig, systemPrompt, userPrompt string, jsonMode bool) (string, error) {
+	tryOpenAI := cfg.Backend == "openai" ||
+		(cfg.Backend == "auto" && openaiBackendReachable(cfg.OpenAIURL))
+	if tryOpenAI {
+		var out string
+		var err error
+		if jsonMode {
+			out, err = openaiGenerateJSON(cfg.OpenAIURL, cfg.OpenAIModel, cfg.OpenAIKey, systemPrompt, userPrompt)
+		} else {
+			out, err = openaiGenerateText(cfg.OpenAIURL, cfg.OpenAIModel, cfg.OpenAIKey, systemPrompt, userPrompt)
+		}
+		if err == nil {
+			return out, nil
+		}
+		if cfg.Backend == "openai" {
+			return "", err
+		}
+		log.Printf("lightweight: openai backend failed, falling back to claude: %v", err)
+	}
+
+	if cfg.Backend == "local" {
 		var out string
 		var err error
 		if jsonMode {
@@ -76,10 +115,7 @@ func lightweightCall(systemPrompt, userPrompt string, jsonMode bool) (string, er
 		if err == nil {
 			return out, nil
 		}
-		if cfg.Backend == "local" {
-			return "", err
-		}
-		log.Printf("lightweight: local backend failed, falling back to claude: %v", err)
+		return "", err
 	}
 
 	cmd := newLightweightClaude(systemPrompt, userPrompt)

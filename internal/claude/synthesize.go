@@ -69,7 +69,8 @@ func SummaryCacheInfo(sessionID string) (summaryMod, transcriptMod string, isFre
 	return
 }
 
-// Synthesize generates a structured synthesis of a session via claude --model haiku.
+// Synthesize generates a structured synthesis of a session via LightweightJSON
+// (Hermes OpenAI-compat proxy; claude CLI only if backend=auto and proxy is down).
 // Results are cached to disk as JSON; returns cached synthesis if transcript hasn't changed.
 // Returns (summary, fromCache, error). fromCache is true when the cached synthesis is still fresh.
 func Summarize(sessionID string) (*SessionSummary, bool, error) {
