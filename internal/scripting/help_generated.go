@@ -164,10 +164,10 @@ summary(id) -> {synthesized_title}|nil
   Get cached summary for session, or nil.
 
 synthesize(id) -> {synthesized_title, from_cache}
-  Generate LLM summary for session.
+  Generate an LLM summary and apply its title to the native session.
 
-synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
-  Generate LLM summaries for all sessions.
+synthesize_all() -> [{pane_id, synthesized_title, from_cache, title_applied, apply_error?}]
+  Generate LLM summaries and apply their titles to idle native sessions.
 
 transcript(id) -> []string
   Get user messages from session transcript.

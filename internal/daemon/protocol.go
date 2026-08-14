@@ -260,9 +260,11 @@ type PaneGeometryData struct {
 }
 
 type SynthesizeResultData struct {
-	PaneID    string                 `json:"paneID"`
-	Summary   *claude.SessionSummary `json:"summary"`
-	FromCache bool                   `json:"fromCache"`
+	PaneID       string                 `json:"paneID"`
+	Summary      *claude.SessionSummary `json:"summary"`
+	FromCache    bool                   `json:"fromCache"`
+	TitleApplied bool                   `json:"titleApplied"`
+	ApplyError   string                 `json:"applyError,omitempty"`
 }
 
 type SynthesizeAllResultData struct {

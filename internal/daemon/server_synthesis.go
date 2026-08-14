@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,10 +37,19 @@ func (d *Daemon) handleSynthesize(data json.RawMessage) *Response {
 		r := errResponse(err.Error())
 		return &r
 	}
+	if summary == nil || strings.TrimSpace(summary.SynthesizedTitle) == "" {
+		r := errResponse("synthesis produced no title")
+		return &r
+	}
+	if err := d.applySynthesizedTitle(req.PaneID, req.SessionID, summary.SynthesizedTitle); err != nil {
+		r := errResponse("synthesized title but could not apply it: " + err.Error())
+		return &r
+	}
 	r := resultResponse(SynthesizeResultData{
-		PaneID:    req.PaneID,
-		Summary:   summary,
-		FromCache: fromCache,
+		PaneID:       req.PaneID,
+		Summary:      summary,
+		FromCache:    fromCache,
+		TitleApplied: true,
 	})
 	return &r
 }
@@ -115,11 +126,23 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 				log.Printf("synthesize %s: %v", sessionID, err)
 				return
 			}
+			applyErr := ""
+			applied := false
+			if summary == nil || strings.TrimSpace(summary.SynthesizedTitle) == "" {
+				applyErr = "synthesis produced no title"
+			} else if err := d.applySynthesizedTitle(paneID, sessionID, summary.SynthesizedTitle); err != nil {
+				applyErr = err.Error()
+				log.Printf("synthesize %s: apply title: %v", sessionID, err)
+			} else {
+				applied = true
+			}
 			mu.Lock()
 			results = append(results, SynthesizeResultData{
-				PaneID:    paneID,
-				Summary:   summary,
-				FromCache: fromCache,
+				PaneID:       paneID,
+				Summary:      summary,
+				FromCache:    fromCache,
+				TitleApplied: applied,
+				ApplyError:   applyErr,
 			})
 			mu.Unlock()
 		}(t.paneID, t.sessionID)
@@ -133,19 +156,40 @@ func (d *Daemon) handleSynthesizeAll(data json.RawMessage) *Response {
 	return &r
 }
 
+// applySynthesizedTitle is the single native-title application path used by
+// manual synthesis and the explicit apply-title command. Background synthesis
+// deliberately does not call it: only a user action may inject /rename into a
+// provider prompt.
+func (d *Daemon) applySynthesizedTitle(paneID, sessionID, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("no synthesized title to apply")
+	}
+	session, ok := d.sessionByPaneID(paneID)
+	if !ok {
+		return fmt.Errorf("session not found for pane: %s", paneID)
+	}
+	if session.SessionID != sessionID {
+		return fmt.Errorf("pane %s now belongs to session %s", paneID, session.SessionID)
+	}
+	if err := d.require(session, agent.CapabilityRenameNative); err != nil {
+		return err
+	}
+	if session.Status != agent.StatusUserTurn {
+		return fmt.Errorf("session must be idle before applying a title")
+	}
+	if err := d.sendCommand(session, "/rename "+title); err != nil {
+		return err
+	}
+	claude.ApplySynthesizedTitle(sessionID)
+	d.nudge()
+	return nil
+}
+
 func (d *Daemon) handleApplyTitle(data json.RawMessage) *Response {
 	var req PaneSessionData
 	if err := json.Unmarshal(data, &req); err != nil {
 		r := errResponse("bad data: " + err.Error())
-		return &r
-	}
-	session, ok := d.sessionByPaneID(req.PaneID)
-	if !ok {
-		r := errResponse("session not found for pane: " + req.PaneID)
-		return &r
-	}
-	if err := d.require(session, agent.CapabilityRenameNative); err != nil {
-		r := errResponse(err.Error())
 		return &r
 	}
 	cached := claude.ReadCachedSummary(req.SessionID)
@@ -153,12 +197,10 @@ func (d *Daemon) handleApplyTitle(data json.RawMessage) *Response {
 		r := errResponse("no synthesized title to apply")
 		return &r
 	}
-	if err := d.sendCommand(session, "/rename "+cached.SynthesizedTitle); err != nil {
+	if err := d.applySynthesizedTitle(req.PaneID, req.SessionID, cached.SynthesizedTitle); err != nil {
 		r := errResponse(err.Error())
 		return &r
 	}
-	claude.ApplySynthesizedTitle(req.SessionID)
-	d.nudge()
 	r := resultResponse(nil)
 	return &r
 }

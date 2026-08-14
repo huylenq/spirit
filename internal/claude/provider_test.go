@@ -2,6 +2,7 @@ package claude
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -135,7 +136,9 @@ func TestCodexTranscriptAdapter(t *testing.T) {
 func TestCodexCompletedItemTranscriptAdapterFindsPromptAfterLargePreamble(t *testing.T) {
 	useTempStatusDir(t)
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
-	data := `{"type":"session_meta","payload":{"id":"codex-modern","instructions":"` + strings.Repeat("x", 40*1024) + `"}}` + "\n" +
+	// Real Codex rollouts can put more than 2 MiB of injected context in one
+	// session_meta record. The prompt after it must still reach synthesis.
+	data := `{"type":"session_meta","payload":{"id":"codex-modern","instructions":"` + strings.Repeat("x", 3*1024*1024) + `"}}` + "\n" +
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"injected context"}]}}` + "\n" +
 		`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"Fix the modern parser"}]}}}` + "\n" +
 		`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","phase":"final","content":[{"type":"Text","text":"Modern parser fixed."}]}}}` + "\n"
@@ -161,5 +164,62 @@ func TestCodexCompletedItemTranscriptAdapterFindsPromptAfterLargePreamble(t *tes
 	}
 	if entries[0].Type != "assistant" || entries[0].ContentType != "final" || entries[1].Type != "user" {
 		t.Fatalf("newest entries = %#v", entries[:2])
+	}
+}
+
+func TestCodexCustomTitleReadsLatestSessionIndexEntry(t *testing.T) {
+	useTempStatusDir(t)
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	if err := WriteSessionMeta(SessionMeta{Provider: ProviderCodex, SessionID: "codex-title"}); err != nil {
+		t.Fatal(err)
+	}
+	index := strings.Join([]string{
+		`{"id":"codex-title","thread_name":"old title","updated_at":"2026-07-12T01:02:03Z"}`,
+		`{"id":"other","thread_name":"other title","updated_at":"2026-07-12T01:02:04Z"}`,
+		`{"id":"codex-title","thread_name":"new title","updated_at":"2026-07-12T01:02:05Z"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(codexHome, "session_index.jsonl"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadCustomTitle("codex-title"); got != "new title" {
+		t.Fatalf("Codex custom title = %q, want %q", got, "new title")
+	}
+}
+
+func TestCodexCustomTitleReadsStateDatabaseName(t *testing.T) {
+	sqlite3, err := exec.LookPath("sqlite3")
+	if err != nil {
+		t.Skip("sqlite3 is not installed")
+	}
+	useTempStatusDir(t)
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	if err := WriteSessionMeta(SessionMeta{Provider: ProviderCodex, SessionID: "codex-state-title"}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(codexHome, "state_5.sqlite")
+	cmd := exec.Command(sqlite3, statePath, "create table threads (id text, name text); insert into threads values ('codex-state-title', 'state title');")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create Codex state database: %v: %s", err, output)
+	}
+	if got := ReadCustomTitle("codex-state-title"); got != "state title" {
+		t.Fatalf("Codex custom title = %q, want %q", got, "state title")
+	}
+}
+
+func TestCodexCustomTitleFallsBackToTranscriptEvent(t *testing.T) {
+	useTempStatusDir(t)
+	t.Setenv("CODEX_HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	data := `{"type":"event_msg","payload":{"type":"thread_name_updated","thread_name":"transcript title"}}` + "\n"
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSessionMeta(SessionMeta{Provider: ProviderCodex, SessionID: "codex-transcript-title", TranscriptPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadCustomTitle("codex-transcript-title"); got != "transcript title" {
+		t.Fatalf("Codex transcript custom title = %q, want %q", got, "transcript title")
 	}
 }

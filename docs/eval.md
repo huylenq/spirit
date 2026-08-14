@@ -128,7 +128,7 @@ unlater(later_id)       -- remove Later record
 
 -- Synthesis (LLM-generated summaries)
 synthesize(id)             -- returns {headline = "...", from_cache = bool}
-synthesize_all()           -- synthesize all sessions
+synthesize_all()           -- synthesize and apply titles to idle sessions
 
 -- Commit tracking
 commit(id)                 -- send /commit (no auto-kill)

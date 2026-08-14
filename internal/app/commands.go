@@ -51,7 +51,7 @@ func buildCommands() []Command {
 			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execKill() },
 		},
 		{
-			Name: "Synthesize", Binding: &Keys.Synthesize,
+			Name: "Synthesize and apply title", Binding: &Keys.Synthesize,
 			Enabled: hasSessionID,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSynthesize() },
 		},
@@ -66,7 +66,7 @@ func buildCommands() []Command {
 			Execute:    func(m *Model) (Model, tea.Cmd) { return m.execRenamePrompt() },
 		},
 		{
-			Name: "Apply title", Binding: &Keys.ApplyTitle,
+			Name: "Apply background title", Binding: &Keys.ApplyTitle,
 			Capability: agent.CapabilityRenameNative,
 			Enabled: func(m *Model) bool {
 				s, ok := m.sidebar.SelectedItem()
@@ -120,7 +120,7 @@ func buildCommands() []Command {
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSearch() },
 		},
 		{
-			Name: "Synthesize all", Binding: &Keys.SynthesizeAll,
+			Name: "Synthesize and apply all titles", Binding: &Keys.SynthesizeAll,
 			Execute: func(m *Model) (Model, tea.Cmd) { return m.execSynthesizeAll() },
 		},
 		{

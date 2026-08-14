@@ -903,7 +903,10 @@ func (m Model) fetchSynthesizeAll(skipPaneID string) tea.Cmd {
 		}
 		appResults := make([]SynthesizeAllResult, len(results))
 		for i, r := range results {
-			appResults[i] = SynthesizeAllResult{PaneID: r.PaneID, Summary: r.Summary, FromCache: r.FromCache}
+			appResults[i] = SynthesizeAllResult{
+				PaneID: r.PaneID, Summary: r.Summary, FromCache: r.FromCache,
+				TitleApplied: r.TitleApplied, ApplyError: r.ApplyError,
+			}
 		}
 		return SynthesizeAllReadyMsg{Results: appResults}
 	}

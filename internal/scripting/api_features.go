@@ -56,7 +56,7 @@ func luaUnlater(deps Deps) lua.LGFunction {
 
 // synthesize(id) -> {synthesized_title, from_cache}
 // Category: Features
-// Generate LLM summary for session.
+// Generate an LLM summary and apply its title to the native session.
 func luaSynthesize(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		id := L.CheckString(1)
@@ -76,9 +76,9 @@ func luaSynthesize(deps Deps) lua.LGFunction {
 	}
 }
 
-// synthesize_all() -> [{pane_id, synthesized_title, from_cache}]
+// synthesize_all() -> [{pane_id, synthesized_title, from_cache, title_applied, apply_error?}]
 // Category: Features
-// Generate LLM summaries for all sessions.
+// Generate LLM summaries and apply their titles to idle native sessions.
 func luaSynthesizeAll(deps Deps) lua.LGFunction {
 	return func(L *lua.LState) int {
 		results, err := deps.Client.SynthesizeAll("")
@@ -91,6 +91,10 @@ func luaSynthesizeAll(deps Deps) lua.LGFunction {
 			entry := L.NewTable()
 			entry.RawSetString("pane_id", lua.LString(r.PaneID))
 			entry.RawSetString("from_cache", lua.LBool(r.FromCache))
+			entry.RawSetString("title_applied", lua.LBool(r.TitleApplied))
+			if r.ApplyError != "" {
+				entry.RawSetString("apply_error", lua.LString(r.ApplyError))
+			}
 			if r.Summary != nil {
 				entry.RawSetString("synthesized_title", lua.LString(r.Summary.SynthesizedTitle))
 			}

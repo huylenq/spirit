@@ -67,9 +67,11 @@ type SummaryReadyMsg struct {
 
 // SynthesizeAllResult holds one result from batch synthesis.
 type SynthesizeAllResult struct {
-	PaneID    string
-	Summary   *claude.SessionSummary
-	FromCache bool
+	PaneID       string
+	Summary      *claude.SessionSummary
+	FromCache    bool
+	TitleApplied bool
+	ApplyError   string
 }
 
 // SynthesizeAllReadyMsg is sent when batch synthesis completes.

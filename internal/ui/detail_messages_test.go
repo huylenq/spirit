@@ -48,6 +48,18 @@ func TestInjectAfterPromptRequiresMarkerAtLineStart(t *testing.T) {
 	}
 }
 
+func TestInjectAfterPromptPreservesPromptBackground(t *testing.T) {
+	const fill = "\033[48;2;58;56;75m"
+	const reset = "\033[0m"
+	promptLine := fill + "› prompt" + strings.Repeat(" ", 16) + reset
+	viewport := "output\n" + promptLine + "\nafter"
+	got := injectAfterPrompt(viewport, "✎ new name", []string{"›"})
+	want := "output\n" + fill + "✎ new name" + fill + strings.Repeat(" ", 14) + reset + "\nafter"
+	if got != want {
+		t.Fatalf("injectAfterPrompt() = %q, want %q", got, want)
+	}
+}
+
 func TestWrapLinesExtendsPromptBackgroundToViewportWidth(t *testing.T) {
 	const (
 		fill  = "\033[48;2;58;56;75m"

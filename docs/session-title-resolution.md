@@ -12,7 +12,7 @@ CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 
 | Field | Source | When populated |
 |-------|--------|----------------|
-| **CustomTitle** | Claude Code transcript (`custom-title` JSONL entry) | User runs `/rename` in Claude Code |
+| **CustomTitle** | Claude Code `custom-title` entry or Codex `state_*.sqlite` `threads.name` (with JSONL/transcript fallbacks) | User runs `/rename` in Claude Code or Codex |
 | **SynthesizedTitle** | AI synthesis cache (`~/.spirit/{sessionID}.summary`) | Daemon auto-synthesizes on agent→user turn transition, or user presses `s` |
 | **FirstMessage** | Transcript forward-scan for first `human` turn | Always available once user sends a message |
 
@@ -20,13 +20,16 @@ CustomTitle → SynthesizedTitle → FirstMessage → "(New session)"
 
 ```mermaid
 flowchart TD
+    subgraph "Provider title records"
+        CT["Claude custom-title / Codex threads.name"]
+    end
+
     subgraph "Transcript (JSONL)"
         UM["User messages"]
-        CT["custom-title entry"]
     end
 
     subgraph "Synthesis"
-        AI["claude --model haiku"]
+        AI["lightweight infer (Hermes OpenAI proxy)"]
         Cache[("~/.spirit/<br/>{sessionID}.summary")]
     end
 
@@ -38,7 +41,7 @@ flowchart TD
     UM -->|ReadUserMessages| AI
     AI -->|JSON parse| Cache
     Cache -->|ReadCachedSummary| Build
-    CT -->|ReadCustomTitle<br/>mtime-cached, last 64KB tail-scan| Build
+    CT -->|ReadCustomTitle<br/>provider-specific cache| Build
     UM -->|ReadFirstUserMessage| Build
     Build --> CS
     CS -->|DisplayName| UI["Sidebar / Detail panel"]
@@ -46,7 +49,9 @@ flowchart TD
 
 ## Synthesis
 
-`claude.Summarize()` (`internal/claude/synthesize.go`) runs haiku with user messages and produces a `SessionSummary`:
+`claude.Summarize()` (`internal/claude/synthesize.go`) runs the lightweight
+backend (`LightweightJSON` — Hermes OpenAI-compat proxy, with `claude` CLI
+only as the `auto` fallback) with user messages and produces a `SessionSummary`:
 
 ```json
 {
@@ -77,23 +82,28 @@ Cached summary is reused (returned as `fromCache=true`) when the `.summary` file
 `daemon.autoSynthesize()` (`internal/daemon/daemon_synthesis.go`) fires when a session transitions from agent-turn → user-turn:
 
 1. Skipped if `autoSynthesize` pref is `"false"`
-2. Skipped if `CustomTitle` is already set (synthesized title wouldn't be displayed anyway)
-3. Debounced: at most once per 30s per session
-4. Does **not** inject `/rename` keystrokes — the title appears on the next poll cycle via `ReadCachedSummary`
+2. Debounced according to session maturity
+3. Does **not** inject `/rename` keystrokes — the title appears on the next poll cycle via `ReadCachedSummary`
 
 ## The `/rename` bootstrap
 
-Manual synthesis (`s` key or `synthesize_all`) injects `/rename <title>` keystrokes into the tmux pane after fresh synthesis:
+Manual synthesis (`s` key or `synthesize_all`) is one operation: it generates
+or reuses the cached title, then injects `/rename <title>` into an idle provider
+prompt. Cached synthesis is still applied, so pressing `s` repairs a title that
+was never applied or was later changed.
 
 ```
-synthesis completes (fromCache=false)
-  → tmux.SendKeys(paneID, "/rename "+title, "Enter")
-    → Claude Code writes custom-title entry to transcript
+synthesis completes (fresh or cached)
+  → provider input sends "/rename "+title
+    → provider writes its native title record
       → next poll: ReadCustomTitle() returns it as CustomTitle
         → CustomTitle now takes priority over SynthesizedTitle in DisplayName()
 ```
 
-This only works when the Claude Code session is idle at the prompt. Auto-synthesis intentionally skips this to avoid polluting the user's input buffer.
+This only works while the provider session is idle at its prompt; a pane/session
+identity check prevents a slow synthesis from renaming a replacement session.
+Auto-synthesis intentionally skips native rename to avoid polluting the user's
+input buffer.
 
 ## Later Records
 
@@ -105,6 +115,6 @@ This only works when the Claude Code session is idle at the prompt. Auto-synthes
 |----------|---------|
 | `summary(id)` | `{synthesized_title}` or `nil` |
 | `synthesize(id)` | `{synthesized_title, from_cache}` |
-| `synthesize_all()` | `[{pane_id, synthesized_title, from_cache}]` |
+| `synthesize_all()` | `[{pane_id, synthesized_title, from_cache, title_applied, apply_error?}]` |
 
 Session tables expose `synthesized_title`, `custom_title`, and `display_name` fields.

@@ -237,7 +237,8 @@ func (c *Client) ApplyTitle(paneID, sessionID string) error {
 	return c.rpcInto(Request{Type: ReqApplyTitle, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, nil)
 }
 
-// Synthesize triggers haiku synthesis. Daemon handles /rename side-effect.
+// Synthesize generates a title and applies it through the provider's native
+// /rename command. Background auto-synthesis remains display-only.
 func (c *Client) Synthesize(paneID, sessionID string) (*claude.SessionSummary, bool, error) {
 	var data SynthesizeResultData
 	err := c.rpcInto(Request{Type: ReqSynthesize, Data: marshalData(PaneSessionData{PaneID: paneID, SessionID: sessionID})}, &data)

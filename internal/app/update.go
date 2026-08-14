@@ -693,8 +693,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.refreshSessions()
 		}
-		if msg.FromCache && msg.UserRequested {
-			return m, m.setFlash("summary unchanged (cached)", false, 2*time.Second)
+		if msg.UserRequested && msg.Summary != nil {
+			return m, m.setFlash("title applied: "+msg.Summary.SynthesizedTitle, false, 2*time.Second)
 		}
 		return m, nil
 
@@ -703,7 +703,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("Synthesize all failed: "+msg.Err.Error(), true, 5*time.Second)
 		}
 		updated := false
+		applied := 0
+		var applyErrors []string
 		for _, r := range msg.Results {
+			if r.TitleApplied {
+				applied++
+			}
+			if r.ApplyError != "" {
+				applyErrors = append(applyErrors, r.PaneID+": "+r.ApplyError)
+			}
 			if s, ok := m.sidebar.SelectedItem(); ok && s.PaneID == r.PaneID {
 				m.detail.SetSummary(r.Summary)
 			}
@@ -722,6 +730,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if updated {
 			m.refreshSessions()
+		}
+		if len(applyErrors) > 0 {
+			return m, m.setFlash(fmt.Sprintf("applied %d title(s); %d failed: %s", applied, len(applyErrors), applyErrors[0]), true, 5*time.Second)
+		}
+		if applied > 0 {
+			return m, m.setFlash(fmt.Sprintf("applied %d title(s)", applied), false, 2*time.Second)
 		}
 		return m, nil
 

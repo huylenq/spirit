@@ -170,7 +170,7 @@ Source: `internal/app/keymap.go`
 | `c` | Send `/commit` to session |
 | `C` | Commit + done (commit, verify, then kill) |
 | `s` | Synthesize selected session (AI summary) |
-| `S` | Synthesize all sessions |
+| `S` | Synthesize and apply titles to all idle sessions |
 | `R` | Rename tmux window (Haiku-generated name) |
 | `a` | New session (open prompt editor) |
 | `r` | Refresh preview capture |

@@ -3,10 +3,13 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/huylenq/spirit/internal/agent"
+	"github.com/huylenq/spirit/internal/claude"
 )
 
 type testInput struct{ prompts []string }
@@ -120,5 +123,70 @@ func TestRemoteControlRejectsWorkingSession(t *testing.T) {
 	}
 	if len(input.prompts) != 0 {
 		t.Fatalf("busy remote control reached input driver: %#v", input.prompts)
+	}
+}
+
+func TestApplySynthesizedTitleUsesProviderCommandAndMarksCache(t *testing.T) {
+	statusDir := t.TempDir()
+	restore := claude.OverrideStatusDirForTest(statusDir)
+	t.Cleanup(restore)
+	if err := os.WriteFile(
+		filepath.Join(statusDir, "s1.summary"),
+		[]byte(`{"headline":"codex rename fix"}`),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	input := &testInput{}
+	provider := testProvider{
+		input: input,
+		caps: agent.NewCapabilitySet(
+			agent.CapabilityRelayCommand,
+			agent.CapabilityRenameNative,
+		),
+	}
+	d := &Daemon{
+		providers: agent.NewRegistry(provider),
+		sessions: []agent.Session{{
+			Provider: provider.ID(), PaneID: "%1", SessionID: "s1", Status: agent.StatusUserTurn,
+		}},
+	}
+
+	if err := d.applySynthesizedTitle("%1", "s1", " codex rename fix "); err != nil {
+		t.Fatal(err)
+	}
+	if len(input.prompts) != 1 || input.prompts[0] != "/rename codex rename fix" {
+		t.Fatalf("provider input got %#v", input.prompts)
+	}
+	if summary := claude.ReadCachedSummary("s1"); summary == nil || summary.AppliedSynthesizedTitle != "codex rename fix" {
+		t.Fatalf("cached summary after apply = %#v", summary)
+	}
+}
+
+func TestApplySynthesizedTitleRejectsBusyOrReplacedSession(t *testing.T) {
+	input := &testInput{}
+	provider := testProvider{
+		input: input,
+		caps: agent.NewCapabilitySet(
+			agent.CapabilityRelayCommand,
+			agent.CapabilityRenameNative,
+		),
+	}
+	d := &Daemon{
+		providers: agent.NewRegistry(provider),
+		sessions: []agent.Session{{
+			Provider: provider.ID(), PaneID: "%1", SessionID: "replacement", Status: agent.StatusAgentTurn,
+		}},
+	}
+
+	if err := d.applySynthesizedTitle("%1", "old", "title"); err == nil || !strings.Contains(err.Error(), "now belongs") {
+		t.Fatalf("replaced-session error = %v", err)
+	}
+	if err := d.applySynthesizedTitle("%1", "replacement", "title"); err == nil || !strings.Contains(err.Error(), "must be idle") {
+		t.Fatalf("busy-session error = %v", err)
+	}
+	if len(input.prompts) != 0 {
+		t.Fatalf("rejected title reached provider input: %#v", input.prompts)
 	}
 }

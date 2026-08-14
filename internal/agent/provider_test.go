@@ -88,6 +88,15 @@ func TestDefaultProviderRemoteControlContracts(t *testing.T) {
 	}
 }
 
+func TestDefaultProviderRenameContracts(t *testing.T) {
+	registry := NewDefaultRegistry()
+	for _, provider := range []ProviderID{ProviderClaude, ProviderCodex} {
+		if got := registry.Availability(Session{Provider: provider}, CapabilityRenameNative); !got.Supported {
+			t.Fatalf("%s native rename should be supported: %+v", provider, got)
+		}
+	}
+}
+
 func TestDefaultProviderLaunchRemoteControlContracts(t *testing.T) {
 	registry := NewDefaultRegistry()
 	claudeSession := Session{Provider: ProviderClaude}

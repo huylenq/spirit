@@ -290,6 +290,7 @@ func sessionsEqual(a, b []agent.Session) bool {
 			!timePointerEqual(a[i].LaterWakeAt, b[i].LaterWakeAt) ||
 			a[i].IsPhantom != b[i].IsPhantom ||
 			a[i].SynthesizedTitle != b[i].SynthesizedTitle ||
+			a[i].CustomTitle != b[i].CustomTitle ||
 			a[i].TitleDrift != b[i].TitleDrift ||
 			a[i].LastUserMessage != b[i].LastUserMessage ||
 			a[i].PermissionMode != b[i].PermissionMode ||

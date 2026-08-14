@@ -1235,8 +1235,30 @@ func injectAfterPrompt(vpView, relayView string, promptMarkers []string) string 
 	if promptIdx < 0 {
 		return vpView
 	}
-	lines[promptIdx] = relayView
+	// The provider prompt row is often a background-filled input surface (Codex
+	// in particular). Replacing it with the textinput view would drop that fill
+	// and leave the editor row on the terminal's default background. Reapply the
+	// row's first active fill to the whole replacement row, including its empty
+	// cells, so it joins the filled rows above and below it.
+	lines[promptIdx] = relayViewWithPromptFill(relayView, lines[promptIdx])
 	return strings.Join(lines, "\n")
+}
+
+func relayViewWithPromptFill(relayView, promptLine string) string {
+	fill := firstFillCSI(promptLine)
+	if fill == "" {
+		return relayView
+	}
+
+	// Keep the editor's own ANSI foreground/cursor styling, but make the
+	// provider fill the active background for every rendered cell. Reapply the
+	// fill after the editor view because it normally ends with a reset, then
+	// fill any remaining cells to the captured prompt row's width.
+	missing := ansi.StringWidth(promptLine) - ansi.StringWidth(relayView)
+	if missing < 0 {
+		missing = 0
+	}
+	return fill + relayView + fill + strings.Repeat(" ", missing) + "\033[0m"
 }
 
 func matchesPromptLine(line string, promptMarkers []string) bool {

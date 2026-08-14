@@ -79,7 +79,7 @@ func ReadDiffStats(sessionID string) map[string]FileDiffStat {
 	}
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -210,7 +210,7 @@ func ReadDiffHunks(sessionID string) []FileDiffHunk {
 	}
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()

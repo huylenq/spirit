@@ -171,10 +171,9 @@ func NewDefaultRegistry() *Registry {
 		CapabilityRenameNative, CapabilityCommit, CapabilityApprovalObserve,
 		CapabilityUsage, CapabilityRemoteControl, CapabilityWorktreeNative, CapabilityWorktreeGit,
 	)...)
-	codexCaps := NewCapabilitySet(append(shared, CapabilityResume, CapabilitySpawn)...)
+	codexCaps := NewCapabilitySet(append(shared, CapabilityResume, CapabilitySpawn, CapabilityRenameNative)...)
 	codexCaps.WithUnsupported(CapabilityRelayBang, "bang mode is only available for Claude sessions")
 	codexCaps.WithUnsupported(CapabilityLater, "Later is not yet available for Codex sessions")
-	codexCaps.WithUnsupported(CapabilityRenameNative, "native rename is not available for Codex sessions")
 	codexCaps.WithUnsupported(CapabilityCommit, "commit automation is not available for Codex sessions")
 	codexCaps.WithUnsupported(CapabilityRemoteControl, "remote control is only available for Claude sessions")
 

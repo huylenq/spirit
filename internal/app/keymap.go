@@ -350,7 +350,7 @@ var Keys = KeyMap{
 	),
 	ApplyTitle: key.NewBinding(
 		key.WithKeys("alt+r"),
-		key.WithHelp("alt+r", "apply title"),
+		key.WithHelp("alt+r", "apply synth title"),
 	),
 	ChatOutline: key.NewBinding(
 		key.WithKeys("t"),
@@ -374,11 +374,11 @@ var Keys = KeyMap{
 	),
 	Synthesize: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "synthesize"),
+		key.WithHelp("s", "synth+rename"),
 	),
 	SynthesizeAll: key.NewBinding(
 		key.WithKeys("S"),
-		key.WithHelp("S", "synthesize all"),
+		key.WithHelp("S", "synth+rename all"),
 	),
 	Rename: key.NewBinding(
 		key.WithKeys("R"),

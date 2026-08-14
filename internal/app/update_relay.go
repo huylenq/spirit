@@ -122,14 +122,15 @@ func (m Model) handleKeyRenamePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
-		// Optimistically reflect the new name in spirit; the next discover
-		// pass will reconcile from the transcript's custom-title entry.
+		// Optimistically reflect the new name in the list; the next discovery
+		// pass will reconcile it with the provider's persisted title.
 		for i := range m.sessions {
 			if m.sessions[i].PaneID == s.PaneID {
 				m.sessions[i].CustomTitle = val
 				break
 			}
 		}
+		m.refreshSessions()
 		// Intentionally no autoJump — rename should not steal focus.
 		return m, m.sendCommandRelay(s.PaneID, "/rename "+val)
 	default:

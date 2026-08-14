@@ -3,12 +3,21 @@ package claude
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
+
+// Codex rollout records can contain the complete injected instruction/tool
+// context in one JSONL record. Real sessions exceed 2 MiB, so Scanner's 64 KiB
+// default and the former 1 MiB cap both truncate otherwise valid transcripts.
+// Keep a protective bound, but make it large enough for provider records.
+const maxTranscriptRecordSize = 32 * 1024 * 1024
 
 // --- Full transcript message cache (incremental) ---
 
@@ -53,7 +62,7 @@ func ReadFirstUserMessage(sessionID string) string {
 
 	var result string
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
 	for scanner.Scan() {
 		if text := extractUserText(scanner.Bytes()); text != "" {
 			result = text
@@ -328,7 +337,7 @@ func ReadUserMessages(sessionID string) ([]string, error) {
 	}
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -369,7 +378,7 @@ func ReadAllTextMessages(sessionID string) ([]TextMessage, error) {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
 
 	var messages []TextMessage
 	for scanner.Scan() {
@@ -393,11 +402,51 @@ type customTitleCacheEntry struct {
 var (
 	customTitleCache   = make(map[string]customTitleCacheEntry)
 	customTitleCacheMu sync.Mutex
+
+	codexTitleIndexCache   codexTitleIndexCacheEntry
+	codexTitleIndexCacheMu sync.Mutex
+	codexStateTitleCache   codexStateTitleCacheEntry
+	codexStateTitleCacheMu sync.Mutex
 )
 
-// ReadCustomTitle returns the most recent /rename title set via Claude Code's custom-title entry.
-// Reads only the tail of the file and caches by mtime.
+type codexTitleIndexCacheEntry struct {
+	path    string
+	modTime time.Time
+	titles  map[string]string
+}
+
+type codexStateTitleCacheEntry struct {
+	path     string
+	modTime  time.Time
+	size     int64
+	walStamp fileStamp
+	titles   map[string]string
+}
+
+type fileStamp struct {
+	modTime time.Time
+	size    int64
+}
+
+// ReadCustomTitle returns the most recent native /rename title for a session.
+// Claude records it as a custom-title transcript entry. Modern Codex stores it
+// in state_*.sqlite (threads.name); older versions expose it through
+// session_index.jsonl or thread_name_updated transcript events.
 func ReadCustomTitle(sessionID string) string {
+	if ReadSessionMeta(sessionID).Provider == ProviderCodex {
+		if title := readCodexStateThreadName(sessionID); title != "" {
+			return title
+		}
+		if title := readCodexThreadName(sessionID); title != "" {
+			return title
+		}
+		return readCodexTranscriptTitle(sessionID)
+	}
+
+	return readClaudeCustomTitle(sessionID)
+}
+
+func readClaudeCustomTitle(sessionID string) string {
 	path, err := findTranscriptPath(sessionID)
 	if err != nil {
 		return ""
@@ -455,4 +504,178 @@ func ReadCustomTitle(sessionID string) string {
 	customTitleCacheMu.Unlock()
 
 	return last
+}
+
+func codexHomeDir() string {
+	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".codex")
+}
+
+// readCodexStateThreadName reads names from Codex's current SQLite state.
+// Spirit deliberately uses the sqlite3 command-line client instead of linking
+// a driver into the TUI: this is an optional compatibility path, while the
+// JSONL index and transcript readers remain usable on older/non-macOS setups.
+func readCodexStateThreadName(sessionID string) string {
+	path, info, ok := codexStateDatabase()
+	if !ok {
+		return ""
+	}
+	walStamp := codexStateWALStamp(path)
+
+	codexStateTitleCacheMu.Lock()
+	if codexStateTitleCache.path == path &&
+		codexStateTitleCache.modTime.Equal(info.ModTime()) &&
+		codexStateTitleCache.size == info.Size() &&
+		codexStateTitleCache.walStamp == walStamp {
+		title := codexStateTitleCache.titles[sessionID]
+		codexStateTitleCacheMu.Unlock()
+		return title
+	}
+	codexStateTitleCacheMu.Unlock()
+
+	titles, ok := loadCodexStateTitles(path)
+	if !ok {
+		return ""
+	}
+
+	codexStateTitleCacheMu.Lock()
+	codexStateTitleCache = codexStateTitleCacheEntry{
+		path: path, modTime: info.ModTime(), size: info.Size(), walStamp: walStamp, titles: titles,
+	}
+	title := titles[sessionID]
+	codexStateTitleCacheMu.Unlock()
+	return title
+}
+
+func codexStateWALStamp(path string) fileStamp {
+	info, err := os.Stat(path + "-wal")
+	if err != nil {
+		return fileStamp{}
+	}
+	return fileStamp{modTime: info.ModTime(), size: info.Size()}
+}
+
+func codexStateDatabase() (string, os.FileInfo, bool) {
+	matches, err := filepath.Glob(filepath.Join(codexHomeDir(), "state_*.sqlite"))
+	if err != nil {
+		return "", nil, false
+	}
+	var bestPath string
+	var bestInfo os.FileInfo
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err != nil || (bestInfo != nil && !info.ModTime().After(bestInfo.ModTime())) {
+			continue
+		}
+		bestPath, bestInfo = path, info
+	}
+	return bestPath, bestInfo, bestInfo != nil
+}
+
+func loadCodexStateTitles(path string) (map[string]string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	defer cancel()
+	query := `SELECT id, name FROM threads WHERE name IS NOT NULL AND trim(name) <> '';`
+	out, err := exec.CommandContext(ctx, "sqlite3", "-readonly", "-json", path, query).Output()
+	if err != nil {
+		return nil, false
+	}
+	var rows []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, false
+	}
+	titles := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if row.ID != "" && strings.TrimSpace(row.Name) != "" {
+			titles[row.ID] = strings.TrimSpace(row.Name)
+		}
+	}
+	return titles, true
+}
+
+type codexSessionIndexEntry struct {
+	ID         string `json:"id"`
+	ThreadName string `json:"thread_name"`
+}
+
+// readCodexThreadName reads the latest name for each thread from Codex's
+// append-only session index. The parsed index is shared across sessions and
+// invalidated only when the index mtime changes.
+func readCodexThreadName(sessionID string) string {
+	path := filepath.Join(codexHomeDir(), "session_index.jsonl")
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+
+	codexTitleIndexCacheMu.Lock()
+	if codexTitleIndexCache.path == path && codexTitleIndexCache.modTime.Equal(info.ModTime()) {
+		title := codexTitleIndexCache.titles[sessionID]
+		codexTitleIndexCacheMu.Unlock()
+		return title
+	}
+	codexTitleIndexCacheMu.Unlock()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	titles := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var entry codexSessionIndexEntry
+		if json.Unmarshal(scanner.Bytes(), &entry) == nil && entry.ID != "" {
+			// The index is append-only; the newest row wins, including an
+			// empty name if Codex ever adds a clear-name operation.
+			titles[entry.ID] = strings.TrimSpace(entry.ThreadName)
+		}
+	}
+
+	codexTitleIndexCacheMu.Lock()
+	codexTitleIndexCache = codexTitleIndexCacheEntry{path: path, modTime: info.ModTime(), titles: titles}
+	title := titles[sessionID]
+	codexTitleIndexCacheMu.Unlock()
+	return title
+}
+
+// readCodexTranscriptTitle keeps title discovery compatible with older Codex
+// rollouts where the session index may be absent or not yet flushed.
+func readCodexTranscriptTitle(sessionID string) string {
+	path, err := findTranscriptPath(sessionID)
+	if err != nil {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	type threadNameEvent struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Type       string `json:"type"`
+			ThreadName string `json:"thread_name"`
+		} `json:"payload"`
+	}
+	var last string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), maxTranscriptRecordSize)
+	for scanner.Scan() {
+		var event threadNameEvent
+		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Type == "event_msg" &&
+			event.Payload.Type == "thread_name_updated" && event.Payload.ThreadName != "" {
+			last = event.Payload.ThreadName
+		}
+	}
+	return strings.TrimSpace(last)
 }
